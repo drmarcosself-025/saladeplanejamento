@@ -39,14 +39,9 @@ export function TreatmentHub({
 
       <section className="mx-auto max-w-6xl px-5 py-20">
         <div className="space-y-24">
-          {procedures.map((procedure, index) => (
-            <div
-              key={procedure.name}
-              className={`grid items-center gap-12 lg:grid-cols-2 ${
-                index % 2 === 1 ? "lg:[&>*:first-child]:order-2" : ""
-              }`}
-            >
-              <div>
+          {procedures.map((procedure, index) => {
+            const text = (
+              <div key="text">
                 <h2 className="font-display text-2xl italic text-ink">
                   {procedure.name}
                 </h2>
@@ -62,9 +57,24 @@ export function TreatmentHub({
                   ))}
                 </ul>
               </div>
-              <PlaceholderMedia label={`fotografia — ${procedure.name}`} ratio="aspect-[4/3]" />
-            </div>
-          ))}
+            );
+            const media = (
+              <PlaceholderMedia
+                key="media"
+                label={`fotografia — ${procedure.name}`}
+                ratio="aspect-[4/3]"
+              />
+            );
+
+            return (
+              <div
+                key={procedure.name}
+                className="grid items-center gap-12 lg:grid-cols-2"
+              >
+                {index % 2 === 1 ? [media, text] : [text, media]}
+              </div>
+            );
+          })}
         </div>
       </section>
 

@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { cache } from "react";
 import matter from "gray-matter";
 
 const BLOG_DIR = path.join(process.cwd(), "src/content/blog");
@@ -17,7 +18,7 @@ export type BlogPost = BlogFrontmatter & {
   content: string;
 };
 
-export function getAllPosts(): BlogPost[] {
+export const getAllPosts = cache((): BlogPost[] => {
   const files = fs
     .readdirSync(BLOG_DIR)
     .filter((file) => file.endsWith(".mdx"));
@@ -32,12 +33,12 @@ export function getAllPosts(): BlogPost[] {
   return posts.sort(
     (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
   );
-}
+});
 
-export function getPostBySlug(slug: string): BlogPost | undefined {
+export const getPostBySlug = cache((slug: string): BlogPost | undefined => {
   const filePath = path.join(BLOG_DIR, `${slug}.mdx`);
   if (!fs.existsSync(filePath)) return undefined;
   const raw = fs.readFileSync(filePath, "utf8");
   const { data, content } = matter(raw);
   return { slug, content, ...(data as BlogFrontmatter) };
-}
+});

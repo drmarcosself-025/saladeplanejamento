@@ -40,10 +40,12 @@ export function GhostLink({
   href,
   children,
   light = false,
+  direction = "forward",
 }: {
   href: string;
   children: ReactNode;
   light?: boolean;
+  direction?: "forward" | "back";
 }) {
   return (
     <Link
@@ -54,8 +56,9 @@ export function GhostLink({
           : "border-ink/30 text-ink-soft hover:border-gold hover:text-gold"
       }`}
     >
+      {direction === "back" && <span aria-hidden>←</span>}
       {children}
-      <span aria-hidden>→</span>
+      {direction === "forward" && <span aria-hidden>→</span>}
     </Link>
   );
 }

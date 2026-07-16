@@ -56,7 +56,9 @@ export default async function BlogPostPage({
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
-      <GhostLink href="/blog">Voltar ao blog</GhostLink>
+      <GhostLink href="/blog" direction="back">
+        Voltar ao blog
+      </GhostLink>
 
       <Eyebrow>{post.pillar}</Eyebrow>
       <h1 className="font-display mt-3 text-3xl italic text-ink sm:text-4xl">

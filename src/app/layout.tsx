@@ -39,6 +39,12 @@ export const metadata: Metadata = {
   },
 };
 
+// Placeholder fields (marked "[PREENCHER...]" in site-config.ts) must never
+// reach structured data — Google would index the literal placeholder text.
+function filled(value: string) {
+  return value.startsWith("[PREENCHER") ? undefined : value;
+}
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -51,12 +57,12 @@ export default function RootLayout({
     description:
       "Cirurgião-dentista especializado em Ortodontia e Harmonização Facial.",
     url: siteConfig.domain,
-    telephone: siteConfig.phoneDisplay,
-    email: siteConfig.email,
+    telephone: filled(siteConfig.phoneDisplay),
+    email: filled(siteConfig.email),
     address: {
       "@type": "PostalAddress",
-      streetAddress: siteConfig.addressLine,
-      addressLocality: siteConfig.city,
+      streetAddress: filled(siteConfig.addressLine),
+      addressLocality: filled(siteConfig.city),
       addressCountry: "BR",
     },
     medicalSpecialty: ["Dentistry", "Orthodontics"],
