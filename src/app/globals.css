@@ -1,0 +1,78 @@
+@import "tailwindcss";
+
+:root {
+  --ink: #17140f;
+  --ink-soft: #55503f;
+  --ink-faint: #8a836e;
+  --ivory: #f7f4ee;
+  --surface: #fffdf9;
+  --surface-2: #f0ead9;
+  --line: #e2dcc9;
+  --gold: #a9793e;
+  --gold-soft: #c9a46b;
+  --gold-on-dark: #d9ae6e;
+}
+
+@theme inline {
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-ink-faint: var(--ink-faint);
+  --color-ivory: var(--ivory);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-gold: var(--gold);
+  --color-gold-soft: var(--gold-soft);
+  --color-gold-on-dark: var(--gold-on-dark);
+
+  --font-display: var(--font-newsreader);
+  --font-sans: var(--font-public-sans);
+  --font-label: var(--font-plex-mono);
+}
+
+body {
+  background: var(--ivory);
+  color: var(--ink);
+  font-family: var(--font-sans), -apple-system, "Segoe UI", Arial, sans-serif;
+}
+
+.eyebrow {
+  font-family: var(--font-label), ui-monospace, Menlo, Consolas, monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.font-display {
+  font-family: var(--font-display), "Iowan Old Style", Palatino, Georgia, serif;
+}
+
+.prose-doc {
+  color: var(--ink-soft);
+  max-width: 68ch;
+  line-height: 1.75;
+}
+.prose-doc p {
+  margin: 0 0 1.3em;
+}
+.prose-doc h2 {
+  font-family: var(--font-display), "Iowan Old Style", Palatino, Georgia, serif;
+  font-style: italic;
+  color: var(--ink);
+  font-size: 1.5rem;
+  margin: 2.2em 0 0.7em;
+}
+.prose-doc ul {
+  margin: 0 0 1.3em;
+  padding-left: 1.2em;
+  list-style: disc;
+}
+.prose-doc li {
+  margin-bottom: 0.5em;
+}
+.prose-doc li::marker {
+  color: var(--gold);
+}
+.prose-doc strong {
+  color: var(--ink);
+}
