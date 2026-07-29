@@ -364,7 +364,7 @@
 // ============================================================
 // SUPABASE CLIENT
 // ============================================================
-let supabase = null;
+let sb = null;
 try {
   if(SUPABASE_URL.includes('COLE_AQUI') || SUPABASE_ANON_KEY.includes('COLE_AQUI')){
     document.getElementById('configWarning').style.display = 'block';
@@ -373,7 +373,7 @@ try {
     w.style.display = 'block';
     w.textContent = '⚠️ Não foi possível carregar a biblioteca do Supabase. Verifique sua conexão com a internet e recarregue a página.';
   } else {
-    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   }
 } catch(e) {
   console.error('Falha ao iniciar o Supabase:', e);
@@ -420,7 +420,7 @@ function setLoginMode(mode){
 setLoginMode('entrar');
 
 document.getElementById('loginBtn').addEventListener('click', async ()=>{
-  if(!supabase){ showToast('Configuração do Supabase pendente.'); return; }
+  if(!sb){ showToast('Configuração do Supabase pendente.'); return; }
   const mode = document.getElementById('loginBtn').dataset.mode || 'entrar';
   const email = document.getElementById('loginEmail').value.trim();
   const senha = document.getElementById('loginSenha').value;
@@ -428,27 +428,27 @@ document.getElementById('loginBtn').addEventListener('click', async ()=>{
   if(mode === 'criar'){
     const nome = document.getElementById('loginNome').value.trim();
     if(!nome){ showToast('Preencha seu nome.'); return; }
-    const { data, error } = await supabase.auth.signUp({ email, password: senha });
+    const { data, error } = await sb.auth.signUp({ email, password: senha });
     if(error){ showToast(error.message); return; }
     if(data.user){
-      const { error: perr } = await supabase.from('profiles').insert({ id: data.user.id, nome });
+      const { error: perr } = await sb.from('profiles').insert({ id: data.user.id, nome });
       if(perr){ showToast('Conta criada, mas houve um erro ao salvar o perfil: ' + perr.message); return; }
     }
     showToast('Conta criada! Se pedir confirmação de e-mail, confira sua caixa de entrada.');
     if(data.session){ await postLogin(); }
   } else {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password: senha });
+    const { data, error } = await sb.auth.signInWithPassword({ email, password: senha });
     if(error){ showToast('E-mail ou senha incorretos.'); return; }
     await postLogin();
   }
 });
 document.getElementById('loginGoogleBtn').addEventListener('click', async ()=>{
-  if(!supabase){ showToast('Configuração do Supabase pendente.'); return; }
-  const { error } = await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.href } });
+  if(!sb){ showToast('Configuração do Supabase pendente.'); return; }
+  const { error } = await sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.href } });
   if(error){ showToast('Erro ao conectar com Google: '+error.message); }
 });
 document.getElementById('trocarBtn').addEventListener('click', async ()=>{
-  await supabase.auth.signOut();
+  await sb.auth.signOut();
   CURRENT_PROFILE = null;
   document.getElementById('loginScreen').style.display = 'block';
   document.getElementById('whoamiBox').style.display = 'none';
@@ -459,14 +459,14 @@ document.getElementById('trocarBtn').addEventListener('click', async ()=>{
 async function postLogin(){
   document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('loadingScreen').style.display = 'block';
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user } } = await sb.auth.getUser();
   if(!user){ document.getElementById('loadingScreen').style.display='none'; return; }
-  let { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+  let { data: profile } = await sb.from('profiles').select('*').eq('id', user.id).single();
   if(!profile){
     // profile row missing (edge case) — create as staff
     const nome = user.email.split('@')[0];
-    await supabase.from('profiles').insert({ id: user.id, nome });
-    const r = await supabase.from('profiles').select('*').eq('id', user.id).single();
+    await sb.from('profiles').insert({ id: user.id, nome });
+    const r = await sb.from('profiles').select('*').eq('id', user.id).single();
     profile = r.data;
   }
   CURRENT_PROFILE = profile;
@@ -485,8 +485,8 @@ async function postLogin(){
 
 // Try to resume session on page load
 (async function init(){
-  if(!supabase) return;
-  const { data: { session } } = await supabase.auth.getSession();
+  if(!sb) return;
+  const { data: { session } } = await sb.auth.getSession();
   if(session){ await postLogin(); }
 })();
 
@@ -495,14 +495,14 @@ async function postLogin(){
 // ============================================================
 async function loadAll(){
   const [leadsR, diariasR, ativosR, contatosR, templatesR, rotinasR, configR, profilesR] = await Promise.all([
-    supabase.from('leads').select('*').is('deleted_at', null).order('created_at', {ascending:false}),
-    supabase.from('diarias').select('*').order('data', {ascending:false}),
-    supabase.from('ativos').select('*'),
-    supabase.from('contatos').select('*'),
-    supabase.from('templates').select('*'),
-    supabase.from('rotinas').select('*'),
-    supabase.from('config').select('*').eq('id',1).single(),
-    supabase.from('profiles').select('*'),
+    sb.from('leads').select('*').is('deleted_at', null).order('created_at', {ascending:false}),
+    sb.from('diarias').select('*').order('data', {ascending:false}),
+    sb.from('ativos').select('*'),
+    sb.from('contatos').select('*'),
+    sb.from('templates').select('*'),
+    sb.from('rotinas').select('*'),
+    sb.from('config').select('*').eq('id',1).single(),
+    sb.from('profiles').select('*'),
   ]);
   LEADS = leadsR.data || [];
   DIARIAS = diariasR.data || [];
@@ -520,14 +520,14 @@ async function loadAll(){
       { categoria:'Confirmação de consulta', titulo:'Confirmar consulta de amanhã', texto:"Oi {nome}! Passando pra confirmar sua consulta na Maison D'Or amanhã. Podemos confirmar seu horário?", criado_por:'sistema' },
       { categoria:'Reativação', titulo:'Reativação — sumiu do tratamento', texto:"Oi {nome}, tudo bem? Notamos que faz um tempo que não nos vemos por aqui na Maison D'Or. Gostaria de retomar seu acompanhamento?", criado_por:'sistema' },
     ];
-    const { data } = await supabase.from('templates').insert(seeds).select();
+    const { data } = await sb.from('templates').insert(seeds).select();
     TEMPLATES = data || [];
   }
 
   if(CURRENT_PROFILE.role === 'owner'){
-    const iaR = await supabase.from('ia_prompt').select('*').eq('id',1).single();
+    const iaR = await sb.from('ia_prompt').select('*').eq('id',1).single();
     IA_PROMPT = iaR.data ? iaR.data.texto : '';
-    const trashR = await supabase.from('leads').select('*').not('deleted_at','is', null);
+    const trashR = await sb.from('leads').select('*').not('deleted_at','is', null);
     window.TRASH = trashR.data || [];
   }
 }
@@ -593,11 +593,11 @@ const CHECKLIST_TASKS = [
 ];
 let CHECKLIST_STATE = {};
 async function getChecklistState(){
-  const { data } = await supabase.from('checklist_state').select('*').eq('data', todayISO()).maybeSingle();
+  const { data } = await sb.from('checklist_state').select('*').eq('data', todayISO()).maybeSingle();
   return data ? data.state : {};
 }
 async function setChecklistState(state){
-  await supabase.from('checklist_state').upsert({ data: todayISO(), state });
+  await sb.from('checklist_state').upsert({ data: todayISO(), state });
 }
 async function renderChecklist(){
   const meses = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
@@ -633,7 +633,7 @@ async function renderChecklist(){
       <div class="lead-actions">${waButtonHTML(l.telefone)}<button class="btn small" data-contato="${l.id}">Marcar contato feito hoje</button><button class="btn small secondary" data-abrir="${l.id}">Abrir lead</button></div>
     </div>`).join('') : '<div class="empty">Nenhum follow-up pendente. 🎉</div>';
   document.querySelectorAll('[data-contato]').forEach(btn=>{
-    btn.addEventListener('click', async ()=>{ await supabase.from('leads').update({ data_ultimo_contato: todayISO() }).eq('id', btn.dataset.contato); await loadAll(); showToast('Contato registrado.'); renderChecklist(); });
+    btn.addEventListener('click', async ()=>{ await sb.from('leads').update({ data_ultimo_contato: todayISO() }).eq('id', btn.dataset.contato); await loadAll(); showToast('Contato registrado.'); renderChecklist(); });
   });
   document.querySelectorAll('[data-abrir]').forEach(btn=>{ btn.addEventListener('click', ()=>{ openLeadId = btn.dataset.abrir; switchTab('leads'); }); });
 
@@ -642,14 +642,14 @@ async function renderChecklist(){
     <div class="lead-card" style="margin-bottom:8px;"><div class="lead-top"><div><div class="lead-name">${a.nome}</div><div class="lead-meta">Última visita: ${fmtDate(a.ultima_visita)} · contato previsto: ${fmtDate(a.proximo_contato)}</div></div></div>
     <div class="lead-actions">${waButtonHTML(a.telefone)}<button class="btn small" data-ativo-contatado="${a.id}">Marcar contatado</button></div></div>`).join('') : '<div class="empty">Nenhum paciente vencido hoje.</div>';
   document.querySelectorAll('[data-ativo-contatado]').forEach(btn=>{
-    btn.addEventListener('click', async ()=>{ await supabase.from('ativos').update({ status:'Contatado' }).eq('id', btn.dataset.ativoContatado); await loadAll(); showToast('Marcado.'); renderChecklist(); });
+    btn.addEventListener('click', async ()=>{ await sb.from('ativos').update({ status:'Contatado' }).eq('id', btn.dataset.ativoContatado); await loadAll(); showToast('Marcado.'); renderChecklist(); });
   });
 }
 function setProgress(id, current, goal){ const pct = goal>0 ? Math.min(100, Math.round((current/goal)*100)) : 0; document.getElementById('pl-'+id).textContent = `${current} / ${goal||0}`; document.getElementById('pb-'+id).style.width = pct+'%'; }
 
 let HOJE_PACIENTES = [];
-async function loadHojePacientes(){ const { data } = await supabase.from('confirmacoes_dia').select('*').eq('data', todayISO()).maybeSingle(); HOJE_PACIENTES = data ? data.pacientes : []; }
-async function saveHojePacientes(){ await supabase.from('confirmacoes_dia').upsert({ data: todayISO(), pacientes: HOJE_PACIENTES }); }
+async function loadHojePacientes(){ const { data } = await sb.from('confirmacoes_dia').select('*').eq('data', todayISO()).maybeSingle(); HOJE_PACIENTES = data ? data.pacientes : []; }
+async function saveHojePacientes(){ await sb.from('confirmacoes_dia').upsert({ data: todayISO(), pacientes: HOJE_PACIENTES }); }
 async function renderHojePacientes(){
   await loadHojePacientes();
   const box = document.getElementById('hojePacientesList');
@@ -680,7 +680,7 @@ document.getElementById('salvarLeadBtn').addEventListener('click', async ()=>{
     atividades: [{ data: todayISO(), tipo:'Criação', texto:'Lead criado', por: CURRENT_PROFILE.nome }],
     created_by: CURRENT_PROFILE.nome,
   };
-  const { error } = await supabase.from('leads').insert(lead);
+  const { error } = await sb.from('leads').insert(lead);
   if(error){ showToast('Erro ao salvar: '+error.message); return; }
   showToast('Lead salvo!');
   ['nLead_nome','nLead_telefone','nLead_procedimento','nLead_obs'].forEach(id=> document.getElementById(id).value='');
@@ -768,7 +768,7 @@ function bindLeadDetailEvents(id){
         atividades = [...atividades, { data: todayISO(), tipo:'Mudança de etapa', texto:`De "${oldStatus||'Novo'}" para "${patch.status}"`, por: CURRENT_PROFILE.nome }];
       }
       patch.atividades = atividades;
-      const { error } = await supabase.from('leads').update(patch).eq('id', id);
+      const { error } = await sb.from('leads').update(patch).eq('id', id);
       if(error){ showToast('Erro: '+error.message); return; }
       showToast('Alterações salvas.');
       await loadAll(); renderLeads();
@@ -778,7 +778,7 @@ function bindLeadDetailEvents(id){
   detail.querySelectorAll('[data-action="delete"]').forEach(btn=>{
     btn.addEventListener('click', async ()=>{
       if(!confirm('Mover este lead para a lixeira?')) return;
-      await supabase.from('leads').update({ deleted_at: new Date().toISOString(), deleted_by: CURRENT_PROFILE.nome }).eq('id', id);
+      await sb.from('leads').update({ deleted_at: new Date().toISOString(), deleted_by: CURRENT_PROFILE.nome }).eq('id', id);
       openLeadId = null; showToast('Lead movido para a lixeira.');
       await loadAll(); renderLeads();
     });
@@ -788,7 +788,7 @@ function bindLeadDetailEvents(id){
     detail.querySelectorAll(`[data-action="${action}"]`).forEach(btn=>{
       btn.addEventListener('click', async ()=>{
         const atividades = [...(lead.atividades||[]), { data: todayISO(), tipo: logMap[action], texto: logMap[action], por: CURRENT_PROFILE.nome }];
-        await supabase.from('leads').update({ atividades, data_ultimo_contato: todayISO() }).eq('id', id);
+        await sb.from('leads').update({ atividades, data_ultimo_contato: todayISO() }).eq('id', id);
         showToast('Registrado.'); await loadAll(); renderLeads();
       });
     });
@@ -801,7 +801,7 @@ function bindLeadDetailEvents(id){
 document.getElementById('salvarAtivoBtn').addEventListener('click', async ()=>{
   const nome = document.getElementById('nAtivo_nome').value.trim();
   if(!nome){ showToast('Preencha o nome.'); return; }
-  await supabase.from('ativos').insert({
+  await sb.from('ativos').insert({
     nome, telefone: document.getElementById('nAtivo_telefone').value.trim(),
     ultima_visita: document.getElementById('nAtivo_ultimaVisita').value || null,
     proximo_contato: document.getElementById('nAtivo_proximoContato').value || null,
@@ -819,8 +819,8 @@ function renderAtivos(){
     <div class="lead-card"><div class="lead-top"><div><div class="lead-name">${a.nome}</div><div class="lead-meta">${a.telefone||'sem telefone'} · última visita: ${fmtDate(a.ultima_visita)} · próximo contato: ${fmtDate(a.proximo_contato)}</div>${a.obs?`<div class="lead-meta">${a.obs}</div>`:''}</div>
     <span class="badge ${a.status==='Contatado'?'compareceu':(a.status==='Reagendado'?'fechado':(a.status==='Perdido'?'perdido':'novo'))}">${a.status}</span></div>
     <div class="lead-actions"><select data-ativo-status="${a.id}" style="width:auto; padding:7px 10px; font-size:13px;"><option value="Ativo" ${a.status==='Ativo'?'selected':''}>Ativo</option><option value="Contatado" ${a.status==='Contatado'?'selected':''}>Contatado</option><option value="Reagendado" ${a.status==='Reagendado'?'selected':''}>Reagendado</option><option value="Perdido" ${a.status==='Perdido'?'selected':''}>Perdido</option></select>${waButtonHTML(a.telefone)}<button class="btn small danger" data-ativo-del="${a.id}">Remover</button></div></div>`).join('') : '<div class="empty">Nenhum paciente na lista.</div>';
-  box.querySelectorAll('[data-ativo-status]').forEach(sel=>{ sel.addEventListener('change', async ()=>{ await supabase.from('ativos').update({status:sel.value}).eq('id', sel.dataset.ativoStatus); await loadAll(); showToast('Atualizado.'); renderAtivos(); }); });
-  box.querySelectorAll('[data-ativo-del]').forEach(btn=>{ btn.addEventListener('click', async ()=>{ if(!confirm('Remover?')) return; await supabase.from('ativos').delete().eq('id', btn.dataset.ativoDel); await loadAll(); renderAtivos(); }); });
+  box.querySelectorAll('[data-ativo-status]').forEach(sel=>{ sel.addEventListener('change', async ()=>{ await sb.from('ativos').update({status:sel.value}).eq('id', sel.dataset.ativoStatus); await loadAll(); showToast('Atualizado.'); renderAtivos(); }); });
+  box.querySelectorAll('[data-ativo-del]').forEach(btn=>{ btn.addEventListener('click', async ()=>{ if(!confirm('Remover?')) return; await sb.from('ativos').delete().eq('id', btn.dataset.ativoDel); await loadAll(); renderAtivos(); }); });
 }
 
 // ============================================================
@@ -831,7 +831,7 @@ document.getElementById('salvarContatoBtn').addEventListener('click', async ()=>
   const nome = document.getElementById('nContato_nome').value.trim();
   const telefone = document.getElementById('nContato_telefone').value.trim();
   if(!nome || !telefone){ showToast('Preencha nome e telefone.'); return; }
-  await supabase.from('contatos').insert({
+  await sb.from('contatos').insert({
     nome, telefone, cidade: document.getElementById('nContato_cidade').value.trim(),
     estado: document.getElementById('nContato_estado').value.trim().toUpperCase(),
     categoria: document.getElementById('nContato_categoria').value, origem:'Manual', adicionado_por: CURRENT_PROFILE.nome,
@@ -851,7 +851,7 @@ function renderContatos(){
   if(contatoFilterCategoria!=='todos') list = list.filter(c=>c.categoria===contatoFilterCategoria);
   const box = document.getElementById('contatosList');
   box.innerHTML = list.length ? list.map(c=>`<div class="lead-card"><div class="lead-top"><div><div class="lead-name">${c.nome}</div><div class="lead-meta">${c.telefone||'sem telefone'} ${c.cidade?(' · '+c.cidade):''} ${c.estado?(' - '+c.estado):''} · ${c.origem||'—'} ${c.categoria?(' · '+c.categoria):''}</div></div></div><div class="lead-actions">${waButtonHTML(c.telefone)}${templateSelectHTML(c.telefone, c.nome)}<button class="btn small danger" data-contato-del="${c.id}">Remover</button></div></div>`).join('') : '<div class="empty">Nenhum contato ainda.</div>';
-  box.querySelectorAll('[data-contato-del]').forEach(btn=>{ btn.addEventListener('click', async ()=>{ if(!confirm('Remover?')) return; await supabase.from('contatos').delete().eq('id', btn.dataset.contatoDel); await loadAll(); renderContatos(); }); });
+  box.querySelectorAll('[data-contato-del]').forEach(btn=>{ btn.addEventListener('click', async ()=>{ if(!confirm('Remover?')) return; await sb.from('contatos').delete().eq('id', btn.dataset.contatoDel); await loadAll(); renderContatos(); }); });
 }
 function parseCSVContacts(text){
   const lines = text.split(/\r?\n/).filter(l=>l.trim().length);
@@ -885,7 +885,7 @@ document.getElementById('contatosFileInput').addEventListener('change', (e)=>{
     const text = ev.target.result;
     const imported = (file.name.toLowerCase().endsWith('.vcf') || /BEGIN:VCARD/i.test(text)) ? parseVCardContacts(text) : parseCSVContacts(text);
     if(!imported.length){ showToast('Não consegui ler contatos desse arquivo.'); return; }
-    const { error } = await supabase.from('contatos').insert(imported);
+    const { error } = await sb.from('contatos').insert(imported);
     if(error){ showToast('Erro ao importar: '+error.message); return; }
     showToast(`${imported.length} contato(s) importado(s).`);
     await loadAll(); renderContatos();
@@ -902,7 +902,7 @@ document.getElementById('salvarTplBtn').addEventListener('click', async ()=>{
   const titulo = document.getElementById('nTpl_titulo').value.trim();
   const texto = document.getElementById('nTpl_texto').value.trim();
   if(!titulo || !texto){ showToast('Preencha título e texto.'); return; }
-  await supabase.from('templates').insert({ categoria: document.getElementById('nTpl_categoria').value, titulo, texto, criado_por: CURRENT_PROFILE.nome });
+  await sb.from('templates').insert({ categoria: document.getElementById('nTpl_categoria').value, titulo, texto, criado_por: CURRENT_PROFILE.nome });
   document.getElementById('nTpl_titulo').value=''; document.getElementById('nTpl_texto').value='';
   showToast('Modelo salvo.'); await loadAll(); renderTemplates();
 });
@@ -914,7 +914,7 @@ function renderTemplates(){
   const box = document.getElementById('templatesList');
   box.innerHTML = list.length ? list.map(t=>`<div class="lead-card"><div class="lead-top"><div><div class="lead-name">${t.titulo}</div><div class="lead-meta">${t.categoria}</div></div></div><div style="font-size:14px; margin-top:8px; white-space:pre-wrap;">${t.texto}</div><div class="lead-actions"><button class="btn small secondary" data-tpl-copy="${t.id}">Copiar texto</button><button class="btn small danger" data-tpl-del="${t.id}">Excluir</button></div></div>`).join('') : '<div class="empty">Nenhum modelo ainda.</div>';
   box.querySelectorAll('[data-tpl-copy]').forEach(btn=>{ btn.addEventListener('click', ()=>{ const t=TEMPLATES.find(x=>x.id===btn.dataset.tplCopy); navigator.clipboard?.writeText(t.texto).then(()=>showToast('Copiado.')).catch(()=>showToast('Não copiou automaticamente.')); }); });
-  box.querySelectorAll('[data-tpl-del]').forEach(btn=>{ btn.addEventListener('click', async ()=>{ if(!confirm('Excluir?')) return; await supabase.from('templates').delete().eq('id', btn.dataset.tplDel); await loadAll(); renderTemplates(); }); });
+  box.querySelectorAll('[data-tpl-del]').forEach(btn=>{ btn.addEventListener('click', async ()=>{ if(!confirm('Excluir?')) return; await sb.from('templates').delete().eq('id', btn.dataset.tplDel); await loadAll(); renderTemplates(); }); });
 }
 
 // ============================================================
@@ -923,7 +923,7 @@ function renderTemplates(){
 document.getElementById('salvarRotinaBtn').addEventListener('click', async ()=>{
   const titulo = document.getElementById('nRot_titulo').value.trim();
   if(!titulo){ showToast('Preencha o título.'); return; }
-  const { error } = await supabase.from('rotinas').insert({ titulo, gatilho: document.getElementById('nRot_gatilho').value.trim(), acao: document.getElementById('nRot_acao').value.trim(), ativo:true, criado_por: CURRENT_PROFILE.nome });
+  const { error } = await sb.from('rotinas').insert({ titulo, gatilho: document.getElementById('nRot_gatilho').value.trim(), acao: document.getElementById('nRot_acao').value.trim(), ativo:true, criado_por: CURRENT_PROFILE.nome });
   if(error){ showToast('Erro: '+error.message); return; }
   ['nRot_titulo','nRot_gatilho','nRot_acao'].forEach(id=> document.getElementById(id).value='');
   showToast('Rotina salva.'); await loadAll(); renderRotinas();
@@ -932,8 +932,8 @@ function renderRotinas(){
   document.getElementById('rotinaFormCard').style.display = (CURRENT_PROFILE.role==='owner') ? 'block' : 'none';
   const box = document.getElementById('rotinasList');
   box.innerHTML = ROTINAS.length ? ROTINAS.map(r=>`<div class="lead-card"><div class="lead-top"><div><div class="lead-name">${r.titulo}</div><div class="lead-meta"><strong>Quando:</strong> ${r.gatilho||'—'}</div><div class="lead-meta"><strong>Fazer:</strong> ${r.acao||'—'}</div></div><span class="badge ${r.ativo?'compareceu':'perdido'}">${r.ativo?'Ativa':'Pausada'}</span></div>${CURRENT_PROFILE.role==='owner'?`<div class="lead-actions"><button class="btn small secondary" data-rot-toggle="${r.id}">${r.ativo?'Pausar':'Ativar'}</button><button class="btn small danger" data-rot-del="${r.id}">Excluir</button></div>`:''}</div>`).join('') : '<div class="empty">Nenhuma rotina cadastrada ainda.</div>';
-  box.querySelectorAll('[data-rot-toggle]').forEach(btn=>{ btn.addEventListener('click', async ()=>{ const r=ROTINAS.find(x=>x.id===btn.dataset.rotToggle); await supabase.from('rotinas').update({ativo:!r.ativo}).eq('id', r.id); await loadAll(); renderRotinas(); }); });
-  box.querySelectorAll('[data-rot-del]').forEach(btn=>{ btn.addEventListener('click', async ()=>{ if(!confirm('Excluir?')) return; await supabase.from('rotinas').delete().eq('id', btn.dataset.rotDel); await loadAll(); renderRotinas(); }); });
+  box.querySelectorAll('[data-rot-toggle]').forEach(btn=>{ btn.addEventListener('click', async ()=>{ const r=ROTINAS.find(x=>x.id===btn.dataset.rotToggle); await sb.from('rotinas').update({ativo:!r.ativo}).eq('id', r.id); await loadAll(); renderRotinas(); }); });
+  box.querySelectorAll('[data-rot-del]').forEach(btn=>{ btn.addEventListener('click', async ()=>{ if(!confirm('Excluir?')) return; await sb.from('rotinas').delete().eq('id', btn.dataset.rotDel); await loadAll(); renderRotinas(); }); });
 }
 
 // ============================================================
@@ -973,7 +973,7 @@ Sempre termine com um próximo passo claro.`;
 function renderIa(){ document.getElementById('iaPromptText').value = IA_PROMPT || DEFAULT_IA_PROMPT; }
 document.getElementById('salvarIaBtn').addEventListener('click', async ()=>{
   IA_PROMPT = document.getElementById('iaPromptText').value;
-  await supabase.from('ia_prompt').update({ texto: IA_PROMPT }).eq('id',1);
+  await sb.from('ia_prompt').update({ texto: IA_PROMPT }).eq('id',1);
   showToast('Rascunho salvo.');
 });
 document.getElementById('resetIaBtn').addEventListener('click', ()=>{
@@ -994,7 +994,7 @@ function renderEquipe(){
     btn.addEventListener('click', async ()=>{
       const novoRole = btn.dataset.curRole === 'owner' ? 'staff' : 'owner';
       if(!confirm(`Confirma mudar esse acesso para "${novoRole==='owner'?'proprietário':'equipe'}"?`)) return;
-      await supabase.from('profiles').update({ role: novoRole }).eq('id', btn.dataset.toggleRole);
+      await sb.from('profiles').update({ role: novoRole }).eq('id', btn.dataset.toggleRole);
       await loadAll(); renderEquipe();
     });
   });
@@ -1006,14 +1006,14 @@ function renderEquipe(){
 document.getElementById('nDiaria_data').value = todayISO();
 document.getElementById('salvarDiariaBtn').addEventListener('click', async ()=>{
   const data = document.getElementById('nDiaria_data').value || todayISO();
-  await supabase.from('diarias').insert({ data, entrada: document.getElementById('nDiaria_entrada').value, saida: document.getElementById('nDiaria_saida').value, registrado_por: CURRENT_PROFILE.nome });
+  await sb.from('diarias').insert({ data, entrada: document.getElementById('nDiaria_entrada').value, saida: document.getElementById('nDiaria_saida').value, registrado_por: CURRENT_PROFILE.nome });
   showToast('Diária registrada.'); await loadAll(); renderFechamento();
 });
 function renderFechamento(){
   const diariasMes = DIARIAS.filter(d => isThisMonth(d.data)).sort((a,b)=> a.data.localeCompare(b.data));
   const tbl = document.getElementById('diariasTable');
   tbl.innerHTML = diariasMes.length ? `<table class="simple"><tr><th>Data</th><th>Entrada</th><th>Saída</th><th>Por</th><th></th></tr>${diariasMes.map(d=>`<tr><td>${fmtDate(d.data)}</td><td>${d.entrada||'—'}</td><td>${d.saida||'—'}</td><td>${d.registrado_por||'—'}</td><td><button class="btn small secondary" data-del="${d.id}">Excluir</button></td></tr>`).join('')}</table>` : '<div class="empty">Nenhuma diária este mês.</div>';
-  tbl.querySelectorAll('[data-del]').forEach(btn=>{ btn.addEventListener('click', async ()=>{ await supabase.from('diarias').delete().eq('id', btn.dataset.del); await loadAll(); renderFechamento(); }); });
+  tbl.querySelectorAll('[data-del]').forEach(btn=>{ btn.addEventListener('click', async ()=>{ await sb.from('diarias').delete().eq('id', btn.dataset.del); await loadAll(); renderFechamento(); }); });
 
   const leadsMes = LEADS.filter(l => isThisMonth(l.data));
   const compareceram = leadsMes.filter(l=>l.compareceu==='Sim');
@@ -1056,7 +1056,7 @@ document.getElementById('salvarConfigBtn').addEventListener('click', async ()=>{
     bonus: Number(document.getElementById('cfg_bonus').value)||0,
     meta_ag_dia: Number(document.getElementById('cfg_metaAgDia').value)||0, meta_ag_semana: Number(document.getElementById('cfg_metaAgSemana').value)||0, meta_vd_mes: Number(document.getElementById('cfg_metaVdMes').value)||0,
   };
-  const { error } = await supabase.from('config').update(patch).eq('id',1);
+  const { error } = await sb.from('config').update(patch).eq('id',1);
   if(error){ showToast('Erro: '+error.message); return; }
   showToast('Configurações salvas.'); await loadAll(); renderAll();
 });
@@ -1064,8 +1064,8 @@ function renderTrash(){
   const box = document.getElementById('trashList');
   const trash = window.TRASH || [];
   box.innerHTML = trash.length ? trash.map(l=>`<div class="lead-card"><div class="lead-top"><div><div class="lead-name">${l.nome}</div><div class="lead-meta">excluído por ${l.deleted_by||'—'}</div></div></div><div class="lead-actions"><button class="btn small" data-restore="${l.id}">Restaurar</button><button class="btn small danger" data-purge="${l.id}">Excluir definitivamente</button></div></div>`).join('') : '<div class="empty">Lixeira vazia.</div>';
-  box.querySelectorAll('[data-restore]').forEach(btn=>{ btn.addEventListener('click', async ()=>{ await supabase.from('leads').update({deleted_at:null, deleted_by:null}).eq('id', btn.dataset.restore); showToast('Restaurado.'); await loadAll(); renderTrash(); }); });
-  box.querySelectorAll('[data-purge]').forEach(btn=>{ btn.addEventListener('click', async ()=>{ if(!confirm('Excluir definitivamente?')) return; await supabase.from('leads').delete().eq('id', btn.dataset.purge); await loadAll(); renderTrash(); }); });
+  box.querySelectorAll('[data-restore]').forEach(btn=>{ btn.addEventListener('click', async ()=>{ await sb.from('leads').update({deleted_at:null, deleted_by:null}).eq('id', btn.dataset.restore); showToast('Restaurado.'); await loadAll(); renderTrash(); }); });
+  box.querySelectorAll('[data-purge]').forEach(btn=>{ btn.addEventListener('click', async ()=>{ if(!confirm('Excluir definitivamente?')) return; await sb.from('leads').delete().eq('id', btn.dataset.purge); await loadAll(); renderTrash(); }); });
 }
 document.getElementById('baixarBackupBtn').addEventListener('click', ()=>{
   const snap = { leads:LEADS, diarias:DIARIAS, ativos:ATIVOS, contatos:CONTATOS, templates:TEMPLATES, rotinas:ROTINAS, config:CONFIG, exportedAt:new Date().toISOString() };
