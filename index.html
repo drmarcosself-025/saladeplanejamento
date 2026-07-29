@@ -179,6 +179,7 @@
   <div class="view" id="view-checklist">
     <h2 class="page-title">Checklist de hoje</h2>
     <p class="page-sub" id="checklistDateLabel">—</p>
+    <div class="grid-stats" id="checklistStats"></div>
     <div class="card">
       <div class="section-label">Metas</div>
       <div class="progress-wrap"><div class="progress-label"><span>Agendamentos hoje</span><span id="pl-ag-dia">0 / 0</span></div><div class="progress-bar"><div id="pb-ag-dia" style="width:0%"></div></div></div>
@@ -515,19 +516,19 @@ async function loadAll(){
 
   if(!TEMPLATES.length){
     const seeds = [
-      { categoria:'Primeiro contato', titulo:'Opt-in — lista fria / sem relação prévia', texto:"Oi {nome}, tudo bem? Aqui é do Consultório do Dr. Marcos Paulo Araújo de Moraes (CRO 10828), em Vila Velha - ES. Você toparia receber, de vez em quando, informações sobre saúde bucal e estética facial? Se não tiver interesse, sem problema. 🙂", criado_por:'sistema' },
-      { categoria:'Primeiro contato', titulo:'Boas-vindas lead novo', texto:"Oi {nome}! Aqui é do Consultório do Dr. Marcos Paulo, em Vila Velha - ES. Vi seu interesse em nossos tratamentos — posso te ajudar a agendar uma avaliação?", criado_por:'sistema' },
-      { categoria:'Primeiro contato', titulo:'Indicação de paciente', texto:"Oi {nome}, tudo bem? Aqui é do Consultório do Dr. Marcos Paulo, em Vila Velha - ES. Você foi indicado(a) por um paciente nosso — que bom! Posso te contar um pouco sobre nossos tratamentos e já ver um horário pra uma avaliação?", criado_por:'sistema' },
-      { categoria:'Confirmação de consulta', titulo:'Confirmar consulta de amanhã', texto:"Oi {nome}! Aqui é do Consultório do Dr. Marcos Paulo. Passando pra confirmar sua consulta de amanhã. Podemos confirmar seu horário?", criado_por:'sistema' },
-      { categoria:'Confirmação de consulta', titulo:'Confirmar consulta — hoje', texto:"Oi {nome}! Aqui é do Consultório do Dr. Marcos Paulo. Só confirmando: sua consulta é hoje. Consegue vir no horário combinado?", criado_por:'sistema' },
-      { categoria:'Confirmação de consulta', titulo:'Lembrete — 2 dias antes', texto:"Oi {nome}, tudo bem? Passando pra lembrar que sua consulta no Consultório do Dr. Marcos Paulo está marcada pra depois de amanhã. Qualquer imprevisto, me avisa por aqui. 🙂", criado_por:'sistema' },
-      { categoria:'Reagendamento', titulo:'Pedido de reagendamento', texto:"Oi {nome}! Sem problema, vamos reagendar. Me diz dois ou três horários que funcionam melhor pra você que eu já verifico a agenda do Consultório do Dr. Marcos Paulo.", criado_por:'sistema' },
-      { categoria:'Reagendamento', titulo:'Reagendamento por falta (no-show)', texto:"Oi {nome}, tudo bem? Sentimos sua falta na consulta de hoje no Consultório do Dr. Marcos Paulo. Quer que eu já busque um novo horário pra você?", criado_por:'sistema' },
-      { categoria:'Orçamento / follow-up', titulo:'Envio de orçamento', texto:"Oi {nome}! Segue o orçamento combinado na sua avaliação no Consultório do Dr. Marcos Paulo. Qualquer dúvida sobre valores ou formas de pagamento, é só me chamar por aqui.", criado_por:'sistema' },
+      { categoria:'Primeiro contato', titulo:'Opt-in — lista fria / sem relação prévia', texto:"Oi {nome}, tudo bem? Aqui é do Consultório Odontológico do Dr. Marcos Paulo Araújo de Moraes (CRO 10828), em Vila Velha - ES. Você toparia receber, de vez em quando, informações sobre saúde bucal e estética facial? Se não tiver interesse, sem problema. 🙂", criado_por:'sistema' },
+      { categoria:'Primeiro contato', titulo:'Boas-vindas lead novo', texto:"Oi {nome}! Aqui é do Consultório Odontológico do Dr. Marcos Paulo, em Vila Velha - ES. Vi seu interesse em nossos tratamentos — posso te ajudar a agendar uma avaliação?", criado_por:'sistema' },
+      { categoria:'Primeiro contato', titulo:'Indicação de paciente', texto:"Oi {nome}, tudo bem? Aqui é do Consultório Odontológico do Dr. Marcos Paulo, em Vila Velha - ES. Você foi indicado(a) por um paciente nosso — que bom! Posso te contar um pouco sobre nossos tratamentos e já ver um horário pra uma avaliação?", criado_por:'sistema' },
+      { categoria:'Confirmação de consulta', titulo:'Confirmar consulta de amanhã', texto:"Oi {nome}! Aqui é do Consultório Odontológico do Dr. Marcos Paulo. Passando pra confirmar sua consulta de amanhã. Podemos confirmar seu horário?", criado_por:'sistema' },
+      { categoria:'Confirmação de consulta', titulo:'Confirmar consulta — hoje', texto:"Oi {nome}! Aqui é do Consultório Odontológico do Dr. Marcos Paulo. Só confirmando: sua consulta é hoje. Consegue vir no horário combinado?", criado_por:'sistema' },
+      { categoria:'Confirmação de consulta', titulo:'Lembrete — 2 dias antes', texto:"Oi {nome}, tudo bem? Passando pra lembrar que sua consulta no Consultório Odontológico do Dr. Marcos Paulo está marcada pra depois de amanhã. Qualquer imprevisto, me avisa por aqui. 🙂", criado_por:'sistema' },
+      { categoria:'Reagendamento', titulo:'Pedido de reagendamento', texto:"Oi {nome}! Sem problema, vamos reagendar. Me diz dois ou três horários que funcionam melhor pra você que eu já verifico a agenda do Consultório Odontológico do Dr. Marcos Paulo.", criado_por:'sistema' },
+      { categoria:'Reagendamento', titulo:'Reagendamento por falta (no-show)', texto:"Oi {nome}, tudo bem? Sentimos sua falta na consulta de hoje no Consultório Odontológico do Dr. Marcos Paulo. Quer que eu já busque um novo horário pra você?", criado_por:'sistema' },
+      { categoria:'Orçamento / follow-up', titulo:'Envio de orçamento', texto:"Oi {nome}! Segue o orçamento combinado na sua avaliação no Consultório Odontológico do Dr. Marcos Paulo. Qualquer dúvida sobre valores ou formas de pagamento, é só me chamar por aqui.", criado_por:'sistema' },
       { categoria:'Orçamento / follow-up', titulo:'Follow-up pós orçamento', texto:"Oi {nome}, tudo bem? Passando pra saber se ficou alguma dúvida sobre o orçamento que conversamos. Posso te ajudar com mais alguma informação?", criado_por:'sistema' },
-      { categoria:'Reativação', titulo:'Reativação — sumiu do tratamento', texto:"Oi {nome}, tudo bem? Notamos que faz um tempo que você não aparece por aqui no Consultório do Dr. Marcos Paulo. Gostaria de retomar seu acompanhamento?", criado_por:'sistema' },
-      { categoria:'Reativação', titulo:'Reativação — check-up de rotina', texto:"Oi {nome}! Já faz um tempinho desde sua última visita ao Consultório do Dr. Marcos Paulo. Que tal agendar um check-up de rotina?", criado_por:'sistema' },
-      { categoria:'Cobrança educada', titulo:'Lembrete de parcela em aberto', texto:"Oi {nome}, tudo bem? Passando com um lembrete: consta em aberto uma parcela referente ao seu tratamento no Consultório do Dr. Marcos Paulo. Qualquer dúvida sobre o pagamento, me chama por aqui que a gente resolve. 🙂", criado_por:'sistema' },
+      { categoria:'Reativação', titulo:'Reativação — sumiu do tratamento', texto:"Oi {nome}, tudo bem? Notamos que faz um tempo que você não aparece por aqui no Consultório Odontológico do Dr. Marcos Paulo. Gostaria de retomar seu acompanhamento?", criado_por:'sistema' },
+      { categoria:'Reativação', titulo:'Reativação — check-up de rotina', texto:"Oi {nome}! Já faz um tempinho desde sua última visita ao Consultório Odontológico do Dr. Marcos Paulo. Que tal agendar um check-up de rotina?", criado_por:'sistema' },
+      { categoria:'Cobrança educada', titulo:'Lembrete de parcela em aberto', texto:"Oi {nome}, tudo bem? Passando com um lembrete: consta em aberto uma parcela referente ao seu tratamento no Consultório Odontológico do Dr. Marcos Paulo. Qualquer dúvida sobre o pagamento, me chama por aqui que a gente resolve. 🙂", criado_por:'sistema' },
     ];
     const { data } = await sb.from('templates').insert(seeds).select();
     TEMPLATES = data || [];
@@ -620,6 +621,17 @@ async function renderChecklist(){
   setProgress('ag-dia', agendamentosHojeCount, CONFIG.meta_ag_dia);
   setProgress('ag-sem', agendamentosSemanaCount, CONFIG.meta_ag_semana);
   setProgress('vd-mes', vendasMesCount, CONFIG.meta_vd_mes);
+
+  const followupCount = LEADS.filter(needsFollowup).length;
+  const reativacaoDueCount = ATIVOS.filter(a => a.status !== 'Reagendado' && a.status !== 'Perdido' && a.proximo_contato && a.proximo_contato <= todayISO()).length;
+  const statCards = [
+    { num: agendamentosHojeCount, lab: 'Agendamentos hoje' },
+    { num: agendamentosSemanaCount, lab: 'Agendamentos na semana' },
+    { num: vendasMesCount, lab: 'Vendas fechadas no mês', gold: true },
+    { num: followupCount, lab: 'Follow-ups pendentes' },
+    { num: reativacaoDueCount, lab: 'Reativações vencidas hoje' },
+  ];
+  document.getElementById('checklistStats').innerHTML = statCards.map(c => `<div class="stat${c.gold?' gold':''}"><span class="num">${c.num}</span><span class="lab">${c.lab}</span></div>`).join('');
 
   const moveCount = {};
   LEADS.forEach(l=>{ (l.atividades||[]).forEach(a=>{ if(a.tipo==='Mudança de etapa' && a.data===todayISO()){ const m=a.texto.match(/para "([^"]+)"/); const stage=m?m[1]:'—'; moveCount[stage]=(moveCount[stage]||0)+1; } }); });
@@ -907,6 +919,8 @@ document.getElementById('contatosFileInput').addEventListener('change', (e)=>{
 // TEMPLATES
 // ============================================================
 let tplFilterCategoria = 'todos';
+let editingTplId = null;
+const TPL_CATEGORIAS = ['Primeiro contato','Confirmação de consulta','Reagendamento','Orçamento / follow-up','Reativação','Cobrança educada','Outro'];
 document.getElementById('salvarTplBtn').addEventListener('click', async ()=>{
   const titulo = document.getElementById('nTpl_titulo').value.trim();
   const texto = document.getElementById('nTpl_texto').value.trim();
@@ -921,9 +935,39 @@ function renderTemplates(){
   document.querySelectorAll('#tplFilters button').forEach(b=>{ b.addEventListener('click', ()=>{ tplFilterCategoria = b.dataset.tf; renderTemplates(); }); });
   let list = [...TEMPLATES]; if(tplFilterCategoria!=='todos') list = list.filter(t=>t.categoria===tplFilterCategoria);
   const box = document.getElementById('templatesList');
-  box.innerHTML = list.length ? list.map(t=>`<div class="lead-card"><div class="lead-top"><div><div class="lead-name">${t.titulo}</div><div class="lead-meta">${t.categoria}</div></div></div><div style="font-size:14px; margin-top:8px; white-space:pre-wrap;">${t.texto}</div><div class="lead-actions"><button class="btn small secondary" data-tpl-copy="${t.id}">Copiar texto</button><button class="btn small danger" data-tpl-del="${t.id}">Excluir</button></div></div>`).join('') : '<div class="empty">Nenhum modelo ainda.</div>';
+  box.innerHTML = list.length ? list.map(t=>{
+    if(editingTplId === t.id){
+      return `<div class="lead-card">
+        <label>Categoria</label>
+        <select data-tpl-edit-categoria>${TPL_CATEGORIAS.map(c=>`<option value="${c}" ${t.categoria===c?'selected':''}>${c}</option>`).join('')}</select>
+        <label>Título</label><input type="text" data-tpl-edit-titulo value="${(t.titulo||'').replace(/"/g,'&quot;')}">
+        <label>Texto da mensagem</label><textarea data-tpl-edit-texto rows="3">${t.texto||''}</textarea>
+        <div class="lead-actions">
+          <button class="btn small" data-tpl-save-edit="${t.id}">Salvar edição</button>
+          <button class="btn small secondary" data-tpl-cancel-edit="${t.id}">Cancelar</button>
+        </div>
+      </div>`;
+    }
+    return `<div class="lead-card"><div class="lead-top"><div><div class="lead-name">${t.titulo}</div><div class="lead-meta">${t.categoria}</div></div></div><div style="font-size:14px; margin-top:8px; white-space:pre-wrap;">${t.texto}</div><div class="lead-actions"><button class="btn small secondary" data-tpl-copy="${t.id}">Copiar texto</button><button class="btn small secondary" data-tpl-edit="${t.id}">Editar</button><button class="btn small danger" data-tpl-del="${t.id}">Excluir</button></div></div>`;
+  }).join('') : '<div class="empty">Nenhum modelo ainda.</div>';
   box.querySelectorAll('[data-tpl-copy]').forEach(btn=>{ btn.addEventListener('click', ()=>{ const t=TEMPLATES.find(x=>x.id===btn.dataset.tplCopy); navigator.clipboard?.writeText(t.texto).then(()=>showToast('Copiado.')).catch(()=>showToast('Não copiou automaticamente.')); }); });
   box.querySelectorAll('[data-tpl-del]').forEach(btn=>{ btn.addEventListener('click', async ()=>{ if(!confirm('Excluir?')) return; await sb.from('templates').delete().eq('id', btn.dataset.tplDel); await loadAll(); renderTemplates(); }); });
+  box.querySelectorAll('[data-tpl-edit]').forEach(btn=>{ btn.addEventListener('click', ()=>{ editingTplId = btn.dataset.tplEdit; renderTemplates(); }); });
+  box.querySelectorAll('[data-tpl-cancel-edit]').forEach(btn=>{ btn.addEventListener('click', ()=>{ editingTplId = null; renderTemplates(); }); });
+  box.querySelectorAll('[data-tpl-save-edit]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const card = btn.closest('.lead-card');
+      const categoria = card.querySelector('[data-tpl-edit-categoria]').value;
+      const titulo = card.querySelector('[data-tpl-edit-titulo]').value.trim();
+      const texto = card.querySelector('[data-tpl-edit-texto]').value.trim();
+      if(!titulo || !texto){ showToast('Preencha título e texto.'); return; }
+      const { error } = await sb.from('templates').update({ categoria, titulo, texto }).eq('id', btn.dataset.tplSaveEdit);
+      if(error){ showToast('Erro: '+error.message); return; }
+      editingTplId = null;
+      showToast('Modelo atualizado.');
+      await loadAll(); renderTemplates();
+    });
+  });
 }
 
 // ============================================================
@@ -949,7 +993,7 @@ function renderRotinas(){
 // IA & PROMPT
 // ============================================================
 const DEFAULT_IA_PROMPT = `VOCÊ É
-O assistente virtual de atendimento do Consultório do Dr. Marcos Paulo Araújo de Moraes (CRO 10828), consultório particular em Vila Velha - ES, especializado em ortodontia, alinhadores invisíveis (Invisalign) e harmonização facial.
+O assistente virtual de atendimento do Consultório Odontológico do Dr. Marcos Paulo Araújo de Moraes (CRO 10828), consultório particular em Vila Velha - ES, especializado em ortodontia, alinhadores invisíveis (Invisalign) e harmonização facial.
 
 TOM DE VOZ
 Sofisticado, acolhedor e direto. Trate o paciente com "você", de forma próxima mas elegante. Frases curtas. No máximo 1 emoji por mensagem, se fizer sentido.
