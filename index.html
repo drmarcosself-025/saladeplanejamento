@@ -1,0 +1,1062 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Maison D'Or — Painel da Recepção</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --navy:#122043; --navy-2:#1b2c56; --gold:#b8863b; --gold-light:#f0ded2;
+    --bg:#f6f4ef; --card:#ffffff; --line:#e2ddd1; --text:#1c2333; --muted:#6b6f7d;
+    --green:#1f7a4d; --green-bg:#e5f4ea; --red:#b23b3b; --red-bg:#fbe9e7;
+    --amber:#a5680f; --amber-bg:#fdf1de; --radius:14px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{ background:var(--bg); color:var(--text); font-family:"Segoe UI", Calibri, Arial, sans-serif; font-size:17px; line-height:1.45; -webkit-font-smoothing:antialiased; }
+  header{ background:var(--navy); color:#fff; padding:16px 18px 14px; position:sticky; top:0; z-index:50; box-shadow:0 2px 10px rgba(0,0,0,0.15); }
+  .header-row{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+  .brand{ display:flex; flex-direction:column; gap:2px; }
+  .brand .name{ font-family:Cambria, Georgia, serif; font-size:22px; font-weight:700; letter-spacing:.3px; }
+  .brand .sub{ font-size:12.5px; color:var(--gold-light); letter-spacing:.6px; text-transform:uppercase; }
+  .whoami{ display:flex; align-items:center; gap:10px; background:var(--navy-2); border-radius:999px; padding:8px 8px 8px 14px; }
+  .whoami span{font-size:14px; color:#cfd6ea;}
+  .btn-troca{ background:var(--gold); color:#1c2333; border:none; border-radius:999px; padding:8px 14px; font-weight:700; font-size:14px; cursor:pointer; }
+  nav.tabs{ display:flex; gap:6px; overflow-x:auto; padding:12px 14px 0; background:var(--navy); }
+  nav.tabs button{ flex:0 0 auto; background:transparent; border:none; color:#aeb6d4; font-size:14.5px; font-weight:600; padding:10px 14px; border-radius:10px 10px 0 0; cursor:pointer; white-space:nowrap; }
+  nav.tabs button.active{ background:var(--bg); color:var(--navy); }
+  main{ max-width:1000px; margin:0 auto; padding:20px 14px 80px; }
+  .view{display:none;} .view.active{display:block;}
+  h2.page-title{ font-family:Cambria, Georgia, serif; font-size:24px; color:var(--navy); margin:4px 0 4px; }
+  p.page-sub{ color:var(--muted); font-size:15px; margin:0 0 18px; }
+  .card{ background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:18px; margin-bottom:16px; }
+  .grid-stats{ display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:18px; }
+  .stat{ background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:16px; }
+  .stat .num{ font-family:Cambria, Georgia, serif; font-size:28px; font-weight:700; color:var(--navy); display:block; }
+  .stat .lab{ font-size:13px; color:var(--muted); margin-top:2px; display:block; }
+  .stat.gold .num{color:var(--gold);}
+  label{ display:block; font-size:14px; font-weight:600; color:var(--navy); margin:12px 0 5px; }
+  input[type=text], input[type=number], input[type=date], input[type=time], input[type=email], input[type=password], select, textarea{
+    width:100%; padding:11px 12px; font-size:16px; border:1.5px solid var(--line); border-radius:10px; background:#fff; color:var(--text); font-family:inherit;
+  }
+  input:focus, select:focus, textarea:focus{ outline:none; border-color:var(--gold); }
+  .row2{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+  .row3{display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px;}
+  @media(max-width:640px){ .row2, .row3{grid-template-columns:1fr;} }
+  .btn{ display:inline-block; background:var(--navy); color:#fff; border:none; padding:13px 22px; border-radius:10px; font-size:16px; font-weight:700; cursor:pointer; margin-top:16px; }
+  .btn:active{transform:scale(0.98);}
+  .btn.secondary{ background:transparent; color:var(--navy); border:1.5px solid var(--navy); }
+  .btn.small{ padding:7px 12px; font-size:13px; margin-top:0; border-radius:8px; }
+  .btn.gold{background:var(--gold); color:#241a06;}
+  .btn.danger{background:var(--red); color:#fff;}
+  .lead-card{ border:1px solid var(--line); border-radius:var(--radius); padding:14px 16px; margin-bottom:12px; background:#fff; }
+  .lead-top{ display:flex; justify-content:space-between; align-items:flex-start; gap:10px; flex-wrap:wrap; }
+  .lead-name{font-weight:700; font-size:17px; color:var(--navy);}
+  .lead-meta{font-size:13.5px; color:var(--muted); margin-top:2px;}
+  .badge{ display:inline-block; font-size:12px; font-weight:700; padding:4px 10px; border-radius:999px; white-space:nowrap; }
+  .badge.novo{background:#e7eaf5; color:var(--navy);}
+  .badge.contato{background:var(--amber-bg); color:var(--amber);}
+  .badge.agendado{background:#e2e9fb; color:#2c4a9c;}
+  .badge.compareceu{background:var(--green-bg); color:var(--green);}
+  .badge.naocompareceu{background:var(--red-bg); color:var(--red);}
+  .badge.fechado{background:var(--gold); color:#241a06;}
+  .badge.perdido{background:#eee; color:#888;}
+  .lead-detail{ margin-top:12px; padding-top:12px; border-top:1px dashed var(--line); display:none; }
+  .lead-detail.open{display:block;}
+  .lead-actions{ display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+  .filters{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
+  .filters button{ background:#fff; border:1.5px solid var(--line); color:var(--navy); padding:8px 14px; border-radius:999px; font-size:13.5px; font-weight:600; cursor:pointer; }
+  .filters button.active{ background:var(--navy); color:#fff; border-color:var(--navy); }
+  .empty{ text-align:center; padding:32px 20px; color:var(--muted); }
+  .toast{ position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:var(--navy); color:#fff; padding:12px 22px; border-radius:999px; font-size:14px; font-weight:600; box-shadow:0 6px 20px rgba(0,0,0,0.25); opacity:0; pointer-events:none; transition:opacity .25s ease, transform .25s ease; z-index:100; max-width:88vw; text-align:center; }
+  .toast.show{opacity:1; transform:translateX(-50%) translateY(-6px);}
+  .helptext{font-size:13px; color:var(--muted); margin-top:4px;}
+  .section-label{ font-size:12.5px; font-weight:700; color:var(--gold); text-transform:uppercase; letter-spacing:1px; margin-bottom:8px; }
+  table.simple{width:100%; border-collapse:collapse; font-size:14.5px;}
+  table.simple th, table.simple td{ text-align:left; padding:9px 8px; border-bottom:1px solid var(--line); }
+  table.simple th{color:var(--muted); font-weight:600; font-size:12.5px; text-transform:uppercase;}
+  .lock-note{ background:var(--gold-light); border:1px solid #e3c9a3; border-radius:10px; padding:12px 14px; font-size:13.5px; color:#5a4423; margin-bottom:16px; }
+  .warn-note{ background:var(--red-bg); border:1px solid #eec3bd; border-radius:10px; padding:12px 14px; font-size:13.5px; color:#7a2a2a; margin-bottom:16px; }
+  .login-screen{ max-width:440px; margin:60px auto; text-align:center; padding:0 16px; }
+  .login-screen .card{text-align:left;}
+  .login-tabs{ display:flex; gap:8px; margin-bottom:14px; justify-content:center; }
+  .login-tabs button{ background:#fff; border:1.5px solid var(--line); padding:9px 18px; border-radius:999px; font-weight:600; cursor:pointer; color:var(--navy); }
+  .login-tabs button.active{ background:var(--navy); color:#fff; border-color:var(--navy); }
+  .checklist-item{ display:flex; align-items:flex-start; gap:12px; padding:12px 0; border-bottom:1px solid var(--line); }
+  .checklist-item:last-child{border-bottom:none;}
+  .checklist-item input[type=checkbox]{ width:24px; height:24px; margin-top:2px; accent-color: var(--gold); flex:0 0 auto; cursor:pointer; }
+  .checklist-item .ci-text{flex:1;}
+  .checklist-item .ci-title{font-weight:700; color:var(--navy); font-size:15.5px;}
+  .checklist-item.done .ci-title{ text-decoration:line-through; color:var(--muted); }
+  .checklist-item .ci-sub{font-size:13px; color:var(--muted); margin-top:2px;}
+  .progress-wrap{margin-bottom:14px;}
+  .progress-label{display:flex; justify-content:space-between; font-size:13.5px; margin-bottom:5px; color:var(--navy); font-weight:600;}
+  .progress-bar{height:10px; background:#eee3d4; border-radius:999px; overflow:hidden;}
+  .progress-bar > div{height:100%; background:var(--gold); border-radius:999px; transition:width .3s ease;}
+  .kanban{ display:flex; gap:12px; overflow-x:auto; padding-bottom:10px; }
+  .kanban-col{ flex:0 0 240px; background:#efece2; border-radius:var(--radius); padding:10px; }
+  .kanban-col h4{ margin:2px 4px 10px; font-size:13.5px; color:var(--navy); display:flex; justify-content:space-between; }
+  .kanban-card{ background:#fff; border:1px solid var(--line); border-radius:10px; padding:10px; margin-bottom:8px; font-size:13.5px; cursor:pointer; }
+  .kanban-card .kn{font-weight:700; color:var(--navy); font-size:14px;}
+  .kanban-card .km{color:var(--muted); font-size:12px; margin-top:2px;}
+  .stale-tag{ display:inline-block; background:var(--red-bg); color:var(--red); font-size:10.5px; font-weight:700; padding:2px 6px; border-radius:6px; margin-top:5px; }
+  .loading-screen{ text-align:center; padding:80px 20px; color:var(--muted); }
+</style>
+</head>
+<body>
+
+<!-- ============================================================
+     CONFIGURAÇÃO — COLE AQUI SUAS CHAVES DO SUPABASE
+     (Painel do Supabase → Project Settings → API)
+     ============================================================ -->
+<script>
+  const SUPABASE_URL = "https://ftywkcxlyxaeihflfalv.supabase.co";
+  const SUPABASE_ANON_KEY = "sb_publishable_o6IdrtNDtEmjCDw8TrSpWw_U1yOMF5M";
+</script>
+<!-- ============================================================ -->
+
+<div id="configWarning" style="display:none; background:#b23b3b; color:#fff; padding:14px 18px; text-align:center; font-size:14px; font-weight:600;">
+  ⚠️ Configuração pendente: abra este arquivo em um editor de texto e cole sua URL e chave do Supabase no topo do arquivo (procure "COLE_AQUI").
+</div>
+
+<header>
+  <div class="header-row">
+    <div class="brand">
+      <span class="name">Maison D'Or</span>
+      <span class="sub">Painel da Recepção</span>
+    </div>
+    <div class="whoami" id="whoamiBox" style="display:none;">
+      <span id="whoamiText">—</span>
+      <button class="btn-troca" id="trocarBtn">Sair</button>
+    </div>
+  </div>
+  <nav class="tabs" id="tabs" style="display:none;">
+    <button data-tab="checklist" class="active">Checklist</button>
+    <button data-tab="funil">Funil</button>
+    <button data-tab="novo">Novo Lead</button>
+    <button data-tab="leads">Leads</button>
+    <button data-tab="ativos">Reativação</button>
+    <button data-tab="contatos">Contatos</button>
+    <button data-tab="templates">Modelos</button>
+    <button data-tab="rotinas">Rotinas</button>
+    <button data-tab="ia">IA &amp; Prompt</button>
+    <button data-tab="equipe">Equipe</button>
+    <button data-tab="fechamento">Fechamento</button>
+    <button data-tab="config">Configurações</button>
+  </nav>
+</header>
+
+<main>
+
+  <!-- LOGIN -->
+  <div id="loginScreen" class="login-screen">
+    <h2 class="page-title" style="text-align:center;">Maison D'Or — Painel</h2>
+    <p class="page-sub" style="text-align:center;">Login real. Cada pessoa tem seu próprio e-mail e senha.</p>
+    <div class="login-tabs">
+      <button data-lt="entrar" class="active" id="ltEntrar">Entrar</button>
+      <button data-lt="criar" id="ltCriar">Criar conta</button>
+    </div>
+    <div class="card">
+      <div id="criarNomeWrap" style="display:none;">
+        <label>Seu nome</label>
+        <input type="text" id="loginNome" placeholder="Ex.: Ana (auxiliar)">
+      </div>
+      <label>E-mail</label>
+      <input type="email" id="loginEmail" placeholder="seuemail@exemplo.com">
+      <label>Senha</label>
+      <input type="password" id="loginSenha" placeholder="Mínimo 6 caracteres">
+      <button class="btn" style="width:100%;" id="loginBtn">Entrar</button>
+      <p class="helptext" id="loginHelp">A primeira pessoa a criar conta neste sistema vira automaticamente a proprietária (acesso total). As próximas contas entram como equipe.</p>
+    </div>
+  </div>
+
+  <div id="loadingScreen" class="loading-screen" style="display:none;">Carregando...</div>
+
+  <!-- CHECKLIST -->
+  <div class="view" id="view-checklist">
+    <h2 class="page-title">Checklist de hoje</h2>
+    <p class="page-sub" id="checklistDateLabel">—</p>
+    <div class="card">
+      <div class="section-label">Metas</div>
+      <div class="progress-wrap"><div class="progress-label"><span>Agendamentos hoje</span><span id="pl-ag-dia">0 / 0</span></div><div class="progress-bar"><div id="pb-ag-dia" style="width:0%"></div></div></div>
+      <div class="progress-wrap"><div class="progress-label"><span>Agendamentos esta semana</span><span id="pl-ag-sem">0 / 0</span></div><div class="progress-bar"><div id="pb-ag-sem" style="width:0%"></div></div></div>
+      <div class="progress-wrap"><div class="progress-label"><span>Vendas fechadas este mês</span><span id="pl-vd-mes">0 / 0</span></div><div class="progress-bar"><div id="pb-vd-mes" style="width:0%"></div></div></div>
+      <div class="helptext">As metas são definidas na aba Configurações.</div>
+    </div>
+    <div class="card"><div class="section-label">Movimentação no funil hoje</div><div id="movimentacaoHoje"></div></div>
+    <div class="card"><div class="section-label">Tarefas do dia</div><div id="checklistItems"></div></div>
+    <div class="card">
+      <div class="section-label">Confirmar pacientes de hoje (Google Agenda / Clinicorp)</div>
+      <p class="helptext" style="margin-top:-4px; margin-bottom:12px;">Confira na agenda oficial e digite aqui os nomes de hoje pra marcar a confirmação um a um.</p>
+      <div class="row2"><input type="text" id="hojePacienteNome" placeholder="Nome do paciente de hoje"><button class="btn secondary" id="addHojePaciente" style="margin-top:0;">Adicionar</button></div>
+      <div id="hojePacientesList" style="margin-top:12px;"></div>
+    </div>
+    <div class="card"><div class="section-label">Follow-up pendente (sem contato há 7+ dias, ou vencido)</div><div id="followupList"></div></div>
+    <div class="card"><div class="section-label">Pacientes para reativação, vencidos hoje</div><div id="reativacaoDueList"></div></div>
+  </div>
+
+  <!-- FUNIL -->
+  <div class="view" id="view-funil">
+    <h2 class="page-title">Funil de vendas</h2>
+    <p class="page-sub">Cada coluna é uma etapa. Toque num cartão para abrir e mudar a etapa.</p>
+    <div class="kanban" id="kanbanBoard"></div>
+  </div>
+
+  <!-- NOVO LEAD -->
+  <div class="view" id="view-novo">
+    <h2 class="page-title">Novo lead</h2>
+    <p class="page-sub">Preencha assim que o contato chegar.</p>
+    <div class="card">
+      <label>Nome do paciente *</label><input type="text" id="nLead_nome">
+      <div class="row2"><div><label>Telefone</label><input type="text" id="nLead_telefone" placeholder="(27) 90000-0000"></div><div><label>Procedimento de interesse</label><input type="text" id="nLead_procedimento"></div></div>
+      <div class="row2">
+        <div><label>Origem do lead *</label><select id="nLead_origem"><option value="Lead interno">Lead interno (já era do consultório)</option><option value="Lead próprio">Lead próprio (captado por mim)</option></select></div>
+        <div><label>Data de entrada</label><input type="date" id="nLead_data"></div>
+      </div>
+      <label>Observações</label><textarea id="nLead_obs" rows="2"></textarea>
+      <button class="btn" id="salvarLeadBtn">Salvar lead</button>
+    </div>
+  </div>
+
+  <!-- LEADS -->
+  <div class="view" id="view-leads">
+    <h2 class="page-title">Leads</h2>
+    <p class="page-sub">Toque num lead para atualizar status, comparecimento e valores.</p>
+    <div class="filters" id="leadFilters"></div>
+    <div id="leadsList"></div>
+  </div>
+
+  <!-- REATIVAÇÃO -->
+  <div class="view" id="view-ativos">
+    <h2 class="page-title">Reativação de pacientes antigos</h2>
+    <p class="page-sub">Pacientes que já foram atendidos e sumiram.</p>
+    <div class="card">
+      <div class="section-label">Adicionar paciente para reativação</div>
+      <div class="row2"><div><label>Nome</label><input type="text" id="nAtivo_nome"></div><div><label>Telefone</label><input type="text" id="nAtivo_telefone"></div></div>
+      <div class="row2"><div><label>Última visita (aprox.)</label><input type="date" id="nAtivo_ultimaVisita"></div><div><label>Próximo contato</label><input type="date" id="nAtivo_proximoContato"></div></div>
+      <label>Observações</label><textarea id="nAtivo_obs" rows="2"></textarea>
+      <button class="btn" id="salvarAtivoBtn">Adicionar à lista</button>
+    </div>
+    <div class="card"><div class="section-label">Lista de reativação</div><div id="ativosList"></div></div>
+  </div>
+
+  <!-- CONTATOS -->
+  <div class="view" id="view-contatos">
+    <h2 class="page-title">Contatos</h2>
+    <p class="page-sub">Importe contatos ou adicione manualmente.</p>
+    <div class="card">
+      <div class="section-label">Importar arquivo (.vcf ou .csv)</div>
+      <input type="file" id="contatosFileInput" accept=".vcf,.csv,text/vcard,text/csv">
+      <p class="helptext">CSV: colunas Nome, Telefone, Cidade, Estado.</p>
+    </div>
+    <div class="card">
+      <div class="section-label">Adicionar contato manualmente</div>
+      <div class="row2"><div><label>Nome</label><input type="text" id="nContato_nome"></div><div><label>Telefone</label><input type="text" id="nContato_telefone"></div></div>
+      <div class="row2"><div><label>Cidade</label><input type="text" id="nContato_cidade"></div><div><label>Estado</label><input type="text" id="nContato_estado"></div></div>
+      <label>Categoria</label>
+      <select id="nContato_categoria"><option value="Paciente">Paciente</option><option value="Lead">Lead</option><option value="Fornecedor">Fornecedor</option><option value="Lista fria (sem relação prévia)" selected>Lista fria (sem relação prévia)</option><option value="Outro">Outro</option></select>
+      <button class="btn" id="salvarContatoBtn">Adicionar contato</button>
+    </div>
+    <div class="card">
+      <div class="filters" id="contatosFilters"></div>
+      <div class="filters" id="contatosCatFilters" style="margin-top:-6px;"></div>
+      <div id="contatosList"></div>
+    </div>
+  </div>
+
+  <!-- MODELOS -->
+  <div class="view" id="view-templates">
+    <h2 class="page-title">Modelos de mensagem</h2>
+    <p class="page-sub">Use <code>{nome}</code> no texto — o sistema troca pelo nome do contato.</p>
+    <div class="card">
+      <div class="section-label">Novo modelo</div>
+      <div class="row2">
+        <div><label>Categoria</label><select id="nTpl_categoria"><option>Primeiro contato</option><option>Confirmação de consulta</option><option>Reagendamento</option><option>Orçamento / follow-up</option><option>Reativação</option><option>Cobrança educada</option><option>Outro</option></select></div>
+        <div><label>Título</label><input type="text" id="nTpl_titulo"></div>
+      </div>
+      <label>Texto da mensagem</label><textarea id="nTpl_texto" rows="3"></textarea>
+      <button class="btn" id="salvarTplBtn">Salvar modelo</button>
+    </div>
+    <div class="card"><div class="filters" id="tplFilters"></div><div id="templatesList"></div></div>
+  </div>
+
+  <!-- ROTINAS -->
+  <div class="view" id="view-rotinas">
+    <h2 class="page-title">Rotinas</h2>
+    <p class="page-sub">O protocolo escrito de quando agir.</p>
+    <div class="card" id="rotinaFormCard">
+      <div class="section-label">Nova rotina</div>
+      <label>Título</label><input type="text" id="nRot_titulo">
+      <div class="row2"><div><label>Gatilho</label><input type="text" id="nRot_gatilho"></div><div><label>Ação</label><input type="text" id="nRot_acao"></div></div>
+      <button class="btn" id="salvarRotinaBtn">Salvar rotina</button>
+    </div>
+    <div class="card"><div id="rotinasList"></div></div>
+  </div>
+
+  <!-- IA & PROMPT -->
+  <div class="view" id="view-ia">
+    <h2 class="page-title">IA &amp; Prompt</h2>
+    <p class="page-sub">Espaço só do proprietário para rascunhar o prompt do secretário virtual.</p>
+    <div class="lock-note">Não conecta com nada automaticamente — é seu rascunho.</div>
+    <div class="card">
+      <label>Persona / instruções</label>
+      <textarea id="iaPromptText" rows="20"></textarea>
+      <button class="btn" id="salvarIaBtn">Salvar rascunho</button>
+      <button class="btn secondary" id="resetIaBtn">Restaurar rascunho sugerido</button>
+    </div>
+  </div>
+
+  <!-- EQUIPE -->
+  <div class="view" id="view-equipe">
+    <h2 class="page-title">Equipe</h2>
+    <p class="page-sub">Quem tem conta no sistema, e qual o nível de acesso.</p>
+    <div class="lock-note">Peça pra cada pessoa criar a própria conta (aba "Criar conta" na tela de login) usando o e-mail dela. Depois, promova aqui quem deve virar proprietário.</div>
+    <div class="card"><div id="equipeList"></div></div>
+  </div>
+
+  <!-- FECHAMENTO -->
+  <div class="view" id="view-fechamento">
+    <h2 class="page-title">Fechamento do mês</h2>
+    <p class="page-sub">Registre as diárias trabalhadas.</p>
+    <div class="card">
+      <div class="section-label">Adicionar diária trabalhada</div>
+      <div class="row3"><div><label>Data</label><input type="date" id="nDiaria_data"></div><div><label>Entrada</label><input type="time" id="nDiaria_entrada" value="08:00"></div><div><label>Saída</label><input type="time" id="nDiaria_saida" value="18:00"></div></div>
+      <button class="btn" id="salvarDiariaBtn">Registrar diária</button>
+    </div>
+    <div class="card"><div class="section-label">Diárias do mês</div><div id="diariasTable"></div></div>
+    <div class="card" id="fechamentoResumoCard"></div>
+  </div>
+
+  <!-- CONFIG -->
+  <div class="view" id="view-config">
+    <h2 class="page-title">Configurações</h2>
+    <p class="page-sub">Só o proprietário acessa. Afeta todos os cálculos.</p>
+    <div class="lock-note">Regras oficiais combinadas com a Maison D'Or.</div>
+    <div class="card">
+      <div class="section-label">Remuneração</div>
+      <div class="row2"><div><label>Valor da diária (R$)</label><input type="number" id="cfg_diaria"></div><div><label>Valor do almoço (R$)</label><input type="number" id="cfg_almoco"></div></div>
+      <div class="row2"><div><label>Comissão lead interno (%)</label><input type="number" id="cfg_comInterno" step="0.1"></div><div><label>Comissão lead próprio (%)</label><input type="number" id="cfg_comProprio" step="0.1"></div></div>
+      <div class="row2"><div><label>Limite lead interno (R$)</label><input type="number" id="cfg_limInterno"></div><div><label>Limite lead próprio (R$)</label><input type="number" id="cfg_limProprio"></div></div>
+      <label>Bônus por comparecimento (R$)</label><input type="number" id="cfg_bonus">
+      <div class="section-label" style="margin-top:22px;">Metas</div>
+      <div class="row3"><div><label>Agendamentos / dia</label><input type="number" id="cfg_metaAgDia"></div><div><label>Agendamentos / semana</label><input type="number" id="cfg_metaAgSemana"></div><div><label>Vendas / mês</label><input type="number" id="cfg_metaVdMes"></div></div>
+      <button class="btn" id="salvarConfigBtn">Salvar configurações</button>
+    </div>
+    <div class="card">
+      <div class="section-label">Backup</div>
+      <p class="helptext" style="margin-top:-4px;">Os dados já ficam num banco de dados de verdade (Supabase). Mesmo assim, baixe uma cópia de vez em quando.</p>
+      <button class="btn gold" id="baixarBackupBtn">Baixar backup agora (.json)</button>
+    </div>
+    <div class="card">
+      <div class="section-label">Lixeira — leads excluídos</div>
+      <div id="trashList"></div>
+    </div>
+  </div>
+
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ============================================================
+// SUPABASE CLIENT
+// ============================================================
+let supabase = null;
+if(SUPABASE_URL.includes('COLE_AQUI') || SUPABASE_ANON_KEY.includes('COLE_AQUI')){
+  document.getElementById('configWarning').style.display = 'block';
+} else {
+  supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+}
+
+// ============================================================
+// STATE
+// ============================================================
+const DEFAULT_CONFIG = { diaria:120, almoco:30, com_interno:5, com_proprio:10, lim_interno:150, lim_proprio:250, bonus:10, meta_ag_dia:3, meta_ag_semana:12, meta_vd_mes:10 };
+let CONFIG = {...DEFAULT_CONFIG};
+let LEADS = [], DIARIAS = [], ATIVOS = [], CONTATOS = [], TEMPLATES = [], ROTINAS = [], PROFILES = [];
+let IA_PROMPT = '';
+let CURRENT_PROFILE = null; // { id, nome, role }
+let openLeadId = null;
+let leadFilter = 'todos';
+
+function todayISO(){ return new Date().toISOString().slice(0,10); }
+function daysAgoISO(n){ const d = new Date(); d.setDate(d.getDate()-n); return d.toISOString().slice(0,10); }
+function fmtMoney(v){ return 'R$ ' + (Number(v)||0).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2}); }
+function fmtDate(iso){ if(!iso) return '—'; const [y,m,d] = iso.split('-'); return `${d}/${m}/${y}`; }
+function showToast(msg){ const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'), 2600); }
+function startOfWeekISO(){ const d = new Date(); const day = d.getDay(); const diff = (day===0? -6 : 1) - day; const monday = new Date(d); monday.setDate(d.getDate()+diff); return monday.toISOString().slice(0,10); }
+function waLink(telefone, msg){ const digits = String(telefone||'').replace(/\D/g,''); if(!digits) return null; const full = digits.startsWith('55') ? digits : '55'+digits; return 'https://wa.me/'+full+(msg?('?text='+encodeURIComponent(msg)):''); }
+function waButtonHTML(telefone, label){ const link = waLink(telefone); if(!link) return `<button class="btn small secondary" disabled title="Sem telefone">${label||'WhatsApp'}</button>`; return `<button class="btn small" style="background:#25D366; color:#fff;" data-wa-phone="${String(telefone).replace(/"/g,'')}">${label||'Abrir WhatsApp'}</button>`; }
+function templateSelectHTML(telefone, nome){ if(!telefone || !TEMPLATES.length) return ''; const safeNome = String(nome||'').replace(/"/g,''); return `<select data-tplsel="1" data-phone="${String(telefone).replace(/"/g,'')}" data-nome="${safeNome}" style="width:auto; padding:7px 10px; font-size:13px;"><option value="">Mensagem com modelo...</option>${TEMPLATES.map(t=>`<option value="${t.id}">${t.titulo}</option>`).join('')}</select>`; }
+document.addEventListener('click', (e)=>{ const btn = e.target.closest('[data-wa-phone]'); if(!btn) return; const link = waLink(btn.dataset.waPhone); if(link) window.open(link, '_blank'); });
+document.addEventListener('change', (e)=>{ const sel = e.target.closest('[data-tplsel]'); if(!sel || !sel.value) return; const t = TEMPLATES.find(x=>x.id===sel.value); if(!t) return; const texto = t.texto.replace(/\{nome\}/g, sel.dataset.nome||''); const link = waLink(sel.dataset.phone, texto); if(link) window.open(link, '_blank'); sel.value=''; });
+
+// ============================================================
+// AUTH
+// ============================================================
+document.getElementById('ltEntrar').addEventListener('click', ()=> setLoginMode('entrar'));
+document.getElementById('ltCriar').addEventListener('click', ()=> setLoginMode('criar'));
+function setLoginMode(mode){
+  document.getElementById('ltEntrar').classList.toggle('active', mode==='entrar');
+  document.getElementById('ltCriar').classList.toggle('active', mode==='criar');
+  document.getElementById('criarNomeWrap').style.display = mode==='criar' ? 'block' : 'none';
+  document.getElementById('loginBtn').textContent = mode==='criar' ? 'Criar conta' : 'Entrar';
+  document.getElementById('loginBtn').dataset.mode = mode;
+}
+setLoginMode('entrar');
+
+document.getElementById('loginBtn').addEventListener('click', async ()=>{
+  if(!supabase){ showToast('Configuração do Supabase pendente.'); return; }
+  const mode = document.getElementById('loginBtn').dataset.mode || 'entrar';
+  const email = document.getElementById('loginEmail').value.trim();
+  const senha = document.getElementById('loginSenha').value;
+  if(!email || !senha){ showToast('Preencha e-mail e senha.'); return; }
+  if(mode === 'criar'){
+    const nome = document.getElementById('loginNome').value.trim();
+    if(!nome){ showToast('Preencha seu nome.'); return; }
+    const { data, error } = await supabase.auth.signUp({ email, password: senha });
+    if(error){ showToast(error.message); return; }
+    if(data.user){
+      const { error: perr } = await supabase.from('profiles').insert({ id: data.user.id, nome });
+      if(perr){ showToast('Conta criada, mas houve um erro ao salvar o perfil: ' + perr.message); return; }
+    }
+    showToast('Conta criada! Se pedir confirmação de e-mail, confira sua caixa de entrada.');
+    if(data.session){ await postLogin(); }
+  } else {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password: senha });
+    if(error){ showToast('E-mail ou senha incorretos.'); return; }
+    await postLogin();
+  }
+});
+document.getElementById('trocarBtn').addEventListener('click', async ()=>{
+  await supabase.auth.signOut();
+  CURRENT_PROFILE = null;
+  document.getElementById('loginScreen').style.display = 'block';
+  document.getElementById('whoamiBox').style.display = 'none';
+  document.getElementById('tabs').style.display = 'none';
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+});
+
+async function postLogin(){
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('loadingScreen').style.display = 'block';
+  const { data: { user } } = await supabase.auth.getUser();
+  if(!user){ document.getElementById('loadingScreen').style.display='none'; return; }
+  let { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+  if(!profile){
+    // profile row missing (edge case) — create as staff
+    const nome = user.email.split('@')[0];
+    await supabase.from('profiles').insert({ id: user.id, nome });
+    const r = await supabase.from('profiles').select('*').eq('id', user.id).single();
+    profile = r.data;
+  }
+  CURRENT_PROFILE = profile;
+  document.getElementById('loadingScreen').style.display = 'none';
+  document.getElementById('whoamiBox').style.display = 'flex';
+  document.getElementById('tabs').style.display = 'flex';
+  document.getElementById('whoamiText').textContent = `${profile.nome} · ${profile.role === 'owner' ? 'proprietário' : 'equipe'}`;
+  document.querySelectorAll('[data-owner-only]').forEach(()=>{});
+  document.querySelector('nav.tabs button[data-tab="config"]').style.display = (profile.role==='owner') ? 'inline-block' : 'none';
+  document.querySelector('nav.tabs button[data-tab="ia"]').style.display = (profile.role==='owner') ? 'inline-block' : 'none';
+  document.querySelector('nav.tabs button[data-tab="equipe"]').style.display = (profile.role==='owner') ? 'inline-block' : 'none';
+  await loadAll();
+  switchTab('checklist');
+  renderAll();
+}
+
+// Try to resume session on page load
+(async function init(){
+  if(!supabase) return;
+  const { data: { session } } = await supabase.auth.getSession();
+  if(session){ await postLogin(); }
+})();
+
+// ============================================================
+// DATA LOADING
+// ============================================================
+async function loadAll(){
+  const [leadsR, diariasR, ativosR, contatosR, templatesR, rotinasR, configR, profilesR] = await Promise.all([
+    supabase.from('leads').select('*').is('deleted_at', null).order('created_at', {ascending:false}),
+    supabase.from('diarias').select('*').order('data', {ascending:false}),
+    supabase.from('ativos').select('*'),
+    supabase.from('contatos').select('*'),
+    supabase.from('templates').select('*'),
+    supabase.from('rotinas').select('*'),
+    supabase.from('config').select('*').eq('id',1).single(),
+    supabase.from('profiles').select('*'),
+  ]);
+  LEADS = leadsR.data || [];
+  DIARIAS = diariasR.data || [];
+  ATIVOS = ativosR.data || [];
+  CONTATOS = contatosR.data || [];
+  TEMPLATES = templatesR.data || [];
+  ROTINAS = rotinasR.data || [];
+  CONFIG = configR.data || {...DEFAULT_CONFIG};
+  PROFILES = profilesR.data || [];
+
+  if(!TEMPLATES.length){
+    const seeds = [
+      { categoria:'Primeiro contato', titulo:'Opt-in — lista fria / sem relação prévia', texto:"Oi {nome}, tudo bem? Aqui é da Maison D'Or Odontologia, em Vila Velha. Você toparia receber, de vez em quando, informações sobre saúde bucal e estética facial da nossa clínica? Se não tiver interesse, sem problema. 🙂", criado_por:'sistema' },
+      { categoria:'Primeiro contato', titulo:'Boas-vindas lead novo', texto:"Oi {nome}! Aqui é da Maison D'Or Odontologia. Vi seu interesse em nossos tratamentos — posso te ajudar a agendar uma avaliação?", criado_por:'sistema' },
+      { categoria:'Confirmação de consulta', titulo:'Confirmar consulta de amanhã', texto:"Oi {nome}! Passando pra confirmar sua consulta na Maison D'Or amanhã. Podemos confirmar seu horário?", criado_por:'sistema' },
+      { categoria:'Reativação', titulo:'Reativação — sumiu do tratamento', texto:"Oi {nome}, tudo bem? Notamos que faz um tempo que não nos vemos por aqui na Maison D'Or. Gostaria de retomar seu acompanhamento?", criado_por:'sistema' },
+    ];
+    const { data } = await supabase.from('templates').insert(seeds).select();
+    TEMPLATES = data || [];
+  }
+
+  if(CURRENT_PROFILE.role === 'owner'){
+    const iaR = await supabase.from('ia_prompt').select('*').eq('id',1).single();
+    IA_PROMPT = iaR.data ? iaR.data.texto : '';
+    const trashR = await supabase.from('leads').select('*').not('deleted_at','is', null);
+    window.TRASH = trashR.data || [];
+  }
+}
+
+// ============================================================
+// TABS
+// ============================================================
+document.querySelectorAll('nav.tabs button').forEach(btn=>{ btn.addEventListener('click', ()=> switchTab(btn.dataset.tab)); });
+function switchTab(tab){
+  if((tab === 'config' || tab === 'ia' || tab === 'equipe') && (!CURRENT_PROFILE || CURRENT_PROFILE.role !== 'owner')){
+    showToast('Só o proprietário acessa essa aba.');
+    tab = 'checklist';
+  }
+  document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.getElementById('view-'+tab).classList.add('active');
+  if(tab==='checklist') renderChecklist();
+  if(tab==='funil') renderFunil();
+  if(tab==='leads') renderLeads();
+  if(tab==='ativos') renderAtivos();
+  if(tab==='contatos') renderContatos();
+  if(tab==='templates') renderTemplates();
+  if(tab==='rotinas') renderRotinas();
+  if(tab==='ia') renderIa();
+  if(tab==='equipe') renderEquipe();
+  if(tab==='fechamento') renderFechamento();
+  if(tab==='config') renderConfig();
+}
+function renderAll(){
+  renderChecklist(); renderFunil(); renderLeads(); renderAtivos(); renderContatos();
+  renderTemplates(); renderRotinas(); renderFechamento(); renderConfig();
+  if(CURRENT_PROFILE.role==='owner'){ renderIa(); renderEquipe(); }
+}
+
+// ============================================================
+// CALC HELPERS
+// ============================================================
+function calcComissao(lead){
+  if(lead.fechou !== 'Sim' || !lead.valor_recebido) return 0;
+  const val = Number(lead.valor_recebido) || 0;
+  if(lead.origem === 'Lead interno') return Math.min(val * (CONFIG.com_interno/100), CONFIG.lim_interno);
+  return Math.min(val * (CONFIG.com_proprio/100), CONFIG.lim_proprio);
+}
+function isThisMonth(iso){ if(!iso) return false; const now=new Date(); const d=new Date(iso+'T00:00:00'); return d.getFullYear()===now.getFullYear() && d.getMonth()===now.getMonth(); }
+function isThisWeek(iso){ if(!iso) return false; return iso >= startOfWeekISO() && iso <= todayISO(); }
+function isToday(iso){ return iso === todayISO(); }
+function needsFollowup(l){
+  if(['Fechado','Perdido'].includes(l.status)) return false;
+  const overdue = l.data_proxima_acao && l.data_proxima_acao <= todayISO();
+  const stale = l.data_ultimo_contato ? l.data_ultimo_contato <= daysAgoISO(7) : (l.data <= daysAgoISO(7));
+  return overdue || stale;
+}
+
+// ============================================================
+// CHECKLIST
+// ============================================================
+const CHECKLIST_TASKS = [
+  { id:'confirmar', title:'Confirmar todos os pacientes agendados de hoje', sub:'Confira no Google Agenda / Clinicorp e marque presença abaixo.' },
+  { id:'followup', title:'Fazer follow-up dos leads parados', sub:'Veja a lista de follow-up pendente mais abaixo.' },
+  { id:'reativacao', title:'Verificar pacientes de reativação vencidos hoje', sub:'Lista de pacientes antigos que sumiram, mais abaixo.' },
+  { id:'status', title:'Atualizar o status de todos os leads mexidos hoje', sub:'Nenhum lead deve ficar sem status atualizado no fim do dia.' },
+  { id:'diaria', title:'Registrar a diária de hoje (se for dia de trabalho)', sub:'Aba Fechamento → Adicionar diária trabalhada.' },
+];
+let CHECKLIST_STATE = {};
+async function getChecklistState(){
+  const { data } = await supabase.from('checklist_state').select('*').eq('data', todayISO()).maybeSingle();
+  return data ? data.state : {};
+}
+async function setChecklistState(state){
+  await supabase.from('checklist_state').upsert({ data: todayISO(), state });
+}
+async function renderChecklist(){
+  const meses = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+  const now = new Date();
+  document.getElementById('checklistDateLabel').textContent = `${now.getDate()} de ${meses[now.getMonth()]} de ${now.getFullYear()}`;
+  CHECKLIST_STATE = await getChecklistState();
+
+  const agendamentosHojeCount = LEADS.filter(l => l.status==='Agendado' && l.data===todayISO()).length;
+  const agendamentosSemanaCount = LEADS.filter(l => l.status==='Agendado' && isThisWeek(l.data)).length;
+  const vendasMesCount = LEADS.filter(l => l.fechou==='Sim' && isThisMonth(l.data)).length;
+  setProgress('ag-dia', agendamentosHojeCount, CONFIG.meta_ag_dia);
+  setProgress('ag-sem', agendamentosSemanaCount, CONFIG.meta_ag_semana);
+  setProgress('vd-mes', vendasMesCount, CONFIG.meta_vd_mes);
+
+  const moveCount = {};
+  LEADS.forEach(l=>{ (l.atividades||[]).forEach(a=>{ if(a.tipo==='Mudança de etapa' && a.data===todayISO()){ const m=a.texto.match(/para "([^"]+)"/); const stage=m?m[1]:'—'; moveCount[stage]=(moveCount[stage]||0)+1; } }); });
+  const novosHoje = LEADS.filter(l => l.created_at && l.created_at.slice(0,10) === todayISO()).length;
+  const entries = [['Novos leads', novosHoje], ...Object.entries(moveCount)];
+  document.getElementById('movimentacaoHoje').innerHTML = entries.some(e=>e[1]>0) ? `<div style="display:flex; flex-wrap:wrap; gap:10px;">${entries.filter(e=>e[1]>0).map(e=>`<div style="background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:8px 14px; font-size:13.5px;"><strong style="color:var(--navy);">${e[1]}</strong> ${e[0].toLowerCase()}</div>`).join('')}</div>` : '<div class="empty">Nenhuma movimentação registrada hoje ainda.</div>';
+
+  const box = document.getElementById('checklistItems');
+  box.innerHTML = CHECKLIST_TASKS.map(t => `<div class="checklist-item ${CHECKLIST_STATE[t.id]?'done':''}"><input type="checkbox" data-task="${t.id}" ${CHECKLIST_STATE[t.id]?'checked':''}><div class="ci-text"><div class="ci-title">${t.title}</div><div class="ci-sub">${t.sub}</div></div></div>`).join('');
+  box.querySelectorAll('input[type=checkbox]').forEach(cb=>{
+    cb.addEventListener('change', async ()=>{ CHECKLIST_STATE[cb.dataset.task] = cb.checked; await setChecklistState(CHECKLIST_STATE); renderChecklist(); });
+  });
+
+  renderHojePacientes();
+
+  const followups = LEADS.filter(needsFollowup).sort((a,b)=> (a.data_proxima_acao||a.data||'').localeCompare(b.data_proxima_acao||b.data||''));
+  document.getElementById('followupList').innerHTML = followups.length ? followups.map(l=>`
+    <div class="lead-card" style="margin-bottom:8px;">
+      <div class="lead-top"><div><div class="lead-name">${l.nome}</div><div class="lead-meta">${l.procedimento||'—'} · último contato: ${fmtDate(l.data_ultimo_contato)||'nunca'} ${l.data_proxima_acao?'· ação prevista: '+fmtDate(l.data_proxima_acao):''}</div></div>${statusBadge(l.status)}</div>
+      <div class="lead-actions">${waButtonHTML(l.telefone)}<button class="btn small" data-contato="${l.id}">Marcar contato feito hoje</button><button class="btn small secondary" data-abrir="${l.id}">Abrir lead</button></div>
+    </div>`).join('') : '<div class="empty">Nenhum follow-up pendente. 🎉</div>';
+  document.querySelectorAll('[data-contato]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{ await supabase.from('leads').update({ data_ultimo_contato: todayISO() }).eq('id', btn.dataset.contato); await loadAll(); showToast('Contato registrado.'); renderChecklist(); });
+  });
+  document.querySelectorAll('[data-abrir]').forEach(btn=>{ btn.addEventListener('click', ()=>{ openLeadId = btn.dataset.abrir; switchTab('leads'); }); });
+
+  const dueAtivos = ATIVOS.filter(a => a.status !== 'Reagendado' && a.status !== 'Perdido' && a.proximo_contato && a.proximo_contato <= todayISO());
+  document.getElementById('reativacaoDueList').innerHTML = dueAtivos.length ? dueAtivos.map(a=>`
+    <div class="lead-card" style="margin-bottom:8px;"><div class="lead-top"><div><div class="lead-name">${a.nome}</div><div class="lead-meta">Última visita: ${fmtDate(a.ultima_visita)} · contato previsto: ${fmtDate(a.proximo_contato)}</div></div></div>
+    <div class="lead-actions">${waButtonHTML(a.telefone)}<button class="btn small" data-ativo-contatado="${a.id}">Marcar contatado</button></div></div>`).join('') : '<div class="empty">Nenhum paciente vencido hoje.</div>';
+  document.querySelectorAll('[data-ativo-contatado]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{ await supabase.from('ativos').update({ status:'Contatado' }).eq('id', btn.dataset.ativoContatado); await loadAll(); showToast('Marcado.'); renderChecklist(); });
+  });
+}
+function setProgress(id, current, goal){ const pct = goal>0 ? Math.min(100, Math.round((current/goal)*100)) : 0; document.getElementById('pl-'+id).textContent = `${current} / ${goal||0}`; document.getElementById('pb-'+id).style.width = pct+'%'; }
+
+let HOJE_PACIENTES = [];
+async function loadHojePacientes(){ const { data } = await supabase.from('confirmacoes_dia').select('*').eq('data', todayISO()).maybeSingle(); HOJE_PACIENTES = data ? data.pacientes : []; }
+async function saveHojePacientes(){ await supabase.from('confirmacoes_dia').upsert({ data: todayISO(), pacientes: HOJE_PACIENTES }); }
+async function renderHojePacientes(){
+  await loadHojePacientes();
+  const box = document.getElementById('hojePacientesList');
+  box.innerHTML = HOJE_PACIENTES.length ? HOJE_PACIENTES.map((p,i)=>`<div class="checklist-item ${p.confirmado?'done':''}"><input type="checkbox" data-hoje="${i}" ${p.confirmado?'checked':''}><div class="ci-text"><div class="ci-title">${p.nome}</div></div><button class="btn small secondary" data-remhoje="${i}">Remover</button></div>`).join('') : '<div class="empty">Nenhum paciente adicionado ainda hoje.</div>';
+  box.querySelectorAll('[data-hoje]').forEach(cb=>{ cb.addEventListener('change', async ()=>{ HOJE_PACIENTES[Number(cb.dataset.hoje)].confirmado = cb.checked; await saveHojePacientes(); renderHojePacientes(); }); });
+  box.querySelectorAll('[data-remhoje]').forEach(btn=>{ btn.addEventListener('click', async ()=>{ HOJE_PACIENTES.splice(Number(btn.dataset.remhoje),1); await saveHojePacientes(); renderHojePacientes(); }); });
+}
+document.getElementById('addHojePaciente').addEventListener('click', async ()=>{
+  const input = document.getElementById('hojePacienteNome'); const nome = input.value.trim(); if(!nome) return;
+  HOJE_PACIENTES.push({ nome, confirmado:false }); await saveHojePacientes(); input.value=''; renderHojePacientes();
+});
+
+// ============================================================
+// NOVO LEAD
+// ============================================================
+document.getElementById('nLead_data').value = todayISO();
+document.getElementById('salvarLeadBtn').addEventListener('click', async ()=>{
+  const nome = document.getElementById('nLead_nome').value.trim();
+  if(!nome){ showToast('Preencha o nome do paciente.'); return; }
+  const lead = {
+    nome, telefone: document.getElementById('nLead_telefone').value.trim(),
+    procedimento: document.getElementById('nLead_procedimento').value.trim(),
+    origem: document.getElementById('nLead_origem').value,
+    data: document.getElementById('nLead_data').value || todayISO(),
+    responsavel: CURRENT_PROFILE.nome, status:'Novo',
+    obs: document.getElementById('nLead_obs').value.trim(),
+    data_ultimo_contato: todayISO(),
+    atividades: [{ data: todayISO(), tipo:'Criação', texto:'Lead criado', por: CURRENT_PROFILE.nome }],
+    created_by: CURRENT_PROFILE.nome,
+  };
+  const { error } = await supabase.from('leads').insert(lead);
+  if(error){ showToast('Erro ao salvar: '+error.message); return; }
+  showToast('Lead salvo!');
+  ['nLead_nome','nLead_telefone','nLead_procedimento','nLead_obs'].forEach(id=> document.getElementById(id).value='');
+  document.getElementById('nLead_data').value = todayISO();
+  await loadAll();
+  switchTab('leads');
+});
+
+// ============================================================
+// FUNIL
+// ============================================================
+const FUNIL_STAGES = ['Novo','Em contato','Agendado','Compareceu','Orçamento enviado','Fechado','Perdido'];
+function renderFunil(){
+  const board = document.getElementById('kanbanBoard');
+  board.innerHTML = FUNIL_STAGES.map(stage=>{
+    const items = LEADS.filter(l => (l.status||'Novo') === stage).sort((a,b)=> (b.created_at||'').localeCompare(a.created_at||''));
+    return `<div class="kanban-col"><h4>${stage} <span>${items.length}</span></h4>
+      ${items.map(l=>`<div class="kanban-card" data-open="${l.id}"><div class="kn">${l.nome}</div><div class="km">${l.origem==='Lead interno'?'interno':'próprio'} · ${fmtDate(l.data)}</div>${needsFollowup(l)?'<div class="stale-tag">Follow-up pendente</div>':''}</div>`).join('') || '<div style="font-size:12px; color:var(--muted); padding:6px 2px;">vazio</div>'}</div>`;
+  }).join('');
+  board.querySelectorAll('[data-open]').forEach(card=>{ card.addEventListener('click', ()=>{ openLeadId = card.dataset.open; switchTab('leads'); }); });
+}
+
+// ============================================================
+// LEADS
+// ============================================================
+const STATUS_OPTIONS = ['Novo','Em contato','Agendado','Compareceu','Não compareceu','Orçamento enviado','Fechado','Perdido'];
+function statusClass(status){ return ({ 'Novo':'novo','Em contato':'contato','Agendado':'agendado','Compareceu':'compareceu','Não compareceu':'naocompareceu','Orçamento enviado':'contato','Fechado':'fechado','Perdido':'perdido' })[status] || 'novo'; }
+function statusBadge(status){ return `<span class="badge ${statusClass(status)}">${status||'Novo'}</span>`; }
+function renderLeadFilters(){
+  const filters = ['todos', ...STATUS_OPTIONS];
+  document.getElementById('leadFilters').innerHTML = filters.map(f=>`<button data-f="${f}" class="${leadFilter===f?'active':''}">${f==='todos'?'Todos':f}</button>`).join('');
+  document.querySelectorAll('#leadFilters button').forEach(b=>{ b.addEventListener('click', ()=>{ leadFilter = b.dataset.f; renderLeads(); }); });
+}
+function renderLeads(){
+  renderLeadFilters();
+  let list = [...LEADS].sort((a,b)=> (b.created_at||'').localeCompare(a.created_at||''));
+  if(leadFilter !== 'todos') list = list.filter(l => (l.status||'Novo') === leadFilter);
+  const box = document.getElementById('leadsList');
+  if(!list.length){ box.innerHTML = '<div class="empty">Nenhum lead nesse filtro.</div>'; return; }
+  box.innerHTML = list.map(l => leadCardHTML(l)).join('');
+  list.forEach(l=>{ document.getElementById('head-'+l.id).addEventListener('click', ()=>{ openLeadId = (openLeadId===l.id)?null:l.id; renderLeads(); }); });
+  if(openLeadId){ bindLeadDetailEvents(openLeadId); const el=document.getElementById('detail-'+openLeadId); if(el) el.scrollIntoView({behavior:'smooth', block:'center'}); }
+}
+function leadCardHTML(l){
+  const open = openLeadId === l.id; const com = calcComissao(l);
+  return `<div class="lead-card"><div class="lead-top" id="head-${l.id}" style="cursor:pointer;">
+    <div><div class="lead-name">${l.nome}</div><div class="lead-meta">${l.procedimento||'Procedimento não informado'} · ${l.origem==='Lead interno'?'Lead interno':'Lead próprio'} · entrou ${fmtDate(l.data)} · por ${l.responsavel||'—'}</div></div>
+    ${statusBadge(l.status)}</div>
+    <div class="lead-detail ${open?'open':''}" id="detail-${l.id}">${open?leadDetailHTML(l,com):''}</div></div>`;
+}
+function leadDetailHTML(l, com){
+  return `
+    <label>Telefone</label><input type="text" data-f="telefone" value="${l.telefone||''}">
+    <label>Status</label><select data-f="status">${STATUS_OPTIONS.map(s=>`<option value="${s}" ${l.status===s?'selected':''}>${s}</option>`).join('')}</select>
+    <div class="row2"><div><label>Compareceu?</label><select data-f="compareceu"><option value="">—</option><option value="Sim" ${l.compareceu==='Sim'?'selected':''}>Sim</option><option value="Não" ${l.compareceu==='Não'?'selected':''}>Não</option></select></div>
+    <div><label>Fechou?</label><select data-f="fechou"><option value="">—</option><option value="Sim" ${l.fechou==='Sim'?'selected':''}>Sim</option><option value="Não" ${l.fechou==='Não'?'selected':''}>Não</option></select></div></div>
+    <div class="row2"><div><label>Valor orçamento (R$)</label><input type="number" data-f="valor_orcamento" value="${l.valor_orcamento||''}"></div><div><label>Valor recebido (R$)</label><input type="number" data-f="valor_recebido" value="${l.valor_recebido||''}"></div></div>
+    <div class="row2"><div><label>Próxima ação</label><input type="date" data-f="data_proxima_acao" value="${l.data_proxima_acao||''}"></div><div><label>Último contato</label><input type="date" data-f="data_ultimo_contato" value="${l.data_ultimo_contato||''}"></div></div>
+    <label>Motivo da perda</label><input type="text" data-f="motivo_perda" value="${l.motivo_perda||''}">
+    <label>Observações</label><textarea data-f="obs" rows="2">${l.obs||''}</textarea>
+    ${l.fechou==='Sim' && l.valor_recebido ? `<div class="lock-note" style="margin-top:12px;">Comissão calculada: <strong>${fmtMoney(com)}</strong></div>` : ''}
+    <div class="lead-actions">${waButtonHTML(l.telefone)}${templateSelectHTML(l.telefone, l.nome)}
+      <button class="btn small" data-action="save">Salvar alterações</button>
+      <button class="btn small secondary" data-action="close">Fechar</button>
+      <button class="btn small danger" data-action="delete">Excluir lead</button></div>
+    <div class="section-label" style="margin-top:20px;">Histórico de contato</div>
+    <div class="lead-actions" style="margin-top:0;">
+      <button class="btn small gold" data-action="log-enviada">Registrar: mensagem enviada</button>
+      <button class="btn small gold" data-action="log-resposta">Registrar: resposta recebida</button>
+      <button class="btn small secondary" data-action="log-ligacao">Registrar: ligação</button>
+    </div>
+    <div style="margin-top:10px;">${(l.atividades||[]).slice().reverse().map(a=>`<div style="font-size:13px; padding:7px 0; border-bottom:1px solid var(--line);"><strong style="color:var(--navy);">${a.tipo}</strong> — ${a.texto}<div style="color:var(--muted); font-size:11.5px;">${fmtDate(a.data)} · ${a.por}</div></div>`).join('') || '<div class="empty" style="padding:14px;">Sem histórico ainda.</div>'}</div>
+  `;
+}
+function bindLeadDetailEvents(id){
+  const detail = document.getElementById('detail-'+id); if(!detail) return;
+  const lead = LEADS.find(l=>l.id===id);
+  detail.querySelectorAll('[data-action="save"]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const oldStatus = lead.status;
+      const patch = {};
+      detail.querySelectorAll('[data-f]').forEach(el=>{ patch[el.dataset.f] = el.value === '' ? null : el.value; });
+      let atividades = lead.atividades || [];
+      if(patch.status && patch.status !== oldStatus){
+        atividades = [...atividades, { data: todayISO(), tipo:'Mudança de etapa', texto:`De "${oldStatus||'Novo'}" para "${patch.status}"`, por: CURRENT_PROFILE.nome }];
+      }
+      patch.atividades = atividades;
+      const { error } = await supabase.from('leads').update(patch).eq('id', id);
+      if(error){ showToast('Erro: '+error.message); return; }
+      showToast('Alterações salvas.');
+      await loadAll(); renderLeads();
+    });
+  });
+  detail.querySelectorAll('[data-action="close"]').forEach(btn=>{ btn.addEventListener('click', ()=>{ openLeadId=null; renderLeads(); }); });
+  detail.querySelectorAll('[data-action="delete"]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      if(!confirm('Mover este lead para a lixeira?')) return;
+      await supabase.from('leads').update({ deleted_at: new Date().toISOString(), deleted_by: CURRENT_PROFILE.nome }).eq('id', id);
+      openLeadId = null; showToast('Lead movido para a lixeira.');
+      await loadAll(); renderLeads();
+    });
+  });
+  const logMap = { 'log-enviada':'Mensagem enviada', 'log-resposta':'Resposta recebida', 'log-ligacao':'Ligação' };
+  Object.keys(logMap).forEach(action=>{
+    detail.querySelectorAll(`[data-action="${action}"]`).forEach(btn=>{
+      btn.addEventListener('click', async ()=>{
+        const atividades = [...(lead.atividades||[]), { data: todayISO(), tipo: logMap[action], texto: logMap[action], por: CURRENT_PROFILE.nome }];
+        await supabase.from('leads').update({ atividades, data_ultimo_contato: todayISO() }).eq('id', id);
+        showToast('Registrado.'); await loadAll(); renderLeads();
+      });
+    });
+  });
+}
+
+// ============================================================
+// REATIVAÇÃO
+// ============================================================
+document.getElementById('salvarAtivoBtn').addEventListener('click', async ()=>{
+  const nome = document.getElementById('nAtivo_nome').value.trim();
+  if(!nome){ showToast('Preencha o nome.'); return; }
+  await supabase.from('ativos').insert({
+    nome, telefone: document.getElementById('nAtivo_telefone').value.trim(),
+    ultima_visita: document.getElementById('nAtivo_ultimaVisita').value || null,
+    proximo_contato: document.getElementById('nAtivo_proximoContato').value || null,
+    obs: document.getElementById('nAtivo_obs').value.trim(),
+    adicionado_por: CURRENT_PROFILE.nome,
+  });
+  showToast('Adicionado.');
+  ['nAtivo_nome','nAtivo_telefone','nAtivo_ultimaVisita','nAtivo_proximoContato','nAtivo_obs'].forEach(id=> document.getElementById(id).value='');
+  await loadAll(); renderAtivos();
+});
+function renderAtivos(){
+  const list = [...ATIVOS].sort((a,b)=> (a.proximo_contato||'9999').localeCompare(b.proximo_contato||'9999'));
+  const box = document.getElementById('ativosList');
+  box.innerHTML = list.length ? list.map(a=>`
+    <div class="lead-card"><div class="lead-top"><div><div class="lead-name">${a.nome}</div><div class="lead-meta">${a.telefone||'sem telefone'} · última visita: ${fmtDate(a.ultima_visita)} · próximo contato: ${fmtDate(a.proximo_contato)}</div>${a.obs?`<div class="lead-meta">${a.obs}</div>`:''}</div>
+    <span class="badge ${a.status==='Contatado'?'compareceu':(a.status==='Reagendado'?'fechado':(a.status==='Perdido'?'perdido':'novo'))}">${a.status}</span></div>
+    <div class="lead-actions"><select data-ativo-status="${a.id}" style="width:auto; padding:7px 10px; font-size:13px;"><option value="Ativo" ${a.status==='Ativo'?'selected':''}>Ativo</option><option value="Contatado" ${a.status==='Contatado'?'selected':''}>Contatado</option><option value="Reagendado" ${a.status==='Reagendado'?'selected':''}>Reagendado</option><option value="Perdido" ${a.status==='Perdido'?'selected':''}>Perdido</option></select>${waButtonHTML(a.telefone)}<button class="btn small danger" data-ativo-del="${a.id}">Remover</button></div></div>`).join('') : '<div class="empty">Nenhum paciente na lista.</div>';
+  box.querySelectorAll('[data-ativo-status]').forEach(sel=>{ sel.addEventListener('change', async ()=>{ await supabase.from('ativos').update({status:sel.value}).eq('id', sel.dataset.ativoStatus); await loadAll(); showToast('Atualizado.'); renderAtivos(); }); });
+  box.querySelectorAll('[data-ativo-del]').forEach(btn=>{ btn.addEventListener('click', async ()=>{ if(!confirm('Remover?')) return; await supabase.from('ativos').delete().eq('id', btn.dataset.ativoDel); await loadAll(); renderAtivos(); }); });
+}
+
+// ============================================================
+// CONTATOS
+// ============================================================
+let contatoFilterEstado = 'todos', contatoFilterCategoria = 'todos';
+document.getElementById('salvarContatoBtn').addEventListener('click', async ()=>{
+  const nome = document.getElementById('nContato_nome').value.trim();
+  const telefone = document.getElementById('nContato_telefone').value.trim();
+  if(!nome || !telefone){ showToast('Preencha nome e telefone.'); return; }
+  await supabase.from('contatos').insert({
+    nome, telefone, cidade: document.getElementById('nContato_cidade').value.trim(),
+    estado: document.getElementById('nContato_estado').value.trim().toUpperCase(),
+    categoria: document.getElementById('nContato_categoria').value, origem:'Manual', adicionado_por: CURRENT_PROFILE.nome,
+  });
+  ['nContato_nome','nContato_telefone','nContato_cidade','nContato_estado'].forEach(id=> document.getElementById(id).value='');
+  showToast('Contato adicionado.'); await loadAll(); renderContatos();
+});
+function renderContatos(){
+  const estados = ['todos', ...new Set(CONTATOS.map(c=>c.estado).filter(Boolean))];
+  document.getElementById('contatosFilters').innerHTML = `<span style="font-size:12px; color:var(--muted); align-self:center;">Estado:</span>${estados.map(e=>`<button data-cf="${e}" class="${contatoFilterEstado===e?'active':''}">${e==='todos'?'Todos':e}</button>`).join('')}`;
+  document.querySelectorAll('#contatosFilters button').forEach(b=>{ b.addEventListener('click', ()=>{ contatoFilterEstado = b.dataset.cf; renderContatos(); }); });
+  const categorias = ['todos', ...new Set(CONTATOS.map(c=>c.categoria).filter(Boolean))];
+  document.getElementById('contatosCatFilters').innerHTML = `<span style="font-size:12px; color:var(--muted); align-self:center;">Categoria:</span>${categorias.map(c=>`<button data-ccf="${c}" class="${contatoFilterCategoria===c?'active':''}">${c==='todos'?'Todas':c}</button>`).join('')}`;
+  document.querySelectorAll('#contatosCatFilters button').forEach(b=>{ b.addEventListener('click', ()=>{ contatoFilterCategoria = b.dataset.ccf; renderContatos(); }); });
+  let list = [...CONTATOS].sort((a,b)=> (a.nome||'').localeCompare(b.nome||''));
+  if(contatoFilterEstado!=='todos') list = list.filter(c=>c.estado===contatoFilterEstado);
+  if(contatoFilterCategoria!=='todos') list = list.filter(c=>c.categoria===contatoFilterCategoria);
+  const box = document.getElementById('contatosList');
+  box.innerHTML = list.length ? list.map(c=>`<div class="lead-card"><div class="lead-top"><div><div class="lead-name">${c.nome}</div><div class="lead-meta">${c.telefone||'sem telefone'} ${c.cidade?(' · '+c.cidade):''} ${c.estado?(' - '+c.estado):''} · ${c.origem||'—'} ${c.categoria?(' · '+c.categoria):''}</div></div></div><div class="lead-actions">${waButtonHTML(c.telefone)}${templateSelectHTML(c.telefone, c.nome)}<button class="btn small danger" data-contato-del="${c.id}">Remover</button></div></div>`).join('') : '<div class="empty">Nenhum contato ainda.</div>';
+  box.querySelectorAll('[data-contato-del]').forEach(btn=>{ btn.addEventListener('click', async ()=>{ if(!confirm('Remover?')) return; await supabase.from('contatos').delete().eq('id', btn.dataset.contatoDel); await loadAll(); renderContatos(); }); });
+}
+function parseCSVContacts(text){
+  const lines = text.split(/\r?\n/).filter(l=>l.trim().length);
+  if(!lines.length) return [];
+  const splitLine = (line) => line.split(',').map(s=>s.trim().replace(/^"|"$/g,''));
+  const header = splitLine(lines[0]).map(h=>h.toLowerCase());
+  const idxNome = header.findIndex(h=>['nome','name'].includes(h));
+  const idxTel = header.findIndex(h=>['telefone','phone','celular','whatsapp'].includes(h));
+  const idxCidade = header.findIndex(h=>['cidade','city'].includes(h));
+  const idxEstado = header.findIndex(h=>['estado','uf','state'].includes(h));
+  const hasHeader = idxNome>-1 || idxTel>-1;
+  const dataLines = hasHeader ? lines.slice(1) : lines;
+  const nomeCol=idxNome>-1?idxNome:0, telCol=idxTel>-1?idxTel:1, cidCol=idxCidade>-1?idxCidade:2, estCol=idxEstado>-1?idxEstado:3;
+  return dataLines.map(line=>{ const cols = splitLine(line); return { nome: cols[nomeCol]||'', telefone: cols[telCol]||'', cidade: cols[cidCol]||'', estado: (cols[estCol]||'').toUpperCase(), categoria:'Lista fria (sem relação prévia)', origem:'CSV', adicionado_por: CURRENT_PROFILE.nome }; }).filter(c=>c.nome||c.telefone);
+}
+function parseVCardContacts(text){
+  const blocks = text.split(/BEGIN:VCARD/i).slice(1);
+  return blocks.map(block=>{
+    const fnMatch = block.match(/FN(?:;[^:]*)?:(.*)/i);
+    const telMatch = block.match(/TEL(?:;[^:]*)?:([^\r\n]*)/i);
+    const adrMatch = block.match(/ADR(?:;[^:]*)?:(.*)/i);
+    let cidade='', estado='';
+    if(adrMatch){ const parts = adrMatch[1].split(';'); cidade=(parts[3]||'').trim(); estado=(parts[4]||'').trim().toUpperCase(); }
+    return { nome: fnMatch?fnMatch[1].trim():'', telefone: telMatch?telMatch[1].trim():'', cidade, estado, categoria:'Lista fria (sem relação prévia)', origem:'vCard', adicionado_por: CURRENT_PROFILE.nome };
+  }).filter(c=>c.nome||c.telefone);
+}
+document.getElementById('contatosFileInput').addEventListener('change', (e)=>{
+  const file = e.target.files[0]; if(!file) return;
+  const reader = new FileReader();
+  reader.onload = async (ev)=>{
+    const text = ev.target.result;
+    const imported = (file.name.toLowerCase().endsWith('.vcf') || /BEGIN:VCARD/i.test(text)) ? parseVCardContacts(text) : parseCSVContacts(text);
+    if(!imported.length){ showToast('Não consegui ler contatos desse arquivo.'); return; }
+    const { error } = await supabase.from('contatos').insert(imported);
+    if(error){ showToast('Erro ao importar: '+error.message); return; }
+    showToast(`${imported.length} contato(s) importado(s).`);
+    await loadAll(); renderContatos();
+    e.target.value = '';
+  };
+  reader.readAsText(file);
+});
+
+// ============================================================
+// TEMPLATES
+// ============================================================
+let tplFilterCategoria = 'todos';
+document.getElementById('salvarTplBtn').addEventListener('click', async ()=>{
+  const titulo = document.getElementById('nTpl_titulo').value.trim();
+  const texto = document.getElementById('nTpl_texto').value.trim();
+  if(!titulo || !texto){ showToast('Preencha título e texto.'); return; }
+  await supabase.from('templates').insert({ categoria: document.getElementById('nTpl_categoria').value, titulo, texto, criado_por: CURRENT_PROFILE.nome });
+  document.getElementById('nTpl_titulo').value=''; document.getElementById('nTpl_texto').value='';
+  showToast('Modelo salvo.'); await loadAll(); renderTemplates();
+});
+function renderTemplates(){
+  const cats = ['todos', ...new Set(TEMPLATES.map(t=>t.categoria))];
+  document.getElementById('tplFilters').innerHTML = cats.map(c=>`<button data-tf="${c}" class="${tplFilterCategoria===c?'active':''}">${c==='todos'?'Todos':c}</button>`).join('');
+  document.querySelectorAll('#tplFilters button').forEach(b=>{ b.addEventListener('click', ()=>{ tplFilterCategoria = b.dataset.tf; renderTemplates(); }); });
+  let list = [...TEMPLATES]; if(tplFilterCategoria!=='todos') list = list.filter(t=>t.categoria===tplFilterCategoria);
+  const box = document.getElementById('templatesList');
+  box.innerHTML = list.length ? list.map(t=>`<div class="lead-card"><div class="lead-top"><div><div class="lead-name">${t.titulo}</div><div class="lead-meta">${t.categoria}</div></div></div><div style="font-size:14px; margin-top:8px; white-space:pre-wrap;">${t.texto}</div><div class="lead-actions"><button class="btn small secondary" data-tpl-copy="${t.id}">Copiar texto</button><button class="btn small danger" data-tpl-del="${t.id}">Excluir</button></div></div>`).join('') : '<div class="empty">Nenhum modelo ainda.</div>';
+  box.querySelectorAll('[data-tpl-copy]').forEach(btn=>{ btn.addEventListener('click', ()=>{ const t=TEMPLATES.find(x=>x.id===btn.dataset.tplCopy); navigator.clipboard?.writeText(t.texto).then(()=>showToast('Copiado.')).catch(()=>showToast('Não copiou automaticamente.')); }); });
+  box.querySelectorAll('[data-tpl-del]').forEach(btn=>{ btn.addEventListener('click', async ()=>{ if(!confirm('Excluir?')) return; await supabase.from('templates').delete().eq('id', btn.dataset.tplDel); await loadAll(); renderTemplates(); }); });
+}
+
+// ============================================================
+// ROTINAS
+// ============================================================
+document.getElementById('salvarRotinaBtn').addEventListener('click', async ()=>{
+  const titulo = document.getElementById('nRot_titulo').value.trim();
+  if(!titulo){ showToast('Preencha o título.'); return; }
+  const { error } = await supabase.from('rotinas').insert({ titulo, gatilho: document.getElementById('nRot_gatilho').value.trim(), acao: document.getElementById('nRot_acao').value.trim(), ativo:true, criado_por: CURRENT_PROFILE.nome });
+  if(error){ showToast('Erro: '+error.message); return; }
+  ['nRot_titulo','nRot_gatilho','nRot_acao'].forEach(id=> document.getElementById(id).value='');
+  showToast('Rotina salva.'); await loadAll(); renderRotinas();
+});
+function renderRotinas(){
+  document.getElementById('rotinaFormCard').style.display = (CURRENT_PROFILE.role==='owner') ? 'block' : 'none';
+  const box = document.getElementById('rotinasList');
+  box.innerHTML = ROTINAS.length ? ROTINAS.map(r=>`<div class="lead-card"><div class="lead-top"><div><div class="lead-name">${r.titulo}</div><div class="lead-meta"><strong>Quando:</strong> ${r.gatilho||'—'}</div><div class="lead-meta"><strong>Fazer:</strong> ${r.acao||'—'}</div></div><span class="badge ${r.ativo?'compareceu':'perdido'}">${r.ativo?'Ativa':'Pausada'}</span></div>${CURRENT_PROFILE.role==='owner'?`<div class="lead-actions"><button class="btn small secondary" data-rot-toggle="${r.id}">${r.ativo?'Pausar':'Ativar'}</button><button class="btn small danger" data-rot-del="${r.id}">Excluir</button></div>`:''}</div>`).join('') : '<div class="empty">Nenhuma rotina cadastrada ainda.</div>';
+  box.querySelectorAll('[data-rot-toggle]').forEach(btn=>{ btn.addEventListener('click', async ()=>{ const r=ROTINAS.find(x=>x.id===btn.dataset.rotToggle); await supabase.from('rotinas').update({ativo:!r.ativo}).eq('id', r.id); await loadAll(); renderRotinas(); }); });
+  box.querySelectorAll('[data-rot-del]').forEach(btn=>{ btn.addEventListener('click', async ()=>{ if(!confirm('Excluir?')) return; await supabase.from('rotinas').delete().eq('id', btn.dataset.rotDel); await loadAll(); renderRotinas(); }); });
+}
+
+// ============================================================
+// IA & PROMPT
+// ============================================================
+const DEFAULT_IA_PROMPT = `VOCÊ É
+O assistente virtual de atendimento da Maison D'Or Odontologia, consultório particular em Vila Velha - ES do Dr. Marcos Paulo Araújo de Moraes (CRO 10828), especializado em ortodontia, alinhadores invisíveis (Invisalign) e harmonização facial.
+
+TOM DE VOZ
+Sofisticado, acolhedor e direto. Trate o paciente com "você", de forma próxima mas elegante. Frases curtas. No máximo 1 emoji por mensagem, se fizer sentido.
+
+O QUE VOCÊ FAZ
+1. Recebe o primeiro contato e entende o interesse (ortodontia, alinhadores, harmonização facial ou outro).
+2. Coleta: nome completo, telefone, procedimento de interesse, e se já é paciente.
+3. Explica de forma breve e geral do que se trata o procedimento, sem detalhes clínicos do caso.
+4. Oferece agendar avaliação presencial — sempre o próximo passo, nunca diagnóstico pela conversa.
+5. Confirma/reagenda consultas quando solicitado.
+6. Registra tudo de forma organizada pra equipe humana revisar.
+
+O QUE VOCÊ NUNCA FAZ (compliance CFO — Resolução CFO-196/2019)
+- Nunca promete resultado, cura, ou garante prazo.
+- Nunca dá diagnóstico, prescrição ou orientação clínica por mensagem.
+- Nunca informa valor fechado sem avaliação prévia.
+- Nunca compara com outros profissionais/clínicas.
+- Nunca promete desconto não autorizado.
+- Nunca compartilha dado de um paciente com outro.
+
+QUANDO TRANSFERIR PARA HUMANO
+- Urgência, dor ou emergência.
+- Pedido para falar com o Dr. Marcos.
+- Dúvida financeira/negociação.
+- Paciente insatisfeito.
+- Pergunta fora do escopo da clínica.
+
+ENCERRAMENTO
+Sempre termine com um próximo passo claro.`;
+function renderIa(){ document.getElementById('iaPromptText').value = IA_PROMPT || DEFAULT_IA_PROMPT; }
+document.getElementById('salvarIaBtn').addEventListener('click', async ()=>{
+  IA_PROMPT = document.getElementById('iaPromptText').value;
+  await supabase.from('ia_prompt').update({ texto: IA_PROMPT }).eq('id',1);
+  showToast('Rascunho salvo.');
+});
+document.getElementById('resetIaBtn').addEventListener('click', ()=>{
+  if(!confirm('Substituir pelo rascunho sugerido?')) return;
+  document.getElementById('iaPromptText').value = DEFAULT_IA_PROMPT;
+});
+
+// ============================================================
+// EQUIPE
+// ============================================================
+function renderEquipe(){
+  const box = document.getElementById('equipeList');
+  box.innerHTML = PROFILES.length ? PROFILES.map(p=>`
+    <div class="lead-card"><div class="lead-top"><div><div class="lead-name">${p.nome}</div><div class="lead-meta">${p.role==='owner'?'Proprietário':'Equipe'}</div></div>
+    ${p.id !== CURRENT_PROFILE.id ? `<button class="btn small secondary" data-toggle-role="${p.id}" data-cur-role="${p.role}">${p.role==='owner'?'Rebaixar pra equipe':'Promover a proprietário'}</button>` : '<span class="badge novo">Você</span>'}
+    </div></div>`).join('') : '<div class="empty">Nenhum perfil encontrado.</div>';
+  box.querySelectorAll('[data-toggle-role]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const novoRole = btn.dataset.curRole === 'owner' ? 'staff' : 'owner';
+      if(!confirm(`Confirma mudar esse acesso para "${novoRole==='owner'?'proprietário':'equipe'}"?`)) return;
+      await supabase.from('profiles').update({ role: novoRole }).eq('id', btn.dataset.toggleRole);
+      await loadAll(); renderEquipe();
+    });
+  });
+}
+
+// ============================================================
+// FECHAMENTO
+// ============================================================
+document.getElementById('nDiaria_data').value = todayISO();
+document.getElementById('salvarDiariaBtn').addEventListener('click', async ()=>{
+  const data = document.getElementById('nDiaria_data').value || todayISO();
+  await supabase.from('diarias').insert({ data, entrada: document.getElementById('nDiaria_entrada').value, saida: document.getElementById('nDiaria_saida').value, registrado_por: CURRENT_PROFILE.nome });
+  showToast('Diária registrada.'); await loadAll(); renderFechamento();
+});
+function renderFechamento(){
+  const diariasMes = DIARIAS.filter(d => isThisMonth(d.data)).sort((a,b)=> a.data.localeCompare(b.data));
+  const tbl = document.getElementById('diariasTable');
+  tbl.innerHTML = diariasMes.length ? `<table class="simple"><tr><th>Data</th><th>Entrada</th><th>Saída</th><th>Por</th><th></th></tr>${diariasMes.map(d=>`<tr><td>${fmtDate(d.data)}</td><td>${d.entrada||'—'}</td><td>${d.saida||'—'}</td><td>${d.registrado_por||'—'}</td><td><button class="btn small secondary" data-del="${d.id}">Excluir</button></td></tr>`).join('')}</table>` : '<div class="empty">Nenhuma diária este mês.</div>';
+  tbl.querySelectorAll('[data-del]').forEach(btn=>{ btn.addEventListener('click', async ()=>{ await supabase.from('diarias').delete().eq('id', btn.dataset.del); await loadAll(); renderFechamento(); }); });
+
+  const leadsMes = LEADS.filter(l => isThisMonth(l.data));
+  const compareceram = leadsMes.filter(l=>l.compareceu==='Sim');
+  const vendas = leadsMes.filter(l=>l.fechou==='Sim');
+  const comissaoInterna = vendas.filter(l=>l.origem==='Lead interno').reduce((s,l)=>s+calcComissao(l),0);
+  const comissaoPropria = vendas.filter(l=>l.origem==='Lead próprio').reduce((s,l)=>s+calcComissao(l),0);
+  const bonus = compareceram.length * CONFIG.bonus;
+  const fixo = diariasMes.length * (CONFIG.diaria + CONFIG.almoco);
+  const total = comissaoInterna + comissaoPropria + bonus + fixo;
+  document.getElementById('fechamentoResumoCard').innerHTML = `<div class="section-label">Fechamento calculado do mês</div><table class="simple">
+    <tr><td>Diárias trabalhadas</td><td style="text-align:right;">${diariasMes.length}</td></tr>
+    <tr><td>Custo fixo</td><td style="text-align:right;">${fmtMoney(fixo)}</td></tr>
+    <tr><td>Comparecimentos com bônus</td><td style="text-align:right;">${compareceram.length} · ${fmtMoney(bonus)}</td></tr>
+    <tr><td>Comissão — leads internos</td><td style="text-align:right;">${fmtMoney(comissaoInterna)}</td></tr>
+    <tr><td>Comissão — leads próprios</td><td style="text-align:right;">${fmtMoney(comissaoPropria)}</td></tr>
+    <tr style="font-weight:800; color:var(--navy); font-size:16px;"><td>TOTAL A PAGAR</td><td style="text-align:right;">${fmtMoney(total)}</td></tr></table>`;
+}
+
+// ============================================================
+// CONFIG
+// ============================================================
+function renderConfig(){
+  document.getElementById('cfg_diaria').value = CONFIG.diaria;
+  document.getElementById('cfg_almoco').value = CONFIG.almoco;
+  document.getElementById('cfg_comInterno').value = CONFIG.com_interno;
+  document.getElementById('cfg_comProprio').value = CONFIG.com_proprio;
+  document.getElementById('cfg_limInterno').value = CONFIG.lim_interno;
+  document.getElementById('cfg_limProprio').value = CONFIG.lim_proprio;
+  document.getElementById('cfg_bonus').value = CONFIG.bonus;
+  document.getElementById('cfg_metaAgDia').value = CONFIG.meta_ag_dia;
+  document.getElementById('cfg_metaAgSemana').value = CONFIG.meta_ag_semana;
+  document.getElementById('cfg_metaVdMes').value = CONFIG.meta_vd_mes;
+  renderTrash();
+}
+document.getElementById('salvarConfigBtn').addEventListener('click', async ()=>{
+  const patch = {
+    diaria: Number(document.getElementById('cfg_diaria').value)||0, almoco: Number(document.getElementById('cfg_almoco').value)||0,
+    com_interno: Number(document.getElementById('cfg_comInterno').value)||0, com_proprio: Number(document.getElementById('cfg_comProprio').value)||0,
+    lim_interno: Number(document.getElementById('cfg_limInterno').value)||0, lim_proprio: Number(document.getElementById('cfg_limProprio').value)||0,
+    bonus: Number(document.getElementById('cfg_bonus').value)||0,
+    meta_ag_dia: Number(document.getElementById('cfg_metaAgDia').value)||0, meta_ag_semana: Number(document.getElementById('cfg_metaAgSemana').value)||0, meta_vd_mes: Number(document.getElementById('cfg_metaVdMes').value)||0,
+  };
+  const { error } = await supabase.from('config').update(patch).eq('id',1);
+  if(error){ showToast('Erro: '+error.message); return; }
+  showToast('Configurações salvas.'); await loadAll(); renderAll();
+});
+function renderTrash(){
+  const box = document.getElementById('trashList');
+  const trash = window.TRASH || [];
+  box.innerHTML = trash.length ? trash.map(l=>`<div class="lead-card"><div class="lead-top"><div><div class="lead-name">${l.nome}</div><div class="lead-meta">excluído por ${l.deleted_by||'—'}</div></div></div><div class="lead-actions"><button class="btn small" data-restore="${l.id}">Restaurar</button><button class="btn small danger" data-purge="${l.id}">Excluir definitivamente</button></div></div>`).join('') : '<div class="empty">Lixeira vazia.</div>';
+  box.querySelectorAll('[data-restore]').forEach(btn=>{ btn.addEventListener('click', async ()=>{ await supabase.from('leads').update({deleted_at:null, deleted_by:null}).eq('id', btn.dataset.restore); showToast('Restaurado.'); await loadAll(); renderTrash(); }); });
+  box.querySelectorAll('[data-purge]').forEach(btn=>{ btn.addEventListener('click', async ()=>{ if(!confirm('Excluir definitivamente?')) return; await supabase.from('leads').delete().eq('id', btn.dataset.purge); await loadAll(); renderTrash(); }); });
+}
+document.getElementById('baixarBackupBtn').addEventListener('click', ()=>{
+  const snap = { leads:LEADS, diarias:DIARIAS, ativos:ATIVOS, contatos:CONTATOS, templates:TEMPLATES, rotinas:ROTINAS, config:CONFIG, exportedAt:new Date().toISOString() };
+  const blob = new Blob([JSON.stringify(snap,null,2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href=url; a.download=`backup-maisondor-${todayISO()}.json`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+  showToast('Backup baixado.');
+});
+</script>
+</body>
+</html>
