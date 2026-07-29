@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>Enviar template WhatsApp (teste manual)</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 480px; margin: 40px auto; padding: 0 16px; }
+    label { display: block; margin-top: 12px; font-weight: bold; }
+    input, textarea { width: 100%; padding: 8px; margin-top: 4px; box-sizing: border-box; }
+    button { margin-top: 20px; padding: 10px 16px; font-size: 16px; cursor: pointer; }
+    #resultado { margin-top: 20px; padding: 12px; white-space: pre-wrap; font-family: monospace; }
+    .ok { background: #e6ffed; border: 1px solid #2e7d32; }
+    .erro { background: #ffe6e6; border: 1px solid #c62828; }
+  </style>
+</head>
+<body>
+  <h1>Enviar template (teste manual)</h1>
+  <p>
+    Esta pagina NAO manda em massa - so envia UM template para UM numero por vez.
+    Use so pra testar a conexao.
+  </p>
+
+  <form id="formEnvio">
+    <label for="token">Senha da rota (ENVIAR_TEMPLATE_TOKEN)</label>
+    <input type="password" id="token" required autocomplete="off" />
+
+    <label for="telefone">Telefone (com DDI e DDD, so numeros. Ex: 5511999999999)</label>
+    <input type="text" id="telefone" required />
+
+    <label for="template">Nome do template (aprovado na Meta)</label>
+    <input type="text" id="template" required />
+
+    <label for="idioma">Codigo do idioma (ex: pt_BR)</label>
+    <input type="text" id="idioma" value="pt_BR" required />
+
+    <label for="parametros">Parametros do template, separados por virgula (opcional)</label>
+    <textarea id="parametros" rows="2" placeholder="Ex: Maria, 30/07/2026, 14h"></textarea>
+
+    <button type="submit">Enviar</button>
+  </form>
+
+  <div id="resultado"></div>
+
+  <script>
+    // Esta senha SO fica na memoria do navegador enquanto a pagina esta aberta -
+    // ela nao fica salva em lugar nenhum do codigo.
+    const form = document.getElementById('formEnvio');
+    const resultadoDiv = document.getElementById('resultado');
+
+    form.addEventListener('submit', async (evento) => {
+      evento.preventDefault();
+      resultadoDiv.className = '';
+      resultadoDiv.textContent = 'Enviando...';
+
+      const parametrosTexto = document.getElementById('parametros').value.trim();
+      const parametros = parametrosTexto
+        ? parametrosTexto.split(',').map((p) => p.trim())
+        : [];
+
+      try {
+        const resposta = await fetch('/enviar-template', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-token': document.getElementById('token').value,
+          },
+          body: JSON.stringify({
+            telefone: document.getElementById('telefone').value,
+            template: document.getElementById('template').value,
+            idioma: document.getElementById('idioma').value,
+            parametros,
+          }),
+        });
+
+        const dados = await resposta.json();
+
+        if (resposta.ok) {
+          resultadoDiv.className = 'ok';
+          resultadoDiv.textContent = 'Sucesso!\n' + JSON.stringify(dados, null, 2);
+        } else {
+          resultadoDiv.className = 'erro';
+          resultadoDiv.textContent = 'Erro:\n' + JSON.stringify(dados, null, 2);
+        }
+      } catch (erro) {
+        resultadoDiv.className = 'erro';
+        resultadoDiv.textContent = 'Erro de rede: ' + erro.message;
+      }
+    });
+  </script>
+</body>
+</html>
