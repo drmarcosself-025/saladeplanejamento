@@ -874,19 +874,34 @@ function renderContatos(){
   box.innerHTML = list.length ? list.map(c=>`<div class="lead-card"><div class="lead-top"><div><div class="lead-name">${c.nome}</div><div class="lead-meta">${c.telefone||'sem telefone'} ${c.cidade?(' · '+c.cidade):''} ${c.estado?(' - '+c.estado):''} · ${c.origem||'—'} ${c.categoria?(' · '+c.categoria):''}</div></div></div><div class="lead-actions">${waButtonHTML(c.telefone)}${templateSelectHTML(c.telefone, c.nome)}<button class="btn small danger" data-contato-del="${c.id}">Remover</button></div></div>`).join('') : '<div class="empty">Nenhum contato ainda.</div>';
   box.querySelectorAll('[data-contato-del]').forEach(btn=>{ btn.addEventListener('click', async ()=>{ if(!confirm('Remover?')) return; await sb.from('contatos').delete().eq('id', btn.dataset.contatoDel); await loadAll(); renderContatos(); }); });
 }
+function splitCSVLine(line){
+  const cols = [];
+  let cur = '', inQuotes = false;
+  for(let i=0; i<line.length; i++){
+    const ch = line[i];
+    if(inQuotes){
+      if(ch === '"' && line[i+1] === '"'){ cur += '"'; i++; }
+      else if(ch === '"'){ inQuotes = false; }
+      else { cur += ch; }
+    } else if(ch === '"'){ inQuotes = true; }
+    else if(ch === ','){ cols.push(cur.trim()); cur=''; }
+    else { cur += ch; }
+  }
+  cols.push(cur.trim());
+  return cols;
+}
 function parseCSVContacts(text){
   const lines = text.split(/\r?\n/).filter(l=>l.trim().length);
   if(!lines.length) return [];
-  const splitLine = (line) => line.split(',').map(s=>s.trim().replace(/^"|"$/g,''));
-  const header = splitLine(lines[0]).map(h=>h.toLowerCase());
-  const idxNome = header.findIndex(h=>['nome','name'].includes(h));
-  const idxTel = header.findIndex(h=>['telefone','phone','celular','whatsapp'].includes(h));
-  const idxCidade = header.findIndex(h=>['cidade','city'].includes(h));
-  const idxEstado = header.findIndex(h=>['estado','uf','state'].includes(h));
+  const header = splitCSVLine(lines[0]).map(h=>h.toLowerCase());
+  const idxNome = header.findIndex(h=>h==='nome'||h==='name');
+  const idxTel = header.findIndex(h=>/telefone|phone|celular|whatsapp/.test(h) && !/type/.test(h));
+  const idxCidade = header.findIndex(h=>/cidade|city/.test(h));
+  const idxEstado = header.findIndex(h=>/estado|\buf\b|state|region/.test(h));
   const hasHeader = idxNome>-1 || idxTel>-1;
   const dataLines = hasHeader ? lines.slice(1) : lines;
   const nomeCol=idxNome>-1?idxNome:0, telCol=idxTel>-1?idxTel:1, cidCol=idxCidade>-1?idxCidade:2, estCol=idxEstado>-1?idxEstado:3;
-  return dataLines.map(line=>{ const cols = splitLine(line); return { nome: cols[nomeCol]||'', telefone: cols[telCol]||'', cidade: cols[cidCol]||'', estado: (cols[estCol]||'').toUpperCase(), categoria:'Lista fria (sem relação prévia)', origem:'CSV', adicionado_por: CURRENT_PROFILE.nome }; }).filter(c=>c.nome||c.telefone);
+  return dataLines.map(line=>{ const cols = splitCSVLine(line); return { nome: cols[nomeCol]||'', telefone: cols[telCol]||'', cidade: cols[cidCol]||'', estado: (cols[estCol]||'').toUpperCase(), categoria:'Lista fria (sem relação prévia)', origem:'CSV', adicionado_por: CURRENT_PROFILE.nome }; }).filter(c=>c.nome||c.telefone);
 }
 function parseVCardContacts(text){
   const blocks = text.split(/BEGIN:VCARD/i).slice(1);
