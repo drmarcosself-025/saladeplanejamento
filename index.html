@@ -167,6 +167,8 @@
       <label>Senha</label>
       <input type="password" id="loginSenha" placeholder="Mínimo 6 caracteres">
       <button class="btn" style="width:100%;" id="loginBtn">Entrar</button>
+      <div style="display:flex; align-items:center; gap:10px; margin:14px 0; color:var(--muted); font-size:13px;"><div style="flex:1; height:1px; background:var(--line);"></div>ou<div style="flex:1; height:1px; background:var(--line);"></div></div>
+      <button class="btn secondary" style="width:100%; margin-top:0;" id="loginGoogleBtn">Entrar com Google</button>
       <p class="helptext" id="loginHelp">A primeira pessoa a criar conta neste sistema vira automaticamente a proprietária (acesso total). As próximas contas entram como equipe.</p>
     </div>
   </div>
@@ -363,10 +365,21 @@
 // SUPABASE CLIENT
 // ============================================================
 let supabase = null;
-if(SUPABASE_URL.includes('COLE_AQUI') || SUPABASE_ANON_KEY.includes('COLE_AQUI')){
-  document.getElementById('configWarning').style.display = 'block';
-} else {
-  supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+try {
+  if(SUPABASE_URL.includes('COLE_AQUI') || SUPABASE_ANON_KEY.includes('COLE_AQUI')){
+    document.getElementById('configWarning').style.display = 'block';
+  } else if(!window.supabase){
+    const w = document.getElementById('configWarning');
+    w.style.display = 'block';
+    w.textContent = '⚠️ Não foi possível carregar a biblioteca do Supabase. Verifique sua conexão com a internet e recarregue a página.';
+  } else {
+    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  }
+} catch(e) {
+  console.error('Falha ao iniciar o Supabase:', e);
+  const w = document.getElementById('configWarning');
+  w.style.display = 'block';
+  w.textContent = '⚠️ Erro ao iniciar o Supabase: ' + e.message;
 }
 
 // ============================================================
@@ -428,6 +441,11 @@ document.getElementById('loginBtn').addEventListener('click', async ()=>{
     if(error){ showToast('E-mail ou senha incorretos.'); return; }
     await postLogin();
   }
+});
+document.getElementById('loginGoogleBtn').addEventListener('click', async ()=>{
+  if(!supabase){ showToast('Configuração do Supabase pendente.'); return; }
+  const { error } = await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.href } });
+  if(error){ showToast('Erro ao conectar com Google: '+error.message); }
 });
 document.getElementById('trocarBtn').addEventListener('click', async ()=>{
   await supabase.auth.signOut();
