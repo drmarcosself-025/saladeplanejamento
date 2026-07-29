@@ -515,10 +515,19 @@ async function loadAll(){
 
   if(!TEMPLATES.length){
     const seeds = [
-      { categoria:'Primeiro contato', titulo:'Opt-in — lista fria / sem relação prévia', texto:"Oi {nome}, tudo bem? Aqui é da Maison D'Or Odontologia, em Vila Velha. Você toparia receber, de vez em quando, informações sobre saúde bucal e estética facial da nossa clínica? Se não tiver interesse, sem problema. 🙂", criado_por:'sistema' },
-      { categoria:'Primeiro contato', titulo:'Boas-vindas lead novo', texto:"Oi {nome}! Aqui é da Maison D'Or Odontologia. Vi seu interesse em nossos tratamentos — posso te ajudar a agendar uma avaliação?", criado_por:'sistema' },
-      { categoria:'Confirmação de consulta', titulo:'Confirmar consulta de amanhã', texto:"Oi {nome}! Passando pra confirmar sua consulta na Maison D'Or amanhã. Podemos confirmar seu horário?", criado_por:'sistema' },
-      { categoria:'Reativação', titulo:'Reativação — sumiu do tratamento', texto:"Oi {nome}, tudo bem? Notamos que faz um tempo que não nos vemos por aqui na Maison D'Or. Gostaria de retomar seu acompanhamento?", criado_por:'sistema' },
+      { categoria:'Primeiro contato', titulo:'Opt-in — lista fria / sem relação prévia', texto:"Oi {nome}, tudo bem? Aqui é do Consultório do Dr. Marcos Paulo Araújo de Moraes (CRO 10828), em Vila Velha - ES. Você toparia receber, de vez em quando, informações sobre saúde bucal e estética facial? Se não tiver interesse, sem problema. 🙂", criado_por:'sistema' },
+      { categoria:'Primeiro contato', titulo:'Boas-vindas lead novo', texto:"Oi {nome}! Aqui é do Consultório do Dr. Marcos Paulo, em Vila Velha - ES. Vi seu interesse em nossos tratamentos — posso te ajudar a agendar uma avaliação?", criado_por:'sistema' },
+      { categoria:'Primeiro contato', titulo:'Indicação de paciente', texto:"Oi {nome}, tudo bem? Aqui é do Consultório do Dr. Marcos Paulo, em Vila Velha - ES. Você foi indicado(a) por um paciente nosso — que bom! Posso te contar um pouco sobre nossos tratamentos e já ver um horário pra uma avaliação?", criado_por:'sistema' },
+      { categoria:'Confirmação de consulta', titulo:'Confirmar consulta de amanhã', texto:"Oi {nome}! Aqui é do Consultório do Dr. Marcos Paulo. Passando pra confirmar sua consulta de amanhã. Podemos confirmar seu horário?", criado_por:'sistema' },
+      { categoria:'Confirmação de consulta', titulo:'Confirmar consulta — hoje', texto:"Oi {nome}! Aqui é do Consultório do Dr. Marcos Paulo. Só confirmando: sua consulta é hoje. Consegue vir no horário combinado?", criado_por:'sistema' },
+      { categoria:'Confirmação de consulta', titulo:'Lembrete — 2 dias antes', texto:"Oi {nome}, tudo bem? Passando pra lembrar que sua consulta no Consultório do Dr. Marcos Paulo está marcada pra depois de amanhã. Qualquer imprevisto, me avisa por aqui. 🙂", criado_por:'sistema' },
+      { categoria:'Reagendamento', titulo:'Pedido de reagendamento', texto:"Oi {nome}! Sem problema, vamos reagendar. Me diz dois ou três horários que funcionam melhor pra você que eu já verifico a agenda do Consultório do Dr. Marcos Paulo.", criado_por:'sistema' },
+      { categoria:'Reagendamento', titulo:'Reagendamento por falta (no-show)', texto:"Oi {nome}, tudo bem? Sentimos sua falta na consulta de hoje no Consultório do Dr. Marcos Paulo. Quer que eu já busque um novo horário pra você?", criado_por:'sistema' },
+      { categoria:'Orçamento / follow-up', titulo:'Envio de orçamento', texto:"Oi {nome}! Segue o orçamento combinado na sua avaliação no Consultório do Dr. Marcos Paulo. Qualquer dúvida sobre valores ou formas de pagamento, é só me chamar por aqui.", criado_por:'sistema' },
+      { categoria:'Orçamento / follow-up', titulo:'Follow-up pós orçamento', texto:"Oi {nome}, tudo bem? Passando pra saber se ficou alguma dúvida sobre o orçamento que conversamos. Posso te ajudar com mais alguma informação?", criado_por:'sistema' },
+      { categoria:'Reativação', titulo:'Reativação — sumiu do tratamento', texto:"Oi {nome}, tudo bem? Notamos que faz um tempo que você não aparece por aqui no Consultório do Dr. Marcos Paulo. Gostaria de retomar seu acompanhamento?", criado_por:'sistema' },
+      { categoria:'Reativação', titulo:'Reativação — check-up de rotina', texto:"Oi {nome}! Já faz um tempinho desde sua última visita ao Consultório do Dr. Marcos Paulo. Que tal agendar um check-up de rotina?", criado_por:'sistema' },
+      { categoria:'Cobrança educada', titulo:'Lembrete de parcela em aberto', texto:"Oi {nome}, tudo bem? Passando com um lembrete: consta em aberto uma parcela referente ao seu tratamento no Consultório do Dr. Marcos Paulo. Qualquer dúvida sobre o pagamento, me chama por aqui que a gente resolve. 🙂", criado_por:'sistema' },
     ];
     const { data } = await sb.from('templates').insert(seeds).select();
     TEMPLATES = data || [];
@@ -940,7 +949,7 @@ function renderRotinas(){
 // IA & PROMPT
 // ============================================================
 const DEFAULT_IA_PROMPT = `VOCÊ É
-O assistente virtual de atendimento da Maison D'Or Odontologia, consultório particular em Vila Velha - ES do Dr. Marcos Paulo Araújo de Moraes (CRO 10828), especializado em ortodontia, alinhadores invisíveis (Invisalign) e harmonização facial.
+O assistente virtual de atendimento do Consultório do Dr. Marcos Paulo Araújo de Moraes (CRO 10828), consultório particular em Vila Velha - ES, especializado em ortodontia, alinhadores invisíveis (Invisalign) e harmonização facial.
 
 TOM DE VOZ
 Sofisticado, acolhedor e direto. Trate o paciente com "você", de forma próxima mas elegante. Frases curtas. No máximo 1 emoji por mensagem, se fizer sentido.
