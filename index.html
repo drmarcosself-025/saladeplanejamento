@@ -262,6 +262,7 @@
       <button class="btn" id="salvarContatoBtn">Adicionar contato</button>
     </div>
     <div class="card">
+      <input type="text" id="contatosBusca" placeholder="🔍 Buscar por nome ou telefone..." style="margin-bottom:14px;">
       <div class="filters" id="contatosFilters"></div>
       <div class="filters" id="contatosCatFilters" style="margin-top:-6px;"></div>
       <div id="contatosList"></div>
@@ -847,7 +848,8 @@ function renderAtivos(){
 // ============================================================
 // CONTATOS
 // ============================================================
-let contatoFilterEstado = 'todos', contatoFilterCategoria = 'todos';
+let contatoFilterEstado = 'todos', contatoFilterCategoria = 'todos', contatoBusca = '';
+document.getElementById('contatosBusca').addEventListener('input', (e)=>{ contatoBusca = e.target.value.trim().toLowerCase(); renderContatos(); });
 document.getElementById('salvarContatoBtn').addEventListener('click', async ()=>{
   const nome = document.getElementById('nContato_nome').value.trim();
   const telefone = document.getElementById('nContato_telefone').value.trim();
@@ -870,6 +872,10 @@ function renderContatos(){
   let list = [...CONTATOS].sort((a,b)=> (a.nome||'').localeCompare(b.nome||''));
   if(contatoFilterEstado!=='todos') list = list.filter(c=>c.estado===contatoFilterEstado);
   if(contatoFilterCategoria!=='todos') list = list.filter(c=>c.categoria===contatoFilterCategoria);
+  if(contatoBusca){
+    const buscaDigits = contatoBusca.replace(/\D/g,'');
+    list = list.filter(c => (c.nome||'').toLowerCase().includes(contatoBusca) || (buscaDigits && (c.telefone||'').replace(/\D/g,'').includes(buscaDigits)));
+  }
   const box = document.getElementById('contatosList');
   box.innerHTML = list.length ? list.map(c=>`<div class="lead-card"><div class="lead-top"><div><div class="lead-name">${c.nome}</div><div class="lead-meta">${c.telefone||'sem telefone'} ${c.cidade?(' · '+c.cidade):''} ${c.estado?(' - '+c.estado):''} · ${c.origem||'—'} ${c.categoria?(' · '+c.categoria):''}</div></div></div><div class="lead-actions">${waButtonHTML(c.telefone)}${templateSelectHTML(c.telefone, c.nome)}<button class="btn small danger" data-contato-del="${c.id}">Remover</button></div></div>`).join('') : '<div class="empty">Nenhum contato ainda.</div>';
   box.querySelectorAll('[data-contato-del]').forEach(btn=>{ btn.addEventListener('click', async ()=>{ if(!confirm('Remover?')) return; await sb.from('contatos').delete().eq('id', btn.dataset.contatoDel); await loadAll(); renderContatos(); }); });
