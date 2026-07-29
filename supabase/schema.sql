@@ -1,0 +1,238 @@
+-- Maison D'Or — schema do banco (Supabase)
+-- Rode este arquivo inteiro no SQL Editor do seu projeto Supabase.
+-- Depois, cole a Project URL e a anon key no topo do index.html.
+
+create extension if not exists pgcrypto;
+
+-- ============================================================
+-- PROFILES (uma linha por usuário autenticado)
+-- ============================================================
+create table if not exists public.profiles (
+  id uuid primary key references auth.users (id) on delete cascade,
+  nome text not null,
+  role text not null default 'staff' check (role in ('owner', 'staff')),
+  created_at timestamptz not null default now()
+);
+
+-- a primeira conta criada no sistema vira proprietária automaticamente
+create or replace function public.set_first_profile_owner()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if (select count(*) from public.profiles) = 0 then
+    new.role := 'owner';
+  else
+    new.role := coalesce(new.role, 'staff');
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_set_first_profile_owner on public.profiles;
+create trigger trg_set_first_profile_owner
+  before insert on public.profiles
+  for each row execute function public.set_first_profile_owner();
+
+create or replace function public.is_owner()
+returns boolean
+language sql
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.profiles
+    where id = auth.uid() and role = 'owner'
+  );
+$$;
+
+-- ============================================================
+-- LEADS
+-- ============================================================
+create table if not exists public.leads (
+  id uuid primary key default gen_random_uuid(),
+  nome text not null,
+  telefone text,
+  procedimento text,
+  origem text not null default 'Lead interno' check (origem in ('Lead interno', 'Lead próprio')),
+  data date not null default current_date,
+  responsavel text,
+  status text not null default 'Novo',
+  compareceu text,
+  fechou text,
+  valor_orcamento numeric,
+  valor_recebido numeric,
+  motivo_perda text,
+  obs text,
+  data_ultimo_contato date,
+  data_proxima_acao date,
+  atividades jsonb not null default '[]'::jsonb,
+  created_by text,
+  created_at timestamptz not null default now(),
+  deleted_at timestamptz,
+  deleted_by text
+);
+
+-- ============================================================
+-- DIÁRIAS (fechamento / folha de pagamento)
+-- ============================================================
+create table if not exists public.diarias (
+  id uuid primary key default gen_random_uuid(),
+  data date not null,
+  entrada time,
+  saida time,
+  registrado_por text,
+  created_at timestamptz not null default now()
+);
+
+-- ============================================================
+-- ATIVOS (reativação de pacientes antigos)
+-- ============================================================
+create table if not exists public.ativos (
+  id uuid primary key default gen_random_uuid(),
+  nome text not null,
+  telefone text,
+  ultima_visita date,
+  proximo_contato date,
+  status text not null default 'Ativo' check (status in ('Ativo', 'Contatado', 'Reagendado', 'Perdido')),
+  obs text,
+  adicionado_por text,
+  created_at timestamptz not null default now()
+);
+
+-- ============================================================
+-- CONTATOS
+-- ============================================================
+create table if not exists public.contatos (
+  id uuid primary key default gen_random_uuid(),
+  nome text not null,
+  telefone text,
+  cidade text,
+  estado text,
+  categoria text,
+  origem text,
+  adicionado_por text,
+  created_at timestamptz not null default now()
+);
+
+-- ============================================================
+-- TEMPLATES (modelos de mensagem)
+-- ============================================================
+create table if not exists public.templates (
+  id uuid primary key default gen_random_uuid(),
+  categoria text,
+  titulo text not null,
+  texto text not null,
+  criado_por text,
+  created_at timestamptz not null default now()
+);
+
+-- ============================================================
+-- ROTINAS
+-- ============================================================
+create table if not exists public.rotinas (
+  id uuid primary key default gen_random_uuid(),
+  titulo text not null,
+  gatilho text,
+  acao text,
+  ativo boolean not null default true,
+  criado_por text,
+  created_at timestamptz not null default now()
+);
+
+-- ============================================================
+-- CONFIG (linha única, id = 1)
+-- ============================================================
+create table if not exists public.config (
+  id int primary key default 1,
+  diaria numeric not null default 120,
+  almoco numeric not null default 30,
+  com_interno numeric not null default 5,
+  com_proprio numeric not null default 10,
+  lim_interno numeric not null default 150,
+  lim_proprio numeric not null default 250,
+  bonus numeric not null default 10,
+  meta_ag_dia int not null default 3,
+  meta_ag_semana int not null default 12,
+  meta_vd_mes int not null default 10
+);
+insert into public.config (id) values (1) on conflict (id) do nothing;
+
+-- ============================================================
+-- IA_PROMPT (linha única, id = 1 — rascunho do proprietário)
+-- ============================================================
+create table if not exists public.ia_prompt (
+  id int primary key default 1,
+  texto text not null default ''
+);
+insert into public.ia_prompt (id) values (1) on conflict (id) do nothing;
+
+-- ============================================================
+-- CHECKLIST_STATE (uma linha por dia)
+-- ============================================================
+create table if not exists public.checklist_state (
+  data date primary key,
+  state jsonb not null default '{}'::jsonb
+);
+
+-- ============================================================
+-- CONFIRMACOES_DIA (pacientes do dia a confirmar, uma linha por dia)
+-- ============================================================
+create table if not exists public.confirmacoes_dia (
+  data date primary key,
+  pacientes jsonb not null default '[]'::jsonb
+);
+
+-- ============================================================
+-- PERMISSÕES — qualquer usuário autenticado pode ler/gravar
+-- (o controle fino é feito pelas policies de RLS abaixo)
+-- ============================================================
+grant usage on schema public to authenticated;
+grant select, insert, update, delete on all tables in schema public to authenticated;
+
+-- ============================================================
+-- ROW LEVEL SECURITY
+-- ============================================================
+alter table public.profiles enable row level security;
+alter table public.leads enable row level security;
+alter table public.diarias enable row level security;
+alter table public.ativos enable row level security;
+alter table public.contatos enable row level security;
+alter table public.templates enable row level security;
+alter table public.rotinas enable row level security;
+alter table public.config enable row level security;
+alter table public.ia_prompt enable row level security;
+alter table public.checklist_state enable row level security;
+alter table public.confirmacoes_dia enable row level security;
+
+-- profiles: todo mundo autenticado vê a equipe; cada um cria/edita o próprio
+-- perfil; só o proprietário pode mudar o "role" de outra pessoa.
+create policy "profiles_select" on public.profiles for select to authenticated using (true);
+create policy "profiles_insert_self" on public.profiles for insert to authenticated with check (auth.uid() = id);
+create policy "profiles_update" on public.profiles for update to authenticated using (auth.uid() = id or public.is_owner());
+
+-- leads / diárias / ativos / contatos / checklist / confirmações do dia:
+-- toda a equipe autenticada usa no dia a dia.
+create policy "leads_all" on public.leads for all to authenticated using (true) with check (true);
+create policy "diarias_all" on public.diarias for all to authenticated using (true) with check (true);
+create policy "ativos_all" on public.ativos for all to authenticated using (true) with check (true);
+create policy "contatos_all" on public.contatos for all to authenticated using (true) with check (true);
+create policy "checklist_state_all" on public.checklist_state for all to authenticated using (true) with check (true);
+create policy "confirmacoes_dia_all" on public.confirmacoes_dia for all to authenticated using (true) with check (true);
+create policy "templates_all" on public.templates for all to authenticated using (true) with check (true);
+
+-- rotinas: todo mundo lê; só o proprietário cria/edita/exclui.
+create policy "rotinas_select" on public.rotinas for select to authenticated using (true);
+create policy "rotinas_write" on public.rotinas for insert to authenticated with check (public.is_owner());
+create policy "rotinas_update" on public.rotinas for update to authenticated using (public.is_owner());
+create policy "rotinas_delete" on public.rotinas for delete to authenticated using (public.is_owner());
+
+-- config: todo mundo lê (metas aparecem no checklist); só o proprietário edita.
+create policy "config_select" on public.config for select to authenticated using (true);
+create policy "config_update" on public.config for update to authenticated using (public.is_owner());
+
+-- ia_prompt: só o proprietário lê e edita.
+create policy "ia_prompt_select" on public.ia_prompt for select to authenticated using (public.is_owner());
+create policy "ia_prompt_update" on public.ia_prompt for update to authenticated using (public.is_owner());
