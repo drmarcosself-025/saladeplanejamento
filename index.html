@@ -77,6 +77,7 @@
   table.simple th, table.simple td{ text-align:left; padding:9px 8px; border-bottom:1px solid var(--line); }
   table.simple th{color:var(--muted); font-weight:600; font-size:12.5px; text-transform:uppercase;}
   .lock-note{ background:var(--gold-light); border:1px solid #e3c9a3; border-radius:10px; padding:12px 14px; font-size:13.5px; color:#5a4423; margin-bottom:16px; }
+  .admin-subview{display:none;} .admin-subview.active{display:block;}
   .warn-note{ background:var(--red-bg); border:1px solid #eec3bd; border-radius:10px; padding:12px 14px; font-size:13.5px; color:#7a2a2a; margin-bottom:16px; }
   .login-screen{ max-width:440px; margin:60px auto; text-align:center; padding:0 16px; }
   .login-screen .card{text-align:left;}
@@ -140,10 +141,8 @@
     <button data-tab="contatos">Contatos</button>
     <button data-tab="templates">Modelos</button>
     <button data-tab="rotinas">Rotinas</button>
-    <button data-tab="ia">IA &amp; Prompt</button>
-    <button data-tab="equipe">Equipe</button>
     <button data-tab="fechamento">Fechamento</button>
-    <button data-tab="config">Configurações</button>
+    <button data-tab="admin">Administração</button>
   </nav>
 </header>
 
@@ -298,27 +297,6 @@
     <div class="card"><div id="rotinasList"></div></div>
   </div>
 
-  <!-- IA & PROMPT -->
-  <div class="view" id="view-ia">
-    <h2 class="page-title">IA &amp; Prompt</h2>
-    <p class="page-sub">Espaço só do proprietário para rascunhar o prompt do secretário virtual.</p>
-    <div class="lock-note">Não conecta com nada automaticamente — é seu rascunho.</div>
-    <div class="card">
-      <label>Persona / instruções</label>
-      <textarea id="iaPromptText" rows="20"></textarea>
-      <button class="btn" id="salvarIaBtn">Salvar rascunho</button>
-      <button class="btn secondary" id="resetIaBtn">Restaurar rascunho sugerido</button>
-    </div>
-  </div>
-
-  <!-- EQUIPE -->
-  <div class="view" id="view-equipe">
-    <h2 class="page-title">Equipe</h2>
-    <p class="page-sub">Quem tem conta no sistema, e qual o nível de acesso.</p>
-    <div class="lock-note">Peça pra cada pessoa criar a própria conta (aba "Criar conta" na tela de login) usando o e-mail dela. Depois, promova aqui quem deve virar proprietário.</div>
-    <div class="card"><div id="equipeList"></div></div>
-  </div>
-
   <!-- FECHAMENTO -->
   <div class="view" id="view-fechamento">
     <h2 class="page-title">Fechamento do mês</h2>
@@ -332,29 +310,52 @@
     <div class="card" id="fechamentoResumoCard"></div>
   </div>
 
-  <!-- CONFIG -->
-  <div class="view" id="view-config">
-    <h2 class="page-title">Configurações</h2>
-    <p class="page-sub">Só o proprietário acessa. Afeta todos os cálculos.</p>
-    <div class="lock-note">Regras oficiais combinadas com a Maison D'Or.</div>
-    <div class="card">
-      <div class="section-label">Remuneração</div>
-      <div class="row2"><div><label>Valor da diária (R$)</label><input type="number" id="cfg_diaria"></div><div><label>Valor do almoço (R$)</label><input type="number" id="cfg_almoco"></div></div>
-      <div class="row2"><div><label>Comissão lead interno (%)</label><input type="number" id="cfg_comInterno" step="0.1"></div><div><label>Comissão lead próprio (%)</label><input type="number" id="cfg_comProprio" step="0.1"></div></div>
-      <div class="row2"><div><label>Limite lead interno (R$)</label><input type="number" id="cfg_limInterno"></div><div><label>Limite lead próprio (R$)</label><input type="number" id="cfg_limProprio"></div></div>
-      <label>Bônus por comparecimento (R$)</label><input type="number" id="cfg_bonus">
-      <div class="section-label" style="margin-top:22px;">Metas</div>
-      <div class="row3"><div><label>Agendamentos / dia</label><input type="number" id="cfg_metaAgDia"></div><div><label>Agendamentos / semana</label><input type="number" id="cfg_metaAgSemana"></div><div><label>Vendas / mês</label><input type="number" id="cfg_metaVdMes"></div></div>
-      <button class="btn" id="salvarConfigBtn">Salvar configurações</button>
+  <!-- ADMINISTRAÇÃO (IA & Prompt + Equipe + Configurações, só proprietário) -->
+  <div class="view" id="view-admin">
+    <h2 class="page-title">Administração</h2>
+    <p class="page-sub">Área exclusiva do proprietário.</p>
+    <div class="filters" id="adminSubTabs">
+      <button data-admintab="ia" class="active">IA &amp; Prompt</button>
+      <button data-admintab="equipe">Equipe</button>
+      <button data-admintab="config">Configurações</button>
     </div>
-    <div class="card">
-      <div class="section-label">Backup</div>
-      <p class="helptext" style="margin-top:-4px;">Os dados já ficam num banco de dados de verdade (Supabase). Mesmo assim, baixe uma cópia de vez em quando.</p>
-      <button class="btn gold" id="baixarBackupBtn">Baixar backup agora (.json)</button>
+
+    <div class="admin-subview active" id="admin-ia">
+      <div class="lock-note">Não conecta com nada automaticamente — é seu rascunho.</div>
+      <div class="card">
+        <label>Persona / instruções</label>
+        <textarea id="iaPromptText" rows="20"></textarea>
+        <button class="btn" id="salvarIaBtn">Salvar rascunho</button>
+        <button class="btn secondary" id="resetIaBtn">Restaurar rascunho sugerido</button>
+      </div>
     </div>
-    <div class="card">
-      <div class="section-label">Lixeira — leads excluídos</div>
-      <div id="trashList"></div>
+
+    <div class="admin-subview" id="admin-equipe">
+      <div class="lock-note">Peça pra cada pessoa criar a própria conta (aba "Criar conta" na tela de login) usando o e-mail dela. Depois, promova aqui quem deve virar proprietário.</div>
+      <div class="card"><div id="equipeList"></div></div>
+    </div>
+
+    <div class="admin-subview" id="admin-config">
+      <div class="lock-note">Regras oficiais combinadas com a Maison D'Or.</div>
+      <div class="card">
+        <div class="section-label">Remuneração</div>
+        <div class="row2"><div><label>Valor da diária (R$)</label><input type="number" id="cfg_diaria"></div><div><label>Valor do almoço (R$)</label><input type="number" id="cfg_almoco"></div></div>
+        <div class="row2"><div><label>Comissão lead interno (%)</label><input type="number" id="cfg_comInterno" step="0.1"></div><div><label>Comissão lead próprio (%)</label><input type="number" id="cfg_comProprio" step="0.1"></div></div>
+        <div class="row2"><div><label>Limite lead interno (R$)</label><input type="number" id="cfg_limInterno"></div><div><label>Limite lead próprio (R$)</label><input type="number" id="cfg_limProprio"></div></div>
+        <label>Bônus por comparecimento (R$)</label><input type="number" id="cfg_bonus">
+        <div class="section-label" style="margin-top:22px;">Metas</div>
+        <div class="row3"><div><label>Agendamentos / dia</label><input type="number" id="cfg_metaAgDia"></div><div><label>Agendamentos / semana</label><input type="number" id="cfg_metaAgSemana"></div><div><label>Vendas / mês</label><input type="number" id="cfg_metaVdMes"></div></div>
+        <button class="btn" id="salvarConfigBtn">Salvar configurações</button>
+      </div>
+      <div class="card">
+        <div class="section-label">Backup</div>
+        <p class="helptext" style="margin-top:-4px;">Os dados já ficam num banco de dados de verdade (Supabase). Mesmo assim, baixe uma cópia de vez em quando.</p>
+        <button class="btn gold" id="baixarBackupBtn">Baixar backup agora (.json)</button>
+      </div>
+      <div class="card">
+        <div class="section-label">Lixeira — leads excluídos</div>
+        <div id="trashList"></div>
+      </div>
     </div>
   </div>
 
@@ -476,10 +477,7 @@ async function postLogin(){
   document.getElementById('whoamiBox').style.display = 'flex';
   document.getElementById('tabs').style.display = 'flex';
   document.getElementById('whoamiText').textContent = `${profile.nome} · ${profile.role === 'owner' ? 'proprietário' : 'equipe'}`;
-  document.querySelectorAll('[data-owner-only]').forEach(()=>{});
-  document.querySelector('nav.tabs button[data-tab="config"]').style.display = (profile.role==='owner') ? 'inline-block' : 'none';
-  document.querySelector('nav.tabs button[data-tab="ia"]').style.display = (profile.role==='owner') ? 'inline-block' : 'none';
-  document.querySelector('nav.tabs button[data-tab="equipe"]').style.display = (profile.role==='owner') ? 'inline-block' : 'none';
+  document.querySelector('nav.tabs button[data-tab="admin"]').style.display = (profile.role==='owner') ? 'inline-block' : 'none';
   await loadAll();
   switchTab('checklist');
   renderAll();
@@ -548,7 +546,7 @@ async function loadAll(){
 // ============================================================
 document.querySelectorAll('nav.tabs button').forEach(btn=>{ btn.addEventListener('click', ()=> switchTab(btn.dataset.tab)); });
 function switchTab(tab){
-  if((tab === 'config' || tab === 'ia' || tab === 'equipe') && (!CURRENT_PROFILE || CURRENT_PROFILE.role !== 'owner')){
+  if(tab === 'admin' && (!CURRENT_PROFILE || CURRENT_PROFILE.role !== 'owner')){
     showToast('Só o proprietário acessa essa aba.');
     tab = 'checklist';
   }
@@ -562,16 +560,20 @@ function switchTab(tab){
   if(tab==='contatos') renderContatos();
   if(tab==='templates') renderTemplates();
   if(tab==='rotinas') renderRotinas();
-  if(tab==='ia') renderIa();
-  if(tab==='equipe') renderEquipe();
   if(tab==='fechamento') renderFechamento();
-  if(tab==='config') renderConfig();
+  if(tab==='admin'){ renderIa(); renderEquipe(); renderConfig(); }
 }
 function renderAll(){
   renderChecklist(); renderFunil(); renderLeads(); renderAtivos(); renderContatos();
-  renderTemplates(); renderRotinas(); renderFechamento(); renderConfig();
-  if(CURRENT_PROFILE.role==='owner'){ renderIa(); renderEquipe(); }
+  renderTemplates(); renderRotinas(); renderFechamento();
+  if(CURRENT_PROFILE.role==='owner'){ renderIa(); renderEquipe(); renderConfig(); }
 }
+document.querySelectorAll('#adminSubTabs button').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('#adminSubTabs button').forEach(b=>b.classList.toggle('active', b===btn));
+    document.querySelectorAll('.admin-subview').forEach(v=>v.classList.toggle('active', v.id==='admin-'+btn.dataset.admintab));
+  });
+});
 
 // ============================================================
 // CALC HELPERS
