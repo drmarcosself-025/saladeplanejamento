@@ -48,6 +48,30 @@ as $$
   );
 $$;
 
+-- Trava de segurança: a policy "profiles_update" abaixo permite que cada
+-- pessoa edite a própria linha (pra poder corrigir o nome, por exemplo),
+-- mas isso sozinho deixaria qualquer conta de equipe se auto-promover a
+-- "owner" direto pelo console do navegador. Este gatilho reverte qualquer
+-- mudança de "role" feita por quem não é proprietário.
+create or replace function public.prevent_role_self_escalation()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if NEW.role <> OLD.role and not public.is_owner() then
+    NEW.role := OLD.role;
+  end if;
+  return NEW;
+end;
+$$;
+
+drop trigger if exists trg_prevent_role_self_escalation on public.profiles;
+create trigger trg_prevent_role_self_escalation
+  before update on public.profiles
+  for each row execute function public.prevent_role_self_escalation();
+
 -- ============================================================
 -- LEADS
 -- ============================================================
