@@ -315,12 +315,29 @@
     <h2 class="page-title">Administração</h2>
     <p class="page-sub">Área exclusiva do proprietário.</p>
     <div class="filters" id="adminSubTabs">
-      <button data-admintab="ia" class="active">IA &amp; Prompt</button>
+      <button data-admintab="whatsapp" class="active">WhatsApp</button>
+      <button data-admintab="ia">IA &amp; Prompt</button>
       <button data-admintab="equipe">Equipe</button>
       <button data-admintab="config">Configurações</button>
     </div>
 
-    <div class="admin-subview active" id="admin-ia">
+    <div class="admin-subview active" id="admin-whatsapp">
+      <div class="warn-note">Conexão não-oficial (via Baileys). Use só para pacientes com quem você já tem relação — nunca para disparo em massa pra lista fria, sob risco de bloqueio do número.</div>
+      <div class="card">
+        <div class="section-label">Status da conexão</div>
+        <div id="waStatusBox" style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+          <span class="badge perdido" id="waStatusBadge">Verificando...</span>
+          <button class="btn small" id="waConectarBtn">Conectar / Gerar QR Code</button>
+          <button class="btn small danger" id="waDesconectarBtn" style="display:none;">Desconectar</button>
+        </div>
+        <div id="waQrBox" style="margin-top:16px; display:none; text-align:center;">
+          <p class="helptext">Abra o WhatsApp no celular do consultório → Configurações → Aparelhos conectados → Conectar um aparelho, e escaneie:</p>
+          <img id="waQrImg" style="max-width:260px; width:100%; border:1px solid var(--line); border-radius:10px;">
+        </div>
+      </div>
+    </div>
+
+    <div class="admin-subview" id="admin-ia">
       <div class="lock-note">Não conecta com nada automaticamente — é seu rascunho.</div>
       <div class="card">
         <label>Persona / instruções</label>
@@ -561,7 +578,7 @@ function switchTab(tab){
   if(tab==='templates') renderTemplates();
   if(tab==='rotinas') renderRotinas();
   if(tab==='fechamento') renderFechamento();
-  if(tab==='admin'){ renderIa(); renderEquipe(); renderConfig(); }
+  if(tab==='admin'){ renderIa(); renderEquipe(); renderConfig(); checkWaStatus(); }
 }
 function renderAll(){
   renderChecklist(); renderFunil(); renderLeads(); renderAtivos(); renderContatos();
@@ -573,6 +590,56 @@ document.querySelectorAll('#adminSubTabs button').forEach(btn=>{
     document.querySelectorAll('#adminSubTabs button').forEach(b=>b.classList.toggle('active', b===btn));
     document.querySelectorAll('.admin-subview').forEach(v=>v.classList.toggle('active', v.id==='admin-'+btn.dataset.admintab));
   });
+});
+
+// ============================================================
+// WHATSAPP (Evolution API / Baileys, via function segura do Supabase)
+// ============================================================
+let waPollInterval = null;
+async function waCall(action, params){
+  const { data, error } = await sb.functions.invoke('whatsapp-proxy', { body: { action, ...params } });
+  if(error) return { error: error.message || 'Falha ao falar com a function do WhatsApp.' };
+  return data;
+}
+function waSetBadge(text, cls){
+  const b = document.getElementById('waStatusBadge');
+  b.textContent = text;
+  b.className = 'badge ' + cls;
+}
+function waStopPolling(){ if(waPollInterval){ clearInterval(waPollInterval); waPollInterval = null; } }
+async function checkWaStatus(){
+  const r = await waCall('status');
+  if(r.error){ waSetBadge('Não configurado', 'perdido'); return; }
+  const state = r.instance?.state || r.state;
+  if(state === 'open'){
+    waSetBadge('Conectado', 'compareceu');
+    document.getElementById('waConectarBtn').style.display = 'none';
+    document.getElementById('waDesconectarBtn').style.display = 'inline-block';
+    document.getElementById('waQrBox').style.display = 'none';
+    waStopPolling();
+  } else {
+    waSetBadge(state === 'connecting' ? 'Aguardando escanear o QR Code' : 'Desconectado', state === 'connecting' ? 'agendado' : 'perdido');
+    document.getElementById('waConectarBtn').style.display = 'inline-block';
+    document.getElementById('waDesconectarBtn').style.display = 'none';
+  }
+}
+document.getElementById('waConectarBtn').addEventListener('click', async ()=>{
+  waSetBadge('Conectando...', 'contato');
+  await waCall('create-instance');
+  const r = await waCall('get-qr');
+  if(r.error || !r.base64){ showToast('Erro ao gerar QR Code: ' + (r.error || 'resposta inesperada da Evolution API.')); waSetBadge('Erro', 'perdido'); return; }
+  const img = document.getElementById('waQrImg');
+  img.src = r.base64.startsWith('data:') ? r.base64 : ('data:image/png;base64,' + r.base64);
+  document.getElementById('waQrBox').style.display = 'block';
+  waSetBadge('Aguardando escanear o QR Code', 'agendado');
+  waStopPolling();
+  waPollInterval = setInterval(checkWaStatus, 4000);
+});
+document.getElementById('waDesconectarBtn').addEventListener('click', async ()=>{
+  if(!confirm('Desconectar o WhatsApp do sistema?')) return;
+  await waCall('logout');
+  showToast('WhatsApp desconectado.');
+  await checkWaStatus();
 });
 
 // ============================================================
