@@ -15,10 +15,6 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 
-const EVOLUTION_API_URL = Deno.env.get("EVOLUTION_API_URL") ?? "";
-const EVOLUTION_API_KEY = Deno.env.get("EVOLUTION_API_KEY") ?? "";
-const EVOLUTION_INSTANCE = Deno.env.get("EVOLUTION_INSTANCE") ?? "consultorio";
-
 const ADMIN_ACTIONS = ["create-instance", "get-qr", "status", "logout"];
 
 const corsHeaders = {
@@ -36,14 +32,23 @@ function json(body: unknown, status = 200) {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
+  const EVOLUTION_API_URL = Deno.env.get("EVOLUTION_API_URL") ?? "";
+  const EVOLUTION_API_KEY = Deno.env.get("EVOLUTION_API_KEY") ?? "";
+  const EVOLUTION_INSTANCE = Deno.env.get("EVOLUTION_INSTANCE") ?? "consultorio";
+
   if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
     return json({ error: "Evolution API ainda não configurada nos segredos da function." }, 500);
   }
 
   try {
+    // Reaproveita a apikey que o próprio supabase-js já manda em toda
+    // chamada, em vez de depender do nome antigo SUPABASE_ANON_KEY (que
+    // aparece como "deprecated" em projetos que já migraram pro sistema
+    // novo de chaves — publishable/secret).
+    const incomingApiKey = req.headers.get("apikey") ?? Deno.env.get("SUPABASE_ANON_KEY") ?? "";
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_ANON_KEY")!,
+      incomingApiKey,
       { global: { headers: { Authorization: req.headers.get("Authorization") ?? "" } } },
     );
 
