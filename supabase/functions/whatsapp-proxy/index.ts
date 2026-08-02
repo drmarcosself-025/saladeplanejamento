@@ -15,7 +15,10 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 
-const ADMIN_ACTIONS = ["create-instance", "get-qr", "status", "logout"];
+// "status" fica de fora: qualquer pessoa da equipe precisa poder ver se o
+// WhatsApp está conectado na tela de Atendimento. Só quem realmente
+// gerencia a conexão (gerar QR, desconectar) é owner-only.
+const ADMIN_ACTIONS = ["create-instance", "get-qr", "logout"];
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",

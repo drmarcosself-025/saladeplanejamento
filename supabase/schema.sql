@@ -258,6 +258,23 @@ create index if not exists wa_inbox_status_idx on public.wa_inbox (status);
 create index if not exists wa_inbox_telefone_idx on public.wa_inbox (telefone);
 
 -- ============================================================
+-- WA_MESSAGES (histórico real de todas as mensagens de WhatsApp,
+-- recebidas ou enviadas — fonte de dados da central de conversas.
+-- Diferente do wa_inbox, que só guarda o lote mais recente aguardando
+-- resposta da IA, esta tabela nunca é limpa — é o histórico completo.)
+-- ============================================================
+create table if not exists public.wa_messages (
+  id uuid primary key default gen_random_uuid(),
+  telefone text not null,
+  nome_contato text,
+  direcao text not null check (direcao in ('recebida','enviada')),
+  texto text not null,
+  created_at timestamptz not null default now(),
+  created_by text
+);
+create index if not exists wa_messages_telefone_idx on public.wa_messages (telefone, created_at desc);
+
+-- ============================================================
 -- PERMISSÕES — qualquer usuário autenticado pode ler/gravar
 -- (o controle fino é feito pelas policies de RLS abaixo)
 -- ============================================================
@@ -280,6 +297,7 @@ alter table public.checklist_state enable row level security;
 alter table public.confirmacoes_dia enable row level security;
 alter table public.wa_send_log enable row level security;
 alter table public.wa_inbox enable row level security;
+alter table public.wa_messages enable row level security;
 
 -- profiles: todo mundo autenticado vê a equipe; cada um cria/edita o próprio
 -- perfil; só o proprietário pode mudar o "role" de outra pessoa.
@@ -298,6 +316,7 @@ create policy "confirmacoes_dia_all" on public.confirmacoes_dia for all to authe
 create policy "templates_all" on public.templates for all to authenticated using (true) with check (true);
 create policy "wa_send_log_all" on public.wa_send_log for all to authenticated using (true) with check (true);
 create policy "wa_inbox_all" on public.wa_inbox for all to authenticated using (true) with check (true);
+create policy "wa_messages_all" on public.wa_messages for all to authenticated using (true) with check (true);
 
 -- rotinas: todo mundo lê; só o proprietário cria/edita/exclui.
 create policy "rotinas_select" on public.rotinas for select to authenticated using (true);
