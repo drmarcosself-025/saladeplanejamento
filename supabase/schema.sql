@@ -184,13 +184,17 @@ create table if not exists public.config (
   wa_intervalo_min_seg int not null default 20,
   wa_intervalo_max_seg int not null default 50,
   wa_limite_hora int not null default 30,
-  wa_limite_dia int not null default 120
+  wa_limite_dia int not null default 120,
+  wa_silencio_seg int not null default 12,
+  wa_keywords text not null default 'agendar,agendamento,consulta,avaliação,avaliacao,quanto custa,valor,preço,preco,marcar,interessad,orçamento,orcamento'
 );
 -- garante as colunas novas mesmo em bancos que já rodaram este arquivo antes
 alter table public.config add column if not exists wa_intervalo_min_seg int not null default 20;
 alter table public.config add column if not exists wa_intervalo_max_seg int not null default 50;
 alter table public.config add column if not exists wa_limite_hora int not null default 30;
 alter table public.config add column if not exists wa_limite_dia int not null default 120;
+alter table public.config add column if not exists wa_silencio_seg int not null default 12;
+alter table public.config add column if not exists wa_keywords text not null default 'agendar,agendamento,consulta,avaliação,avaliacao,quanto custa,valor,preço,preco,marcar,interessad,orçamento,orcamento';
 insert into public.config (id) values (1) on conflict (id) do nothing;
 
 -- ============================================================
@@ -233,6 +237,27 @@ create table if not exists public.wa_send_log (
 create index if not exists wa_send_log_created_at_idx on public.wa_send_log (created_at desc);
 
 -- ============================================================
+-- WA_INBOX (conversas recebidas pelo WhatsApp, aguardando ou já com
+-- rascunho de resposta da IA pronto pra revisão humana)
+-- ============================================================
+create table if not exists public.wa_inbox (
+  id uuid primary key default gen_random_uuid(),
+  telefone text not null,
+  nome_contato text,
+  mensagens jsonb not null default '[]'::jsonb,
+  ultima_mensagem_em timestamptz not null default now(),
+  status text not null default 'aguardando' check (status in ('aguardando','rascunho_pronto','enviado','descartado')),
+  rascunho_resposta text,
+  palavras_chave_detectadas text[],
+  lead_sugerido boolean not null default false,
+  lead_id uuid references public.leads(id) on delete set null,
+  processado_em timestamptz,
+  created_at timestamptz not null default now()
+);
+create index if not exists wa_inbox_status_idx on public.wa_inbox (status);
+create index if not exists wa_inbox_telefone_idx on public.wa_inbox (telefone);
+
+-- ============================================================
 -- PERMISSÕES — qualquer usuário autenticado pode ler/gravar
 -- (o controle fino é feito pelas policies de RLS abaixo)
 -- ============================================================
@@ -254,6 +279,7 @@ alter table public.ia_prompt enable row level security;
 alter table public.checklist_state enable row level security;
 alter table public.confirmacoes_dia enable row level security;
 alter table public.wa_send_log enable row level security;
+alter table public.wa_inbox enable row level security;
 
 -- profiles: todo mundo autenticado vê a equipe; cada um cria/edita o próprio
 -- perfil; só o proprietário pode mudar o "role" de outra pessoa.
@@ -271,6 +297,7 @@ create policy "checklist_state_all" on public.checklist_state for all to authent
 create policy "confirmacoes_dia_all" on public.confirmacoes_dia for all to authenticated using (true) with check (true);
 create policy "templates_all" on public.templates for all to authenticated using (true) with check (true);
 create policy "wa_send_log_all" on public.wa_send_log for all to authenticated using (true) with check (true);
+create policy "wa_inbox_all" on public.wa_inbox for all to authenticated using (true) with check (true);
 
 -- rotinas: todo mundo lê; só o proprietário cria/edita/exclui.
 create policy "rotinas_select" on public.rotinas for select to authenticated using (true);
