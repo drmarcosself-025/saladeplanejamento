@@ -23,10 +23,57 @@
   .whoami{ display:flex; align-items:center; gap:10px; background:var(--navy-2); border-radius:999px; padding:8px 8px 8px 14px; }
   .whoami span{font-size:14px; color:#cfd6ea;}
   .btn-troca{ background:var(--gold); color:#1c2333; border:none; border-radius:999px; padding:8px 14px; font-weight:700; font-size:14px; cursor:pointer; }
-  nav.tabs{ display:flex; gap:6px; overflow-x:auto; padding:12px 14px 0; background:var(--navy); }
-  nav.tabs button{ flex:0 0 auto; background:transparent; border:none; color:#aeb6d4; font-size:14.5px; font-weight:600; padding:10px 14px; border-radius:10px 10px 0 0; cursor:pointer; white-space:nowrap; }
-  nav.tabs button.active{ background:var(--bg); color:var(--navy); }
+  .app-shell{ display:flex; align-items:flex-start; }
+  nav.tabs{ flex:0 0 220px; width:220px; background:var(--navy); min-height:calc(100vh - 70px); position:sticky; top:70px; overflow-y:auto; padding-bottom:14px; transition:width .18s ease, flex-basis .18s ease; }
+  nav.tabs.collapsed{ flex-basis:64px; width:64px; }
+  .sidebar-group{ padding-top:10px; }
+  .sidebar-group-label{ font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.8px; color:#8b93b8; padding:6px 16px; }
+  nav.tabs.collapsed .sidebar-group-label{ display:none; }
+  nav.tabs button{ display:flex; align-items:center; gap:10px; width:100%; background:transparent; border:none; border-left:3px solid transparent; color:#c3cae4; font-size:14.5px; font-weight:600; padding:10px 16px; cursor:pointer; white-space:nowrap; text-align:left; }
+  nav.tabs button:hover{ background:var(--navy-2); }
+  nav.tabs button.active{ background:var(--navy-2); color:#fff; border-left-color:var(--gold); }
+  nav.tabs button .ic{ flex:0 0 20px; text-align:center; font-size:15px; }
+  nav.tabs.collapsed button .lab{ display:none; }
+  nav.tabs button.sidebar-action{ color:var(--gold); }
+  .sidebar-collapse-btn{ margin-top:10px; border-top:1px solid rgba(255,255,255,.12); }
+  .app-main{ flex:1; min-width:0; }
   main{ max-width:1000px; margin:0 auto; padding:20px 14px 80px; }
+  @media(max-width:900px){
+    .app-shell{ flex-direction:column; }
+    nav.tabs, nav.tabs.collapsed{ position:static; width:100%; flex-basis:auto; min-height:auto; display:flex; flex-direction:row; overflow-x:auto; padding-bottom:0; }
+    .sidebar-group{ display:flex; padding-top:0; flex:0 0 auto; }
+    .sidebar-group-label{ display:none; }
+    nav.tabs button{ border-left:none; border-bottom:3px solid transparent; }
+    nav.tabs button.active{ border-bottom-color:var(--gold); }
+    nav.tabs button .lab{ display:inline; }
+    .sidebar-collapse-btn{ display:none; }
+  }
+  .wa-crm{ display:grid; grid-template-columns:280px 1fr 260px; border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; height:70vh; background:#fff; }
+  .wa-crm-list{ border-right:1px solid var(--line); display:flex; flex-direction:column; padding:12px; overflow-y:auto; }
+  .wa-crm-list-header{ display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+  .wa-conv-list{ margin-top:10px; overflow-y:auto; flex:1; }
+  .wa-conv-item{ padding:10px; border-radius:10px; cursor:pointer; margin-bottom:4px; }
+  .wa-conv-item:hover{ background:var(--bg); }
+  .wa-conv-item.active{ background:var(--gold-light); }
+  .wa-conv-item .nome{ font-weight:700; color:var(--navy); font-size:14px; }
+  .wa-conv-item .preview{ font-size:12.5px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:block; }
+  .wa-conv-item .hora{ font-size:11px; color:var(--muted); float:right; }
+  .wa-crm-thread{ display:flex; flex-direction:column; min-width:0; border-right:1px solid var(--line); }
+  .wa-thread-header{ padding:12px 16px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center; }
+  .wa-thread-messages{ flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:8px; background:var(--bg); }
+  .wa-msg{ max-width:70%; padding:8px 12px; border-radius:12px; font-size:14px; line-height:1.4; }
+  .wa-msg.recebida{ align-self:flex-start; background:#fff; border:1px solid var(--line); }
+  .wa-msg.enviada{ align-self:flex-end; background:var(--green-bg); }
+  .wa-msg .hora{ font-size:10.5px; color:var(--muted); margin-top:3px; display:block; text-align:right; }
+  .wa-thread-compose{ display:flex; gap:8px; padding:12px; border-top:1px solid var(--line); }
+  .wa-thread-compose textarea{ flex:1; resize:none; }
+  .wa-crm-contact{ padding:16px; overflow-y:auto; }
+  #waThreadBox{ display:flex; flex-direction:column; height:100%; }
+  @media(max-width:900px){
+    .wa-crm{ grid-template-columns:1fr; height:auto; }
+    .wa-crm-list, .wa-crm-thread, .wa-crm-contact{ border:none; border-bottom:1px solid var(--line); }
+    .wa-thread-messages{ max-height:50vh; }
+  }
   .view{display:none;} .view.active{display:block;}
   h2.page-title{ font-family:Cambria, Georgia, serif; font-size:24px; color:var(--navy); margin:4px 0 4px; }
   p.page-sub{ color:var(--muted); font-size:15px; margin:0 0 18px; }
@@ -132,21 +179,40 @@
       <button class="btn-troca" id="trocarBtn">Sair</button>
     </div>
   </div>
-  <nav class="tabs" id="tabs" style="display:none;">
-    <button data-tab="checklist" class="active">Checklist</button>
-    <button data-tab="inbox">Caixa de Entrada</button>
-    <button data-tab="funil">Funil</button>
-    <button data-tab="novo">Novo Lead</button>
-    <button data-tab="leads">Leads</button>
-    <button data-tab="ativos">Reativação</button>
-    <button data-tab="contatos">Contatos</button>
-    <button data-tab="templates">Modelos</button>
-    <button data-tab="rotinas">Rotinas</button>
-    <button data-tab="fechamento">Fechamento</button>
-    <button data-tab="admin">Administração</button>
-  </nav>
 </header>
 
+<div class="app-shell">
+  <nav class="tabs" id="tabs" style="display:none;">
+    <div class="sidebar-group">
+      <div class="sidebar-group-label">Início</div>
+      <button data-tab="checklist" class="active"><span class="ic">🏠</span><span class="lab">Checklist</span></button>
+      <button data-tab="fechamento"><span class="ic">💰</span><span class="lab">Fechamento</span></button>
+    </div>
+    <div class="sidebar-group">
+      <div class="sidebar-group-label">Atendimento</div>
+      <button data-tab="whatsapp"><span class="ic">💬</span><span class="lab">WhatsApp</span></button>
+      <button data-tab="inbox"><span class="ic">📥</span><span class="lab">Caixa de Entrada</span></button>
+      <button data-tab="contatos"><span class="ic">👥</span><span class="lab">Contatos</span></button>
+      <button data-tab="templates"><span class="ic">📝</span><span class="lab">Modelos</span></button>
+    </div>
+    <div class="sidebar-group">
+      <div class="sidebar-group-label">Comercial</div>
+      <button data-tab="novo" class="sidebar-action"><span class="ic">＋</span><span class="lab">Novo Lead</span></button>
+      <button data-tab="funil"><span class="ic">📊</span><span class="lab">Funil</span></button>
+      <button data-tab="leads"><span class="ic">🧾</span><span class="lab">Leads</span></button>
+      <button data-tab="ativos"><span class="ic">🔄</span><span class="lab">Reativação</span></button>
+    </div>
+    <div class="sidebar-group">
+      <div class="sidebar-group-label">Processos</div>
+      <button data-tab="rotinas"><span class="ic">📋</span><span class="lab">Rotinas</span></button>
+    </div>
+    <div class="sidebar-group">
+      <div class="sidebar-group-label">Gestão</div>
+      <button data-tab="admin"><span class="ic">⚙️</span><span class="lab">Administração</span></button>
+    </div>
+    <button class="sidebar-collapse-btn" id="sidebarCollapseBtn"><span class="ic">☰</span><span class="lab">Recolher menu</span></button>
+  </nav>
+  <div class="app-main">
 <main>
 
   <!-- LOGIN -->
@@ -197,6 +263,66 @@
     </div>
     <div class="card"><div class="section-label">Follow-up pendente (sem contato há 7+ dias, ou vencido)</div><div id="followupList"></div></div>
     <div class="card"><div class="section-label">Pacientes para reativação, vencidos hoje</div><div id="reativacaoDueList"></div></div>
+  </div>
+
+  <!-- WHATSAPP (conexão + central de conversas) -->
+  <div class="view" id="view-whatsapp">
+    <h2 class="page-title">WhatsApp</h2>
+    <p class="page-sub">Conexão com o WhatsApp e central de conversas com os pacientes.</p>
+
+    <div id="waDisconnectedPanel">
+      <div class="warn-note">Conexão não-oficial (via Baileys). Use só para pacientes com quem você já tem relação — nunca para disparo em massa pra lista fria, sob risco de bloqueio do número.</div>
+      <div class="card">
+        <div class="section-label">Status da conexão</div>
+        <div id="waStatusBox" style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+          <span class="badge perdido" id="waStatusBadge">Verificando...</span>
+          <button class="btn small" id="waConectarBtn">Conectar / Gerar QR Code</button>
+          <button class="btn small danger" id="waDesconectarBtn" style="display:none;">Desconectar</button>
+        </div>
+        <div id="waQrBox" style="margin-top:16px; display:none; text-align:center;">
+          <p class="helptext">Abra o WhatsApp no celular do consultório → Configurações → Aparelhos conectados → Conectar um aparelho, e escaneie:</p>
+          <img id="waQrImg" style="max-width:260px; width:100%; border:1px solid var(--line); border-radius:10px;">
+        </div>
+      </div>
+      <div class="card">
+        <div class="section-label">Política anti-bloqueio</div>
+        <p class="helptext" style="margin-top:-4px;">Toda vez que alguém clica em "WhatsApp" ou manda mensagem com modelo, o painel espera um intervalo (variável, pra não parecer robô) e respeita um teto por hora/dia. Ajuste em Administração → Configurações.</p>
+        <div class="grid-stats" id="waThrottleStats" style="margin-top:12px;"></div>
+      </div>
+    </div>
+
+    <div id="waCrmPanel" class="wa-crm" style="display:none;">
+      <div class="wa-crm-list">
+        <div class="wa-crm-list-header">
+          <span class="badge compareceu">Conectado</span>
+          <button class="btn small secondary" id="waCrmDesconectarBtn">Desconectar</button>
+        </div>
+        <input type="text" id="waConvBusca" placeholder="🔍 Buscar conversa...">
+        <div id="waConvList" class="wa-conv-list"></div>
+      </div>
+      <div class="wa-crm-thread">
+        <div id="waThreadEmpty" class="empty" style="padding:60px 20px;">Selecione uma conversa para iniciar o atendimento.</div>
+        <div id="waThreadBox" style="display:none;">
+          <div class="wa-thread-header">
+            <div><div class="lead-name" id="waThreadNome">—</div><div class="lead-meta" id="waThreadTelefone">—</div></div>
+          </div>
+          <div class="wa-thread-messages" id="waThreadMessages"></div>
+          <div class="wa-thread-compose">
+            <textarea id="waComposeText" rows="2" placeholder="Digite uma mensagem..."></textarea>
+            <button class="btn" id="waComposeSendBtn">Enviar</button>
+          </div>
+        </div>
+      </div>
+      <div class="wa-crm-contact">
+        <div class="empty" id="waContactEmpty">Nenhuma conversa selecionada.</div>
+        <div id="waContactBox" style="display:none;">
+          <div class="section-label">Contato</div>
+          <div class="lead-name" id="waContactNome">—</div>
+          <div class="lead-meta" id="waContactTelefone">—</div>
+          <div style="margin-top:14px;" id="waContactLeadInfo"></div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- CAIXA DE ENTRADA (rascunhos de resposta da IA aguardando aprovação) -->
@@ -329,34 +455,12 @@
     <h2 class="page-title">Administração</h2>
     <p class="page-sub">Área exclusiva do proprietário.</p>
     <div class="filters" id="adminSubTabs">
-      <button data-admintab="whatsapp" class="active">WhatsApp</button>
-      <button data-admintab="ia">IA &amp; Prompt</button>
+      <button data-admintab="ia" class="active">IA &amp; Prompt</button>
       <button data-admintab="equipe">Equipe</button>
       <button data-admintab="config">Configurações</button>
     </div>
 
-    <div class="admin-subview active" id="admin-whatsapp">
-      <div class="warn-note">Conexão não-oficial (via Baileys). Use só para pacientes com quem você já tem relação — nunca para disparo em massa pra lista fria, sob risco de bloqueio do número.</div>
-      <div class="card">
-        <div class="section-label">Status da conexão</div>
-        <div id="waStatusBox" style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
-          <span class="badge perdido" id="waStatusBadge">Verificando...</span>
-          <button class="btn small" id="waConectarBtn">Conectar / Gerar QR Code</button>
-          <button class="btn small danger" id="waDesconectarBtn" style="display:none;">Desconectar</button>
-        </div>
-        <div id="waQrBox" style="margin-top:16px; display:none; text-align:center;">
-          <p class="helptext">Abra o WhatsApp no celular do consultório → Configurações → Aparelhos conectados → Conectar um aparelho, e escaneie:</p>
-          <img id="waQrImg" style="max-width:260px; width:100%; border:1px solid var(--line); border-radius:10px;">
-        </div>
-      </div>
-      <div class="card">
-        <div class="section-label">Política anti-bloqueio</div>
-        <p class="helptext" style="margin-top:-4px;">Toda vez que alguém clica em "WhatsApp" ou manda mensagem com modelo, o painel espera um intervalo (variável, pra não parecer robô) e respeita um teto por hora/dia. Ajuste em Configurações.</p>
-        <div class="grid-stats" id="waThrottleStats" style="margin-top:12px;"></div>
-      </div>
-    </div>
-
-    <div class="admin-subview" id="admin-ia">
+    <div class="admin-subview active" id="admin-ia">
       <div class="lock-note">Não conecta com nada automaticamente — é seu rascunho.</div>
       <div class="card">
         <label>Persona / instruções</label>
@@ -405,6 +509,8 @@
   </div>
 
 </main>
+  </div>
+</div>
 
 <div class="toast" id="toast"></div>
 
@@ -472,7 +578,7 @@ document.addEventListener('change', async (e)=>{
   const check = await waThrottleCheck();
   if(!check.ok){ if(win) win.close(); showToast(check.message); return; }
   if(win) win.location.href = link; else window.open(link, '_blank');
-  await waLogSend(sel.dataset.phone, sel.dataset.nome);
+  await waLogSend(sel.dataset.phone, sel.dataset.nome, texto);
 });
 
 // ============================================================
@@ -613,16 +719,18 @@ async function loadAll(){
 // ============================================================
 // TABS
 // ============================================================
-document.querySelectorAll('nav.tabs button').forEach(btn=>{ btn.addEventListener('click', ()=> switchTab(btn.dataset.tab)); });
+document.querySelectorAll('nav.tabs button[data-tab]').forEach(btn=>{ btn.addEventListener('click', ()=> switchTab(btn.dataset.tab)); });
+document.getElementById('sidebarCollapseBtn').addEventListener('click', ()=> document.getElementById('tabs').classList.toggle('collapsed'));
 function switchTab(tab){
   if(tab === 'admin' && (!CURRENT_PROFILE || CURRENT_PROFILE.role !== 'owner')){
     showToast('Só o proprietário acessa essa aba.');
     tab = 'checklist';
   }
-  document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
+  document.querySelectorAll('nav.tabs button[data-tab]').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   document.getElementById('view-'+tab).classList.add('active');
   if(tab==='checklist') renderChecklist();
+  if(tab==='whatsapp'){ checkWaStatus(); renderWaThrottleStatus(); waStartPolling(); } else { waStopPolling(); }
   if(tab==='inbox') renderInbox();
   if(tab==='funil') renderFunil();
   if(tab==='leads') renderLeads();
@@ -631,7 +739,7 @@ function switchTab(tab){
   if(tab==='templates') renderTemplates();
   if(tab==='rotinas') renderRotinas();
   if(tab==='fechamento') renderFechamento();
-  if(tab==='admin'){ renderIa(); renderEquipe(); renderConfig(); checkWaStatus(); renderWaThrottleStatus(); }
+  if(tab==='admin'){ renderIa(); renderEquipe(); renderConfig(); }
 }
 function renderAll(){
   renderChecklist(); renderInbox(); renderFunil(); renderLeads(); renderAtivos(); renderContatos();
@@ -666,20 +774,31 @@ function waSetBadge(text, cls){
   b.className = 'badge ' + cls;
 }
 function waStopPolling(){ if(waPollInterval){ clearInterval(waPollInterval); waPollInterval = null; } }
+function waStartPolling(){ waStopPolling(); waPollInterval = setInterval(checkWaStatus, 6000); }
 async function checkWaStatus(){
   const r = await waCall('status');
-  if(r.error){ waSetBadge('Não configurado', 'perdido'); return; }
+  const disconnectedPanel = document.getElementById('waDisconnectedPanel');
+  const crmPanel = document.getElementById('waCrmPanel');
+  if(r.error){
+    waSetBadge('Não configurado', 'perdido');
+    disconnectedPanel.style.display = 'block'; crmPanel.style.display = 'none';
+    return;
+  }
   const state = r.instance?.state || r.state;
   if(state === 'open'){
     waSetBadge('Conectado', 'compareceu');
     document.getElementById('waConectarBtn').style.display = 'none';
     document.getElementById('waDesconectarBtn').style.display = 'inline-block';
     document.getElementById('waQrBox').style.display = 'none';
-    waStopPolling();
+    disconnectedPanel.style.display = 'none';
+    crmPanel.style.display = 'grid';
+    await renderWaConversations();
   } else {
     waSetBadge(state === 'connecting' ? 'Aguardando escanear o QR Code' : 'Desconectado', state === 'connecting' ? 'agendado' : 'perdido');
     document.getElementById('waConectarBtn').style.display = 'inline-block';
     document.getElementById('waDesconectarBtn').style.display = 'none';
+    disconnectedPanel.style.display = 'block';
+    crmPanel.style.display = 'none';
   }
 }
 document.getElementById('waConectarBtn').addEventListener('click', async ()=>{
@@ -691,15 +810,15 @@ document.getElementById('waConectarBtn').addEventListener('click', async ()=>{
   img.src = r.base64.startsWith('data:') ? r.base64 : ('data:image/png;base64,' + r.base64);
   document.getElementById('waQrBox').style.display = 'block';
   waSetBadge('Aguardando escanear o QR Code', 'agendado');
-  waStopPolling();
-  waPollInterval = setInterval(checkWaStatus, 4000);
 });
-document.getElementById('waDesconectarBtn').addEventListener('click', async ()=>{
+async function waDisconnect(){
   if(!confirm('Desconectar o WhatsApp do sistema?')) return;
   await waCall('logout');
   showToast('WhatsApp desconectado.');
   await checkWaStatus();
-});
+}
+document.getElementById('waDesconectarBtn').addEventListener('click', waDisconnect);
+document.getElementById('waCrmDesconectarBtn').addEventListener('click', waDisconnect);
 
 // ============================================================
 // WHATSAPP — política anti-spam (intervalo aleatório + limites)
@@ -744,9 +863,10 @@ async function waThrottleCheck(){
   if(logs.length >= limiteDia) return { ok: false, message: `Limite de ${limiteDia} mensagens no dia atingido. Continue amanhã — isso protege o número contra bloqueio.` };
   return { ok: true };
 }
-async function waLogSend(telefone, nome){
+async function waLogSend(telefone, nome, texto){
   try {
     await sb.from('wa_send_log').insert({ telefone, nome: nome || null, created_by: CURRENT_PROFILE?.nome || null });
+    if(texto){ await sb.from('wa_messages').insert({ telefone, nome_contato: nome || null, direcao:'enviada', texto, created_by: CURRENT_PROFILE?.nome || null }); }
     renderWaThrottleStatus();
   } catch(e){
     // não deixa uma falha ao registrar o envio parecer um erro pro usuário
@@ -763,6 +883,114 @@ async function renderWaThrottleStatus(){
   const naUltimaHora = logs.filter(l => new Date(l.created_at).getTime() > umaHoraAtras).length;
   box.innerHTML = `<div class="stat"><span class="num">${naUltimaHora}/${limiteHora}</span><span class="lab">Mensagens na última hora</span></div><div class="stat"><span class="num">${logs.length}/${limiteDia}</span><span class="lab">Mensagens nas últimas 24h</span></div>`;
 }
+
+// ============================================================
+// WHATSAPP — central de conversas (CRM), a partir do histórico real
+// gravado pelo webhook (wa_messages) — nunca dado fictício.
+// ============================================================
+let WA_CONVERSAS = [];
+let waConvSelecionada = null;
+let waConvBusca = '';
+document.getElementById('waConvBusca').addEventListener('input', (e)=>{ waConvBusca = e.target.value.trim().toLowerCase(); renderWaConvList(); });
+async function renderWaConversations(){
+  const { data, error } = await sb.from('wa_messages').select('*').order('created_at', { ascending: true });
+  if(error) return;
+  const porTelefone = {};
+  (data||[]).forEach(m=>{
+    if(!porTelefone[m.telefone]) porTelefone[m.telefone] = { telefone: m.telefone, nome_contato: m.nome_contato, mensagens: [] };
+    porTelefone[m.telefone].mensagens.push(m);
+    if(m.nome_contato) porTelefone[m.telefone].nome_contato = m.nome_contato;
+  });
+  WA_CONVERSAS = Object.values(porTelefone).sort((a,b)=>{
+    const la = a.mensagens[a.mensagens.length-1]; const lb = b.mensagens[b.mensagens.length-1];
+    return (lb?.created_at||'').localeCompare(la?.created_at||'');
+  });
+  renderWaConvList();
+  if(waConvSelecionada){
+    const ainda = WA_CONVERSAS.find(c=>c.telefone===waConvSelecionada);
+    if(ainda) renderWaThread(ainda); else { waConvSelecionada = null; renderWaThreadEmpty(); }
+  }
+}
+function renderWaConvList(){
+  const box = document.getElementById('waConvList');
+  let list = WA_CONVERSAS;
+  if(waConvBusca){ const digitsBusca = waConvBusca.replace(/\D/g,''); list = list.filter(c => (c.nome_contato||'').toLowerCase().includes(waConvBusca) || (digitsBusca && c.telefone.includes(digitsBusca))); }
+  if(!list.length){ box.innerHTML = '<div class="empty">Nenhuma conversa encontrada.</div>'; return; }
+  box.innerHTML = list.map(c=>{
+    const ultima = c.mensagens[c.mensagens.length-1];
+    const hora = ultima ? new Date(ultima.created_at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '';
+    return `<div class="wa-conv-item ${waConvSelecionada===c.telefone?'active':''}" data-wa-conv="${c.telefone}">
+      <span class="hora">${hora}</span>
+      <div class="nome">${c.nome_contato || c.telefone}</div>
+      <span class="preview">${ultima ? (ultima.direcao==='enviada'?'Você: ':'') + (ultima.texto||'') : ''}</span>
+    </div>`;
+  }).join('');
+  box.querySelectorAll('[data-wa-conv]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      waConvSelecionada = el.dataset.waConv;
+      const conv = WA_CONVERSAS.find(c=>c.telefone===waConvSelecionada);
+      renderWaConvList();
+      if(conv) renderWaThread(conv);
+    });
+  });
+}
+function renderWaThreadEmpty(){
+  document.getElementById('waThreadEmpty').style.display = 'block';
+  document.getElementById('waThreadBox').style.display = 'none';
+  document.getElementById('waContactEmpty').style.display = 'block';
+  document.getElementById('waContactBox').style.display = 'none';
+}
+function renderWaThread(conv){
+  document.getElementById('waThreadEmpty').style.display = 'none';
+  document.getElementById('waThreadBox').style.display = 'flex';
+  document.getElementById('waThreadNome').textContent = conv.nome_contato || conv.telefone;
+  document.getElementById('waThreadTelefone').textContent = conv.telefone;
+  const box = document.getElementById('waThreadMessages');
+  box.innerHTML = conv.mensagens.map(m=>`<div class="wa-msg ${m.direcao}">${(m.texto||'').replace(/</g,'&lt;')}<span class="hora">${new Date(m.created_at).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</span></div>`).join('');
+  box.scrollTop = box.scrollHeight;
+  renderWaContact(conv);
+}
+async function renderWaContact(conv){
+  document.getElementById('waContactEmpty').style.display = 'none';
+  document.getElementById('waContactBox').style.display = 'block';
+  document.getElementById('waContactNome').textContent = conv.nome_contato || conv.telefone;
+  document.getElementById('waContactTelefone').textContent = conv.telefone;
+  const info = document.getElementById('waContactLeadInfo');
+  const lead = LEADS.find(l => (l.telefone||'').replace(/\D/g,'') === conv.telefone.replace(/\D/g,''));
+  if(lead){
+    info.innerHTML = `<div class="section-label">Lead no CRM</div>${statusBadge(lead.status)}<div class="lead-meta" style="margin-top:6px;">${lead.procedimento||'—'}</div><button class="btn small secondary" style="margin-top:10px;" data-wa-abrir-lead="${lead.id}">Abrir no CRM</button>`;
+    info.querySelector('[data-wa-abrir-lead]').addEventListener('click', ()=>{ openLeadId = lead.id; switchTab('leads'); });
+  } else {
+    info.innerHTML = `<div class="helptext">Ainda não é um lead no CRM.</div><button class="btn small gold" style="margin-top:10px;" data-wa-criar-lead="1">Transformar em lead</button>`;
+    info.querySelector('[data-wa-criar-lead]').addEventListener('click', async ()=>{
+      const { error } = await sb.from('leads').insert({
+        nome: conv.nome_contato || conv.telefone, telefone: conv.telefone,
+        origem:'Lead próprio', status:'Novo', responsavel: CURRENT_PROFILE.nome,
+        obs: 'Criado a partir de uma conversa de WhatsApp.',
+        atividades:[{ data: todayISO(), tipo:'Criação', texto:'Lead criado a partir do WhatsApp', por: CURRENT_PROFILE.nome }],
+        created_by: CURRENT_PROFILE.nome,
+      });
+      if(error){ showToast('Erro: '+error.message); return; }
+      showToast('Lead criado.'); await loadAll(); renderWaContact(conv);
+    });
+  }
+}
+document.getElementById('waComposeSendBtn').addEventListener('click', async ()=>{
+  if(!waConvSelecionada) return;
+  const textarea = document.getElementById('waComposeText');
+  const texto = textarea.value.trim();
+  if(!texto){ showToast('Digite uma mensagem.'); return; }
+  const conv = WA_CONVERSAS.find(c=>c.telefone===waConvSelecionada);
+  const link = waLink(waConvSelecionada, texto);
+  if(!link){ showToast('Telefone inválido.'); return; }
+  const win = window.open('', '_blank');
+  const check = await waThrottleCheck();
+  if(!check.ok){ if(win) win.close(); showToast(check.message); return; }
+  if(win) win.location.href = link; else window.open(link, '_blank');
+  await waLogSend(waConvSelecionada, conv?.nome_contato, texto);
+  textarea.value = '';
+  await renderWaConversations();
+});
 
 // ============================================================
 // CALC HELPERS
@@ -978,7 +1206,7 @@ function renderInbox(){
       const check = await waThrottleCheck();
       if(!check.ok){ if(win) win.close(); showToast(check.message); return; }
       if(win) win.location.href = link; else window.open(link, '_blank');
-      await waLogSend(btn.dataset.telefone, btn.dataset.nome);
+      await waLogSend(btn.dataset.telefone, btn.dataset.nome, texto);
       await sb.from('wa_inbox').update({ status:'enviado', rascunho_resposta: texto }).eq('id', id);
       showToast('Aprovada — abrindo o WhatsApp.');
       await loadAll(); renderInbox();

@@ -106,6 +106,11 @@ Deno.serve(async (req) => {
           status: "aguardando",
         });
       }
+
+      // histórico completo da conversa, pra central de conversas do painel
+      await supabase.from("wa_messages").insert({
+        telefone, nome_contato: nomeContato, direcao: "recebida", texto, created_at: timestamp,
+      });
     }
 
     return json({ ok: true });
