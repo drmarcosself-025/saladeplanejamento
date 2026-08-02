@@ -314,7 +314,16 @@ create policy "contatos_all" on public.contatos for all to authenticated using (
 create policy "checklist_state_all" on public.checklist_state for all to authenticated using (true) with check (true);
 create policy "confirmacoes_dia_all" on public.confirmacoes_dia for all to authenticated using (true) with check (true);
 create policy "templates_all" on public.templates for all to authenticated using (true) with check (true);
-create policy "wa_send_log_all" on public.wa_send_log for all to authenticated using (true) with check (true);
+-- wa_send_log é o registro que sustenta a proteção anti-bloqueio (intervalo
+-- mínimo + limites por hora/dia): todo mundo pode registrar e ler um envio,
+-- mas ninguém de equipe pode apagar linhas pra "resetar" o contador — só o
+-- proprietário, e mesmo assim isso não deveria ser necessário no dia a dia.
+-- (o "drop... if exists" deixa seguro rodar este arquivo de novo num banco
+-- que já tinha a policy antiga, mais permissiva)
+drop policy if exists "wa_send_log_all" on public.wa_send_log;
+create policy "wa_send_log_select" on public.wa_send_log for select to authenticated using (true);
+create policy "wa_send_log_insert" on public.wa_send_log for insert to authenticated with check (true);
+create policy "wa_send_log_delete" on public.wa_send_log for delete to authenticated using (public.is_owner());
 create policy "wa_inbox_all" on public.wa_inbox for all to authenticated using (true) with check (true);
 create policy "wa_messages_all" on public.wa_messages for all to authenticated using (true) with check (true);
 

@@ -569,6 +569,11 @@ let leadFilter = 'todos';
 const ICON_PHONE = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6.6 10.8c1.4 2.8 3.8 5.2 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.3 21 3 13.7 3 4.9c0-.6.4-1 1-1h3.4c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1L6.6 10.8Z"/></svg>';
 const ICON_TRASH = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/></svg>';
 const ICON_PIN = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-6.1 7-11a7 7 0 1 0-14 0c0 4.9 7 11 7 11Z"/><circle cx="12" cy="10" r="2.4"/></svg>';
+// Escapa texto vindo do banco (nome de paciente, obs, e principalmente o
+// nome de exibição do WhatsApp — que qualquer pessoa de fora pode definir
+// mandando mensagem pro número da clínica) antes de inserir em innerHTML,
+// pra impedir que um texto malicioso vire HTML/JS de verdade na tela.
+function esc(s){ return String(s??'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function todayISO(){ return new Date().toISOString().slice(0,10); }
 function daysAgoISO(n){ const d = new Date(); d.setDate(d.getDate()-n); return d.toISOString().slice(0,10); }
 function fmtMoney(v){ return 'R$ ' + (Number(v)||0).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2}); }
@@ -576,18 +581,28 @@ function fmtDate(iso){ if(!iso) return '—'; const [y,m,d] = iso.split('-'); re
 function showToast(msg){ const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'), 2600); }
 function startOfWeekISO(){ const d = new Date(); const day = d.getDay(); const diff = (day===0? -6 : 1) - day; const monday = new Date(d); monday.setDate(d.getDate()+diff); return monday.toISOString().slice(0,10); }
 function waLink(telefone, msg){ const digits = String(telefone||'').replace(/\D/g,''); if(!digits) return null; const full = digits.startsWith('55') ? digits : '55'+digits; return 'https://wa.me/'+full+(msg?('?text='+encodeURIComponent(msg)):''); }
-function waButtonHTML(telefone, label, nome){ const link = waLink(telefone); if(!link) return `<button class="btn small secondary" disabled title="Sem telefone">${label||'WhatsApp'}</button>`; const safeNome = String(nome||'').replace(/"/g,''); return `<button class="btn small" style="background:#25D366; color:#fff;" data-wa-phone="${String(telefone).replace(/"/g,'')}" data-wa-nome="${safeNome}">${label||'Abrir WhatsApp'}</button>`; }
-function templateSelectHTML(telefone, nome){ if(!telefone || !TEMPLATES.length) return ''; const safeNome = String(nome||'').replace(/"/g,''); return `<select data-tplsel="1" data-phone="${String(telefone).replace(/"/g,'')}" data-nome="${safeNome}" style="width:auto; padding:7px 10px; font-size:13px;"><option value="">Mensagem com modelo...</option>${TEMPLATES.map(t=>`<option value="${t.id}">${t.titulo}</option>`).join('')}</select>`; }
+function waButtonHTML(telefone, label, nome){ const link = waLink(telefone); if(!link) return `<button class="btn small secondary" disabled title="Sem telefone">${label||'WhatsApp'}</button>`; return `<button class="btn small" style="background:#25D366; color:#fff;" data-wa-phone="${esc(telefone)}" data-wa-nome="${esc(nome)}">${label||'Abrir WhatsApp'}</button>`; }
+// Trava simples contra clique duplo: sem isso, dois cliques rápidos (ou dois
+// atendentes clicando quase juntos) podem ambos passar pela checagem de
+// intervalo antes que o primeiro registre o envio, furando a proteção
+// anti-bloqueio. Não cobre duas abas/computadores diferentes ao mesmo tempo
+// (isso exigiria trava no servidor), mas resolve o caso mais comum.
+let waSendBusy = false;
+function templateSelectHTML(telefone, nome){ if(!telefone || !TEMPLATES.length) return ''; return `<select data-tplsel="1" data-phone="${esc(telefone)}" data-nome="${esc(nome)}" style="width:auto; padding:7px 10px; font-size:13px;"><option value="">Mensagem com modelo...</option>${TEMPLATES.map(t=>`<option value="${t.id}">${esc(t.titulo)}</option>`).join('')}</select>`; }
 document.addEventListener('click', async (e)=>{
   const btn = e.target.closest('[data-wa-phone]'); if(!btn) return;
   const link = waLink(btn.dataset.waPhone); if(!link) return;
-  // Abre a aba já no clique (senão o navegador trata como pop-up bloqueado
-  // depois do "await" da checagem) e só decide depois se deixa ir ou fecha.
-  const win = window.open('', '_blank');
-  const check = await waThrottleCheck();
-  if(!check.ok){ if(win) win.close(); showToast(check.message); return; }
-  if(win) win.location.href = link; else window.open(link, '_blank');
-  await waLogSend(btn.dataset.waPhone, btn.dataset.waNome);
+  if(waSendBusy){ showToast('Aguarde, processando o envio anterior...'); return; }
+  waSendBusy = true;
+  try {
+    // Abre a aba já no clique (senão o navegador trata como pop-up bloqueado
+    // depois do "await" da checagem) e só decide depois se deixa ir ou fecha.
+    const win = window.open('', '_blank');
+    const check = await waThrottleCheck();
+    if(!check.ok){ if(win) win.close(); showToast(check.message); return; }
+    if(win) win.location.href = link; else window.open(link, '_blank');
+    await waLogSend(btn.dataset.waPhone, btn.dataset.waNome);
+  } finally { waSendBusy = false; }
 });
 document.addEventListener('change', async (e)=>{
   const sel = e.target.closest('[data-tplsel]'); if(!sel || !sel.value) return;
@@ -596,11 +611,15 @@ document.addEventListener('change', async (e)=>{
   const link = waLink(sel.dataset.phone, texto);
   sel.value='';
   if(!link) return;
-  const win = window.open('', '_blank');
-  const check = await waThrottleCheck();
-  if(!check.ok){ if(win) win.close(); showToast(check.message); return; }
-  if(win) win.location.href = link; else window.open(link, '_blank');
-  await waLogSend(sel.dataset.phone, sel.dataset.nome, texto);
+  if(waSendBusy){ showToast('Aguarde, processando o envio anterior...'); return; }
+  waSendBusy = true;
+  try {
+    const win = window.open('', '_blank');
+    const check = await waThrottleCheck();
+    if(!check.ok){ if(win) win.close(); showToast(check.message); return; }
+    if(win) win.location.href = link; else window.open(link, '_blank');
+    await waLogSend(sel.dataset.phone, sel.dataset.nome, texto);
+  } finally { waSendBusy = false; }
 });
 
 // ============================================================
@@ -940,7 +959,7 @@ function waAvatarHTML(nome, telefone){
   const palette = ['#122043','#1b2c56','#8b6b2f','#5a4423','#2c4a9c','#7a2a2a','#1f7a4d'];
   let hash = 0; for(const ch of String(telefone||label)){ hash = (hash*31 + ch.charCodeAt(0)) >>> 0; }
   const color = palette[hash % palette.length];
-  return `<div class="wa-avatar" style="background:${color};">${initials}</div>`;
+  return `<div class="wa-avatar" style="background:${color};">${esc(initials)}</div>`;
 }
 function renderWaConvList(){
   const box = document.getElementById('waConvList');
@@ -953,8 +972,8 @@ function renderWaConvList(){
     return `<div class="wa-conv-item ${waConvSelecionada===c.telefone?'active':''}" data-wa-conv="${c.telefone}">
       ${waAvatarHTML(c.nome_contato, c.telefone)}
       <div class="wa-conv-body">
-        <div class="nome"><span>${c.nome_contato || c.telefone}</span><span class="hora">${hora}</span></div>
-        <span class="preview">${ultima ? (ultima.direcao==='enviada'?'Você: ':'') + (ultima.texto||'') : ''}</span>
+        <div class="nome"><span>${esc(c.nome_contato || c.telefone)}</span><span class="hora">${hora}</span></div>
+        <span class="preview">${ultima ? esc((ultima.direcao==='enviada'?'Você: ':'') + (ultima.texto||'')) : ''}</span>
       </div>
     </div>`;
   }).join('');
@@ -1017,13 +1036,17 @@ document.getElementById('waComposeSendBtn').addEventListener('click', async ()=>
   const conv = WA_CONVERSAS.find(c=>c.telefone===waConvSelecionada);
   const link = waLink(waConvSelecionada, texto);
   if(!link){ showToast('Telefone inválido.'); return; }
-  const win = window.open('', '_blank');
-  const check = await waThrottleCheck();
-  if(!check.ok){ if(win) win.close(); showToast(check.message); return; }
-  if(win) win.location.href = link; else window.open(link, '_blank');
-  await waLogSend(waConvSelecionada, conv?.nome_contato, texto);
-  textarea.value = '';
-  await renderWaConversations();
+  if(waSendBusy){ showToast('Aguarde, processando o envio anterior...'); return; }
+  waSendBusy = true;
+  try {
+    const win = window.open('', '_blank');
+    const check = await waThrottleCheck();
+    if(!check.ok){ if(win) win.close(); showToast(check.message); return; }
+    if(win) win.location.href = link; else window.open(link, '_blank');
+    await waLogSend(waConvSelecionada, conv?.nome_contato, texto);
+    textarea.value = '';
+    await renderWaConversations();
+  } finally { waSendBusy = false; }
 });
 
 // ============================================================
@@ -1104,7 +1127,7 @@ async function renderChecklist(){
   const followups = LEADS.filter(needsFollowup).sort((a,b)=> (a.data_proxima_acao||a.data||'').localeCompare(b.data_proxima_acao||b.data||''));
   document.getElementById('followupList').innerHTML = followups.length ? followups.map(l=>`
     <div class="lead-card" style="margin-bottom:8px;">
-      <div class="lead-top"><div><div class="lead-name">${l.nome}</div><div class="lead-meta">${l.procedimento||'—'} · último contato: ${fmtDate(l.data_ultimo_contato)||'nunca'} ${l.data_proxima_acao?'· ação prevista: '+fmtDate(l.data_proxima_acao):''}</div></div>${statusBadge(l.status)}</div>
+      <div class="lead-top"><div><div class="lead-name">${esc(l.nome)}</div><div class="lead-meta">${esc(l.procedimento)||'—'} · último contato: ${fmtDate(l.data_ultimo_contato)||'nunca'} ${l.data_proxima_acao?'· ação prevista: '+fmtDate(l.data_proxima_acao):''}</div></div>${statusBadge(l.status)}</div>
       <div class="lead-actions">${waButtonHTML(l.telefone, null, l.nome)}<button class="btn small" data-contato="${l.id}">Marcar contato feito hoje</button><button class="btn small secondary" data-abrir="${l.id}">Abrir lead</button></div>
     </div>`).join('') : '<div class="empty">Nenhum follow-up pendente. 🎉</div>';
   document.querySelectorAll('[data-contato]').forEach(btn=>{
@@ -1114,7 +1137,7 @@ async function renderChecklist(){
 
   const dueAtivos = ATIVOS.filter(a => a.status !== 'Reagendado' && a.status !== 'Perdido' && a.proximo_contato && a.proximo_contato <= todayISO());
   document.getElementById('reativacaoDueList').innerHTML = dueAtivos.length ? dueAtivos.map(a=>`
-    <div class="lead-card" style="margin-bottom:8px;"><div class="lead-top"><div><div class="lead-name">${a.nome}</div><div class="lead-meta">Última visita: ${fmtDate(a.ultima_visita)} · contato previsto: ${fmtDate(a.proximo_contato)}</div></div></div>
+    <div class="lead-card" style="margin-bottom:8px;"><div class="lead-top"><div><div class="lead-name">${esc(a.nome)}</div><div class="lead-meta">Última visita: ${fmtDate(a.ultima_visita)} · contato previsto: ${fmtDate(a.proximo_contato)}</div></div></div>
     <div class="lead-actions">${waButtonHTML(a.telefone, null, a.nome)}<button class="btn small" data-ativo-contatado="${a.id}">Marcar contatado</button></div></div>`).join('') : '<div class="empty">Nenhum paciente vencido hoje.</div>';
   document.querySelectorAll('[data-ativo-contatado]').forEach(btn=>{
     btn.addEventListener('click', async ()=>{ await sb.from('ativos').update({ status:'Contatado' }).eq('id', btn.dataset.ativoContatado); await loadAll(); showToast('Marcado.'); renderChecklist(); });
@@ -1128,7 +1151,7 @@ async function saveHojePacientes(){ await sb.from('confirmacoes_dia').upsert({ d
 async function renderHojePacientes(){
   await loadHojePacientes();
   const box = document.getElementById('hojePacientesList');
-  box.innerHTML = HOJE_PACIENTES.length ? HOJE_PACIENTES.map((p,i)=>`<div class="checklist-item ${p.confirmado?'done':''}"><input type="checkbox" data-hoje="${i}" ${p.confirmado?'checked':''}><div class="ci-text"><div class="ci-title">${p.nome}</div></div><button class="btn small secondary" data-remhoje="${i}">Remover</button></div>`).join('') : '<div class="empty">Nenhum paciente adicionado ainda hoje.</div>';
+  box.innerHTML = HOJE_PACIENTES.length ? HOJE_PACIENTES.map((p,i)=>`<div class="checklist-item ${p.confirmado?'done':''}"><input type="checkbox" data-hoje="${i}" ${p.confirmado?'checked':''}><div class="ci-text"><div class="ci-title">${esc(p.nome)}</div></div><button class="btn small secondary" data-remhoje="${i}">Remover</button></div>`).join('') : '<div class="empty">Nenhum paciente adicionado ainda hoje.</div>';
   box.querySelectorAll('[data-hoje]').forEach(cb=>{ cb.addEventListener('change', async ()=>{ HOJE_PACIENTES[Number(cb.dataset.hoje)].confirmado = cb.checked; await saveHojePacientes(); renderHojePacientes(); }); });
   box.querySelectorAll('[data-remhoje]').forEach(btn=>{ btn.addEventListener('click', async ()=>{ HOJE_PACIENTES.splice(Number(btn.dataset.remhoje),1); await saveHojePacientes(); renderHojePacientes(); }); });
 }
@@ -1176,7 +1199,7 @@ function renderInbox(){
   const box = document.getElementById('inboxList');
   if(!list.length){ box.innerHTML = '<div class="empty">Nada por aqui nesse filtro.</div>'; return; }
   box.innerHTML = list.map(c=>{
-    const mensagensHtml = (c.mensagens||[]).map(m=>`<div style="background:var(--bg); border-radius:8px; padding:8px 10px; margin-bottom:6px; font-size:14px;">${(m.texto||'').replace(/</g,'&lt;')}</div>`).join('');
+    const mensagensHtml = (c.mensagens||[]).map(m=>`<div style="background:var(--bg); border-radius:8px; padding:8px 10px; margin-bottom:6px; font-size:14px;">${esc(m.texto)}</div>`).join('');
     const leadBadge = c.lead_sugerido ? `<span class="badge fechado" data-inbox-abrir-lead="${c.lead_id||''}" style="cursor:${c.lead_id?'pointer':'default'};">Lead ${c.lead_id?'criado':'sugerido'}${(c.palavras_chave_detectadas||[]).length?(' — '+c.palavras_chave_detectadas.join(', ')):''}</span>` : '';
     let corpo = '';
     if(c.status === 'aguardando'){
@@ -1184,19 +1207,19 @@ function renderInbox(){
     } else if(c.status === 'rascunho_pronto'){
       corpo = `
         <label>Sugestão de resposta da IA (edite se quiser)</label>
-        <textarea rows="3" data-inbox-rascunho="${c.id}">${(c.rascunho_resposta||'').replace(/</g,'&lt;')}</textarea>
+        <textarea rows="3" data-inbox-rascunho="${c.id}">${esc(c.rascunho_resposta)}</textarea>
         <div class="lead-actions">
-          <button class="btn small" data-inbox-aprovar="${c.id}" data-telefone="${c.telefone}" data-nome="${(c.nome_contato||'').replace(/"/g,'')}">Aprovar e abrir WhatsApp</button>
+          <button class="btn small" data-inbox-aprovar="${c.id}" data-telefone="${esc(c.telefone)}" data-nome="${esc(c.nome_contato)}">Aprovar e abrir WhatsApp</button>
           <button class="btn small secondary" data-inbox-descartar="${c.id}">Descartar</button>
-          ${!c.lead_id ? `<button class="btn small gold" data-inbox-lead="${c.id}" data-telefone="${c.telefone}" data-nome="${(c.nome_contato||'').replace(/"/g,'')}">Transformar em lead</button>` : ''}
+          ${!c.lead_id ? `<button class="btn small gold" data-inbox-lead="${c.id}" data-telefone="${esc(c.telefone)}" data-nome="${esc(c.nome_contato)}">Transformar em lead</button>` : ''}
         </div>`;
     } else if(c.status === 'enviado'){
-      corpo = `<div class="lock-note">Resposta enviada: ${(c.rascunho_resposta||'').replace(/</g,'&lt;')}</div>`;
+      corpo = `<div class="lock-note">Resposta enviada: ${esc(c.rascunho_resposta)}</div>`;
     } else {
       corpo = `<div class="helptext">Descartada — nenhuma resposta foi enviada.</div>`;
     }
     return `<div class="lead-card">
-      <div class="lead-top"><div><div class="lead-name">${c.nome_contato || c.telefone}</div><div class="lead-meta">${c.telefone} · última mensagem ${fmtDate((c.ultima_mensagem_em||'').slice(0,10))}</div></div>
+      <div class="lead-top"><div><div class="lead-name">${esc(c.nome_contato || c.telefone)}</div><div class="lead-meta">${esc(c.telefone)} · última mensagem ${fmtDate((c.ultima_mensagem_em||'').slice(0,10))}</div></div>
       <span class="badge ${INBOX_STATUS_CLASS[c.status]||'novo'}">${INBOX_STATUS_LABEL[c.status]||c.status}</span></div>
       <div style="margin:10px 0;">${mensagensHtml}</div>
       ${leadBadge}
@@ -1236,14 +1259,18 @@ function renderInbox(){
       if(!texto){ showToast('A resposta está vazia.'); return; }
       const link = waLink(btn.dataset.telefone, texto);
       if(!link){ showToast('Telefone inválido.'); return; }
-      const win = window.open('', '_blank');
-      const check = await waThrottleCheck();
-      if(!check.ok){ if(win) win.close(); showToast(check.message); return; }
-      if(win) win.location.href = link; else window.open(link, '_blank');
-      await waLogSend(btn.dataset.telefone, btn.dataset.nome, texto);
-      await sb.from('wa_inbox').update({ status:'enviado', rascunho_resposta: texto }).eq('id', id);
-      showToast('Aprovada — abrindo o WhatsApp.');
-      await loadAll(); renderInbox();
+      if(waSendBusy){ showToast('Aguarde, processando o envio anterior...'); return; }
+      waSendBusy = true;
+      try {
+        const win = window.open('', '_blank');
+        const check = await waThrottleCheck();
+        if(!check.ok){ if(win) win.close(); showToast(check.message); return; }
+        if(win) win.location.href = link; else window.open(link, '_blank');
+        await waLogSend(btn.dataset.telefone, btn.dataset.nome, texto);
+        await sb.from('wa_inbox').update({ status:'enviado', rascunho_resposta: texto }).eq('id', id);
+        showToast('Aprovada — abrindo o WhatsApp.');
+        await loadAll(); renderInbox();
+      } finally { waSendBusy = false; }
     });
   });
 }
@@ -1257,7 +1284,7 @@ function renderFunil(){
   board.innerHTML = FUNIL_STAGES.map(stage=>{
     const items = LEADS.filter(l => (l.status||'Novo') === stage).sort((a,b)=> (b.created_at||'').localeCompare(a.created_at||''));
     return `<div class="kanban-col"><h4>${stage} <span>${items.length}</span></h4>
-      ${items.map(l=>`<div class="kanban-card" data-open="${l.id}"><div class="kn">${l.nome}</div><div class="km">${l.origem==='Lead interno'?'interno':'próprio'} · ${fmtDate(l.data)}</div>${needsFollowup(l)?'<div class="stale-tag">Follow-up pendente</div>':''}</div>`).join('') || '<div style="font-size:12px; color:var(--muted); padding:6px 2px;">vazio</div>'}</div>`;
+      ${items.map(l=>`<div class="kanban-card" data-open="${l.id}"><div class="kn">${esc(l.nome)}</div><div class="km">${l.origem==='Lead interno'?'interno':'próprio'} · ${fmtDate(l.data)}</div>${needsFollowup(l)?'<div class="stale-tag">Follow-up pendente</div>':''}</div>`).join('') || '<div style="font-size:12px; color:var(--muted); padding:6px 2px;">vazio</div>'}</div>`;
   }).join('');
   board.querySelectorAll('[data-open]').forEach(card=>{ card.addEventListener('click', ()=>{ openLeadId = card.dataset.open; switchTab('leads'); }); });
 }
@@ -1286,20 +1313,20 @@ function renderLeads(){
 function leadCardHTML(l){
   const open = openLeadId === l.id; const com = calcComissao(l);
   return `<div class="lead-card"><div class="lead-top" id="head-${l.id}" style="cursor:pointer;">
-    <div><div class="lead-name">${l.nome}</div><div class="lead-meta">${l.procedimento||'Procedimento não informado'} · ${l.origem==='Lead interno'?'Lead interno':'Lead próprio'} · entrou ${fmtDate(l.data)} · por ${l.responsavel||'—'}</div></div>
+    <div><div class="lead-name">${esc(l.nome)}</div><div class="lead-meta">${esc(l.procedimento)||'Procedimento não informado'} · ${l.origem==='Lead interno'?'Lead interno':'Lead próprio'} · entrou ${fmtDate(l.data)} · por ${esc(l.responsavel)||'—'}</div></div>
     ${statusBadge(l.status)}</div>
     <div class="lead-detail ${open?'open':''}" id="detail-${l.id}">${open?leadDetailHTML(l,com):''}</div></div>`;
 }
 function leadDetailHTML(l, com){
   return `
-    <label>Telefone</label><input type="text" data-f="telefone" value="${l.telefone||''}">
+    <label>Telefone</label><input type="text" data-f="telefone" value="${esc(l.telefone)}">
     <label>Status</label><select data-f="status">${STATUS_OPTIONS.map(s=>`<option value="${s}" ${l.status===s?'selected':''}>${s}</option>`).join('')}</select>
     <div class="row2"><div><label>Compareceu?</label><select data-f="compareceu"><option value="">—</option><option value="Sim" ${l.compareceu==='Sim'?'selected':''}>Sim</option><option value="Não" ${l.compareceu==='Não'?'selected':''}>Não</option></select></div>
     <div><label>Fechou?</label><select data-f="fechou"><option value="">—</option><option value="Sim" ${l.fechou==='Sim'?'selected':''}>Sim</option><option value="Não" ${l.fechou==='Não'?'selected':''}>Não</option></select></div></div>
     <div class="row2"><div><label>Valor orçamento (R$)</label><input type="number" data-f="valor_orcamento" value="${l.valor_orcamento||''}"></div><div><label>Valor recebido (R$)</label><input type="number" data-f="valor_recebido" value="${l.valor_recebido||''}"></div></div>
     <div class="row2"><div><label>Próxima ação</label><input type="date" data-f="data_proxima_acao" value="${l.data_proxima_acao||''}"></div><div><label>Último contato</label><input type="date" data-f="data_ultimo_contato" value="${l.data_ultimo_contato||''}"></div></div>
-    <label>Motivo da perda</label><input type="text" data-f="motivo_perda" value="${l.motivo_perda||''}">
-    <label>Observações</label><textarea data-f="obs" rows="2">${l.obs||''}</textarea>
+    <label>Motivo da perda</label><input type="text" data-f="motivo_perda" value="${esc(l.motivo_perda)}">
+    <label>Observações</label><textarea data-f="obs" rows="2">${esc(l.obs)}</textarea>
     ${l.fechou==='Sim' && l.valor_recebido ? `<div class="lock-note" style="margin-top:12px;">Comissão calculada: <strong>${fmtMoney(com)}</strong></div>` : ''}
     <div class="lead-actions">${waButtonHTML(l.telefone, null, l.nome)}${templateSelectHTML(l.telefone, l.nome)}
       <button class="btn small" data-action="save">Salvar alterações</button>
@@ -1311,7 +1338,7 @@ function leadDetailHTML(l, com){
       <button class="btn small gold" data-action="log-resposta">Registrar: resposta recebida</button>
       <button class="btn small secondary" data-action="log-ligacao">Registrar: ligação</button>
     </div>
-    <div style="margin-top:10px;">${(l.atividades||[]).slice().reverse().map(a=>`<div style="font-size:13px; padding:7px 0; border-bottom:1px solid var(--line);"><strong style="color:var(--navy);">${a.tipo}</strong> — ${a.texto}<div style="color:var(--muted); font-size:11.5px;">${fmtDate(a.data)} · ${a.por}</div></div>`).join('') || '<div class="empty" style="padding:14px;">Sem histórico ainda.</div>'}</div>
+    <div style="margin-top:10px;">${(l.atividades||[]).slice().reverse().map(a=>`<div style="font-size:13px; padding:7px 0; border-bottom:1px solid var(--line);"><strong style="color:var(--navy);">${esc(a.tipo)}</strong> — ${esc(a.texto)}<div style="color:var(--muted); font-size:11.5px;">${fmtDate(a.data)} · ${esc(a.por)}</div></div>`).join('') || '<div class="empty" style="padding:14px;">Sem histórico ainda.</div>'}</div>
   `;
 }
 function bindLeadDetailEvents(id){
@@ -1375,7 +1402,7 @@ function renderAtivos(){
   const list = [...ATIVOS].sort((a,b)=> (a.proximo_contato||'9999').localeCompare(b.proximo_contato||'9999'));
   const box = document.getElementById('ativosList');
   box.innerHTML = list.length ? list.map(a=>`
-    <div class="lead-card"><div class="lead-top"><div><div class="lead-name">${a.nome}</div><div class="lead-meta">${a.telefone||'sem telefone'} · última visita: ${fmtDate(a.ultima_visita)} · próximo contato: ${fmtDate(a.proximo_contato)}</div>${a.obs?`<div class="lead-meta">${a.obs}</div>`:''}</div>
+    <div class="lead-card"><div class="lead-top"><div><div class="lead-name">${esc(a.nome)}</div><div class="lead-meta">${esc(a.telefone)||'sem telefone'} · última visita: ${fmtDate(a.ultima_visita)} · próximo contato: ${fmtDate(a.proximo_contato)}</div>${a.obs?`<div class="lead-meta">${esc(a.obs)}</div>`:''}</div>
     <span class="badge ${a.status==='Contatado'?'compareceu':(a.status==='Reagendado'?'fechado':(a.status==='Perdido'?'perdido':'novo'))}">${a.status}</span></div>
     <div class="lead-actions"><select data-ativo-status="${a.id}" style="width:auto; padding:7px 10px; font-size:13px;"><option value="Ativo" ${a.status==='Ativo'?'selected':''}>Ativo</option><option value="Contatado" ${a.status==='Contatado'?'selected':''}>Contatado</option><option value="Reagendado" ${a.status==='Reagendado'?'selected':''}>Reagendado</option><option value="Perdido" ${a.status==='Perdido'?'selected':''}>Perdido</option></select>${waButtonHTML(a.telefone, null, a.nome)}<button class="btn small danger" data-ativo-del="${a.id}">Remover</button></div></div>`).join('') : '<div class="empty">Nenhum paciente na lista.</div>';
   box.querySelectorAll('[data-ativo-status]').forEach(sel=>{ sel.addEventListener('change', async ()=>{ await sb.from('ativos').update({status:sel.value}).eq('id', sel.dataset.ativoStatus); await loadAll(); showToast('Atualizado.'); renderAtivos(); }); });
@@ -1419,10 +1446,10 @@ function renderContatos(){
       ${waAvatarHTML(c.nome, c.telefone)}
       <button class="contact-remove-btn" data-contato-del="${c.id}" title="Remover">${ICON_TRASH}</button>
     </div>
-    <div class="contact-name">${c.nome}</div>
-    ${c.categoria ? `<span class="badge ${contatoBadgeClass(c.categoria)}">${c.categoria}</span>` : ''}
-    <div class="contact-line">${ICON_PHONE}<span>${c.telefone||'sem telefone'}</span></div>
-    ${(c.cidade||c.estado) ? `<div class="contact-line">${ICON_PIN}<span>${[c.cidade,c.estado].filter(Boolean).join(' - ')}</span></div>` : ''}
+    <div class="contact-name">${esc(c.nome)}</div>
+    ${c.categoria ? `<span class="badge ${contatoBadgeClass(c.categoria)}">${esc(c.categoria)}</span>` : ''}
+    <div class="contact-line">${ICON_PHONE}<span>${esc(c.telefone)||'sem telefone'}</span></div>
+    ${(c.cidade||c.estado) ? `<div class="contact-line">${ICON_PIN}<span>${esc([c.cidade,c.estado].filter(Boolean).join(' - '))}</span></div>` : ''}
     <div class="contact-actions">${waButtonHTML(c.telefone, null, c.nome)}${templateSelectHTML(c.telefone, c.nome)}</div>
   </div>`).join('') : '<div class="empty">Nenhum contato ainda.</div>';
   box.querySelectorAll('[data-contato-del]').forEach(btn=>{ btn.addEventListener('click', async ()=>{ if(!confirm('Remover?')) return; await sb.from('contatos').delete().eq('id', btn.dataset.contatoDel); await loadAll(); renderContatos(); }); });
@@ -1512,15 +1539,15 @@ function renderTemplates(){
       return `<div class="lead-card">
         <label>Categoria</label>
         <select data-tpl-edit-categoria>${TPL_CATEGORIAS.map(c=>`<option value="${c}" ${t.categoria===c?'selected':''}>${c}</option>`).join('')}</select>
-        <label>Título</label><input type="text" data-tpl-edit-titulo value="${(t.titulo||'').replace(/"/g,'&quot;')}">
-        <label>Texto da mensagem</label><textarea data-tpl-edit-texto rows="3">${t.texto||''}</textarea>
+        <label>Título</label><input type="text" data-tpl-edit-titulo value="${esc(t.titulo)}">
+        <label>Texto da mensagem</label><textarea data-tpl-edit-texto rows="3">${esc(t.texto)}</textarea>
         <div class="lead-actions">
           <button class="btn small" data-tpl-save-edit="${t.id}">Salvar edição</button>
           <button class="btn small secondary" data-tpl-cancel-edit="${t.id}">Cancelar</button>
         </div>
       </div>`;
     }
-    return `<div class="lead-card"><div class="lead-top"><div><div class="lead-name">${t.titulo}</div><div class="lead-meta">${t.categoria}</div></div></div><div style="font-size:14px; margin-top:8px; white-space:pre-wrap;">${t.texto}</div><div class="lead-actions"><button class="btn small secondary" data-tpl-copy="${t.id}">Copiar texto</button><button class="btn small secondary" data-tpl-edit="${t.id}">Editar</button><button class="btn small danger" data-tpl-del="${t.id}">Excluir</button></div></div>`;
+    return `<div class="lead-card"><div class="lead-top"><div><div class="lead-name">${esc(t.titulo)}</div><div class="lead-meta">${esc(t.categoria)}</div></div></div><div style="font-size:14px; margin-top:8px; white-space:pre-wrap;">${esc(t.texto)}</div><div class="lead-actions"><button class="btn small secondary" data-tpl-copy="${t.id}">Copiar texto</button><button class="btn small secondary" data-tpl-edit="${t.id}">Editar</button><button class="btn small danger" data-tpl-del="${t.id}">Excluir</button></div></div>`;
   }).join('') : '<div class="empty">Nenhum modelo ainda.</div>';
   box.querySelectorAll('[data-tpl-copy]').forEach(btn=>{ btn.addEventListener('click', ()=>{ const t=TEMPLATES.find(x=>x.id===btn.dataset.tplCopy); navigator.clipboard?.writeText(t.texto).then(()=>showToast('Copiado.')).catch(()=>showToast('Não copiou automaticamente.')); }); });
   box.querySelectorAll('[data-tpl-del]').forEach(btn=>{ btn.addEventListener('click', async ()=>{ if(!confirm('Excluir?')) return; await sb.from('templates').delete().eq('id', btn.dataset.tplDel); await loadAll(); renderTemplates(); }); });
@@ -1556,7 +1583,7 @@ document.getElementById('salvarRotinaBtn').addEventListener('click', async ()=>{
 function renderRotinas(){
   document.getElementById('rotinaFormCard').style.display = (CURRENT_PROFILE.role==='owner') ? 'block' : 'none';
   const box = document.getElementById('rotinasList');
-  box.innerHTML = ROTINAS.length ? ROTINAS.map(r=>`<div class="lead-card"><div class="lead-top"><div><div class="lead-name">${r.titulo}</div><div class="lead-meta"><strong>Quando:</strong> ${r.gatilho||'—'}</div><div class="lead-meta"><strong>Fazer:</strong> ${r.acao||'—'}</div></div><span class="badge ${r.ativo?'compareceu':'perdido'}">${r.ativo?'Ativa':'Pausada'}</span></div>${CURRENT_PROFILE.role==='owner'?`<div class="lead-actions"><button class="btn small secondary" data-rot-toggle="${r.id}">${r.ativo?'Pausar':'Ativar'}</button><button class="btn small danger" data-rot-del="${r.id}">Excluir</button></div>`:''}</div>`).join('') : '<div class="empty">Nenhuma rotina cadastrada ainda.</div>';
+  box.innerHTML = ROTINAS.length ? ROTINAS.map(r=>`<div class="lead-card"><div class="lead-top"><div><div class="lead-name">${esc(r.titulo)}</div><div class="lead-meta"><strong>Quando:</strong> ${esc(r.gatilho)||'—'}</div><div class="lead-meta"><strong>Fazer:</strong> ${esc(r.acao)||'—'}</div></div><span class="badge ${r.ativo?'compareceu':'perdido'}">${r.ativo?'Ativa':'Pausada'}</span></div>${CURRENT_PROFILE.role==='owner'?`<div class="lead-actions"><button class="btn small secondary" data-rot-toggle="${r.id}">${r.ativo?'Pausar':'Ativar'}</button><button class="btn small danger" data-rot-del="${r.id}">Excluir</button></div>`:''}</div>`).join('') : '<div class="empty">Nenhuma rotina cadastrada ainda.</div>';
   box.querySelectorAll('[data-rot-toggle]').forEach(btn=>{ btn.addEventListener('click', async ()=>{ const r=ROTINAS.find(x=>x.id===btn.dataset.rotToggle); await sb.from('rotinas').update({ativo:!r.ativo}).eq('id', r.id); await loadAll(); renderRotinas(); }); });
   box.querySelectorAll('[data-rot-del]').forEach(btn=>{ btn.addEventListener('click', async ()=>{ if(!confirm('Excluir?')) return; await sb.from('rotinas').delete().eq('id', btn.dataset.rotDel); await loadAll(); renderRotinas(); }); });
 }
@@ -1612,7 +1639,7 @@ document.getElementById('resetIaBtn').addEventListener('click', ()=>{
 function renderEquipe(){
   const box = document.getElementById('equipeList');
   box.innerHTML = PROFILES.length ? PROFILES.map(p=>`
-    <div class="lead-card"><div class="lead-top"><div><div class="lead-name">${p.nome}</div><div class="lead-meta">${p.role==='owner'?'Proprietário':'Equipe'}</div></div>
+    <div class="lead-card"><div class="lead-top"><div><div class="lead-name">${esc(p.nome)}</div><div class="lead-meta">${p.role==='owner'?'Proprietário':'Equipe'}</div></div>
     ${p.id !== CURRENT_PROFILE.id ? `<button class="btn small secondary" data-toggle-role="${p.id}" data-cur-role="${p.role}">${p.role==='owner'?'Rebaixar pra equipe':'Promover a proprietário'}</button>` : '<span class="badge novo">Você</span>'}
     </div></div>`).join('') : '<div class="empty">Nenhum perfil encontrado.</div>';
   box.querySelectorAll('[data-toggle-role]').forEach(btn=>{
@@ -1697,7 +1724,7 @@ document.getElementById('salvarConfigBtn').addEventListener('click', async ()=>{
 function renderTrash(){
   const box = document.getElementById('trashList');
   const trash = window.TRASH || [];
-  box.innerHTML = trash.length ? trash.map(l=>`<div class="lead-card"><div class="lead-top"><div><div class="lead-name">${l.nome}</div><div class="lead-meta">excluído por ${l.deleted_by||'—'}</div></div></div><div class="lead-actions"><button class="btn small" data-restore="${l.id}">Restaurar</button><button class="btn small danger" data-purge="${l.id}">Excluir definitivamente</button></div></div>`).join('') : '<div class="empty">Lixeira vazia.</div>';
+  box.innerHTML = trash.length ? trash.map(l=>`<div class="lead-card"><div class="lead-top"><div><div class="lead-name">${esc(l.nome)}</div><div class="lead-meta">excluído por ${esc(l.deleted_by)||'—'}</div></div></div><div class="lead-actions"><button class="btn small" data-restore="${l.id}">Restaurar</button><button class="btn small danger" data-purge="${l.id}">Excluir definitivamente</button></div></div>`).join('') : '<div class="empty">Lixeira vazia.</div>';
   box.querySelectorAll('[data-restore]').forEach(btn=>{ btn.addEventListener('click', async ()=>{ await sb.from('leads').update({deleted_at:null, deleted_by:null}).eq('id', btn.dataset.restore); showToast('Restaurado.'); await loadAll(); renderTrash(); }); });
   box.querySelectorAll('[data-purge]').forEach(btn=>{ btn.addEventListener('click', async ()=>{ if(!confirm('Excluir definitivamente?')) return; await sb.from('leads').delete().eq('id', btn.dataset.purge); await loadAll(); renderTrash(); }); });
 }
