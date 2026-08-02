@@ -96,12 +96,52 @@ Deno.serve(async (req) => {
     if (action === "send-text") {
       const { number, text } = params as { number?: string; text?: string };
       if (!number || !text) return json({ error: "Faltou número ou texto." }, 400);
+
+      // O painel nunca chama esta ação hoje (ele só abre um link wa.me pro
+      // atendente clicar em enviar) — mas a ação existe e qualquer pessoa
+      // com uma sessão válida poderia chamá-la direto, sem passar pela
+      // checagem de intervalo/limite que existe no navegador. Por isso a
+      // política anti-bloqueio é reforçada aqui também, no servidor, e não
+      // só no index.html.
+      const { data: cfg } = await supabase
+        .from("config")
+        .select("wa_intervalo_min_seg, wa_intervalo_max_seg, wa_limite_hora, wa_limite_dia")
+        .eq("id", 1)
+        .single();
+      const minSeg = cfg?.wa_intervalo_min_seg ?? 20;
+      const maxSeg = Math.max(minSeg, cfg?.wa_intervalo_max_seg ?? 50);
+      const limiteHora = cfg?.wa_limite_hora ?? 30;
+      const limiteDia = cfg?.wa_limite_dia ?? 120;
+
+      const umDiaAtras = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const { data: logs } = await supabase
+        .from("wa_send_log")
+        .select("created_at")
+        .gte("created_at", umDiaAtras)
+        .order("created_at", { ascending: false });
+
+      if (logs && logs.length) {
+        const ultimoEnvio = new Date(logs[0].created_at).getTime();
+        const esperar = (minSeg + Math.random() * (maxSeg - minSeg)) * 1000;
+        if (Date.now() - ultimoEnvio < esperar) {
+          return json({ error: "Aguarde antes da próxima mensagem (proteção contra bloqueio do WhatsApp)." }, 429);
+        }
+        const umaHoraAtras = Date.now() - 60 * 60 * 1000;
+        if (logs.filter((l: { created_at: string }) => new Date(l.created_at).getTime() > umaHoraAtras).length >= limiteHora) {
+          return json({ error: `Limite de ${limiteHora} mensagens por hora atingido.` }, 429);
+        }
+        if (logs.length >= limiteDia) {
+          return json({ error: `Limite de ${limiteDia} mensagens no dia atingido.` }, 429);
+        }
+      }
+
       const digits = String(number).replace(/\D/g, "");
       const r = await fetch(`${EVOLUTION_API_URL}/message/sendText/${EVOLUTION_INSTANCE}`, {
         method: "POST",
         headers,
         body: JSON.stringify({ number: digits, text }),
       });
+      if (r.ok) await supabase.from("wa_send_log").insert({ telefone: digits, created_by: user.email ?? null });
       return json(await r.json(), r.status);
     }
 

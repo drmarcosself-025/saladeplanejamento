@@ -12,16 +12,26 @@
 // Segredos necessários (Project Settings → Edge Functions → Secrets):
 //   ANTHROPIC_API_KEY          sua chave da Anthropic (Claude)
 //   ANTHROPIC_MODEL            opcional — padrão: claude-sonnet-4-5-20250929
+//   CRON_SECRET                uma senha à sua escolha (mesma usada em cron-setup.sql)
 //   SUPABASE_URL               já vem configurado automaticamente
 //   SUPABASE_SERVICE_ROLE_KEY  já vem configurado automaticamente
 //
 // Em Settings desta function, desligue "Enforce JWT Verification" —
-// quem chama aqui é o agendador (pg_cron), não um usuário logado.
+// quem chama aqui é o agendador (pg_cron), não um usuário logado. Como o
+// JWT fica desligado, a CRON_SECRET abaixo é a única proteção contra
+// qualquer pessoa na internet chamar essa function direto (o que geraria
+// custo na API da Anthropic e criaria leads falsos) — sem ela, a URL da
+// function sozinha já bastaria, e o projeto é público no GitHub.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 
-Deno.serve(async (_req) => {
+Deno.serve(async (req) => {
   try {
+    const CRON_SECRET = Deno.env.get("CRON_SECRET") ?? "";
+    if (CRON_SECRET && req.headers.get("x-cron-secret") !== CRON_SECRET) {
+      return new Response(JSON.stringify({ error: "Não autorizado." }), { status: 401 });
+    }
+
     const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY") ?? "";
     const ANTHROPIC_MODEL = Deno.env.get("ANTHROPIC_MODEL") ?? "claude-sonnet-4-5-20250929";
     if (!ANTHROPIC_API_KEY) {
