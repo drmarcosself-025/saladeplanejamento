@@ -598,7 +598,13 @@ document.querySelectorAll('#adminSubTabs button').forEach(btn=>{
 let waPollInterval = null;
 async function waCall(action, params){
   const { data, error } = await sb.functions.invoke('whatsapp-proxy', { body: { action, ...params } });
-  if(error) return { error: error.message || 'Falha ao falar com a function do WhatsApp.' };
+  if(error){
+    let detail = error.message || 'Falha ao falar com a function do WhatsApp.';
+    if(error.context && typeof error.context.json === 'function'){
+      try { const body = await error.context.json(); if(body && body.error) detail = body.error; } catch(e){}
+    }
+    return { error: detail };
+  }
   return data;
 }
 function waSetBadge(text, cls){
