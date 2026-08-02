@@ -134,6 +134,7 @@
   </div>
   <nav class="tabs" id="tabs" style="display:none;">
     <button data-tab="checklist" class="active">Checklist</button>
+    <button data-tab="inbox">Caixa de Entrada</button>
     <button data-tab="funil">Funil</button>
     <button data-tab="novo">Novo Lead</button>
     <button data-tab="leads">Leads</button>
@@ -196,6 +197,19 @@
     </div>
     <div class="card"><div class="section-label">Follow-up pendente (sem contato há 7+ dias, ou vencido)</div><div id="followupList"></div></div>
     <div class="card"><div class="section-label">Pacientes para reativação, vencidos hoje</div><div id="reativacaoDueList"></div></div>
+  </div>
+
+  <!-- CAIXA DE ENTRADA (rascunhos de resposta da IA aguardando aprovação) -->
+  <div class="view" id="view-inbox">
+    <h2 class="page-title">Caixa de Entrada</h2>
+    <p class="page-sub">A IA lê as mensagens do WhatsApp e deixa uma sugestão de resposta pronta aqui — você revisa, edita se quiser, e aprova o envio.</p>
+    <div class="filters" id="inboxFilters">
+      <button data-inboxf="rascunho_pronto" class="active">Aguardando revisão</button>
+      <button data-inboxf="aguardando">IA processando</button>
+      <button data-inboxf="enviado">Já enviadas</button>
+      <button data-inboxf="descartado">Descartadas</button>
+    </div>
+    <div id="inboxList"></div>
   </div>
 
   <!-- FUNIL -->
@@ -371,6 +385,11 @@
         <p class="helptext" style="margin-top:-4px; margin-bottom:10px;">Intervalo mínimo/máximo (segundos) entre uma mensagem e outra, e limites de segurança por hora/dia.</p>
         <div class="row2"><div><label>Intervalo mínimo (seg)</label><input type="number" id="cfg_waIntervaloMin"></div><div><label>Intervalo máximo (seg)</label><input type="number" id="cfg_waIntervaloMax"></div></div>
         <div class="row2"><div><label>Limite por hora</label><input type="number" id="cfg_waLimiteHora"></div><div><label>Limite por dia</label><input type="number" id="cfg_waLimiteDia"></div></div>
+        <label>Segundos de silêncio antes da IA responder</label><input type="number" id="cfg_waSilencio">
+        <p class="helptext" style="margin-top:-4px; margin-bottom:10px;">Se o paciente mandar várias mensagens seguidas, a IA espera esse tempo sem nenhuma mensagem nova antes de juntar tudo numa única resposta.</p>
+        <label>Palavras-chave que indicam interesse (separadas por vírgula)</label>
+        <textarea rows="2" id="cfg_waKeywords"></textarea>
+        <p class="helptext" style="margin-top:-4px;">Se alguma dessas palavras aparecer na mensagem do paciente, ele já entra automaticamente na aba Leads.</p>
         <button class="btn" id="salvarConfigBtn">Salvar configurações</button>
       </div>
       <div class="card">
@@ -414,9 +433,9 @@ try {
 // ============================================================
 // STATE
 // ============================================================
-const DEFAULT_CONFIG = { diaria:120, almoco:30, com_interno:5, com_proprio:10, lim_interno:150, lim_proprio:250, bonus:10, meta_ag_dia:3, meta_ag_semana:12, meta_vd_mes:10, wa_intervalo_min_seg:20, wa_intervalo_max_seg:50, wa_limite_hora:30, wa_limite_dia:120 };
+const DEFAULT_CONFIG = { diaria:120, almoco:30, com_interno:5, com_proprio:10, lim_interno:150, lim_proprio:250, bonus:10, meta_ag_dia:3, meta_ag_semana:12, meta_vd_mes:10, wa_intervalo_min_seg:20, wa_intervalo_max_seg:50, wa_limite_hora:30, wa_limite_dia:120, wa_silencio_seg:12, wa_keywords:'agendar,agendamento,consulta,avaliação,avaliacao,quanto custa,valor,preço,preco,marcar,interessad,orçamento,orcamento' };
 let CONFIG = {...DEFAULT_CONFIG};
-let LEADS = [], DIARIAS = [], ATIVOS = [], CONTATOS = [], TEMPLATES = [], ROTINAS = [], PROFILES = [];
+let LEADS = [], DIARIAS = [], ATIVOS = [], CONTATOS = [], TEMPLATES = [], ROTINAS = [], PROFILES = [], INBOX = [];
 let IA_PROMPT = '';
 let CURRENT_PROFILE = null; // { id, nome, role }
 let openLeadId = null;
@@ -542,7 +561,7 @@ async function postLogin(){
 // DATA LOADING
 // ============================================================
 async function loadAll(){
-  const [leadsR, diariasR, ativosR, contatosR, templatesR, rotinasR, configR, profilesR] = await Promise.all([
+  const [leadsR, diariasR, ativosR, contatosR, templatesR, rotinasR, configR, profilesR, inboxR] = await Promise.all([
     sb.from('leads').select('*').is('deleted_at', null).order('created_at', {ascending:false}),
     sb.from('diarias').select('*').order('data', {ascending:false}),
     sb.from('ativos').select('*'),
@@ -551,6 +570,7 @@ async function loadAll(){
     sb.from('rotinas').select('*'),
     sb.from('config').select('*').eq('id',1).single(),
     sb.from('profiles').select('*'),
+    sb.from('wa_inbox').select('*').order('ultima_mensagem_em', {ascending:false}),
   ]);
   LEADS = leadsR.data || [];
   DIARIAS = diariasR.data || [];
@@ -560,6 +580,7 @@ async function loadAll(){
   ROTINAS = rotinasR.data || [];
   CONFIG = configR.data || {...DEFAULT_CONFIG};
   PROFILES = profilesR.data || [];
+  INBOX = inboxR.data || [];
 
   if(!TEMPLATES.length){
     const seeds = [
@@ -602,6 +623,7 @@ function switchTab(tab){
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   document.getElementById('view-'+tab).classList.add('active');
   if(tab==='checklist') renderChecklist();
+  if(tab==='inbox') renderInbox();
   if(tab==='funil') renderFunil();
   if(tab==='leads') renderLeads();
   if(tab==='ativos') renderAtivos();
@@ -612,7 +634,7 @@ function switchTab(tab){
   if(tab==='admin'){ renderIa(); renderEquipe(); renderConfig(); checkWaStatus(); renderWaThrottleStatus(); }
 }
 function renderAll(){
-  renderChecklist(); renderFunil(); renderLeads(); renderAtivos(); renderContatos();
+  renderChecklist(); renderInbox(); renderFunil(); renderLeads(); renderAtivos(); renderContatos();
   renderTemplates(); renderRotinas(); renderFechamento();
   if(CURRENT_PROFILE.role==='owner'){ renderIa(); renderEquipe(); renderConfig(); }
 }
@@ -879,6 +901,90 @@ document.getElementById('salvarLeadBtn').addEventListener('click', async ()=>{
   await loadAll();
   switchTab('leads');
 });
+
+// ============================================================
+// CAIXA DE ENTRADA (rascunhos de resposta da IA aguardando aprovação)
+// ============================================================
+let inboxFilter = 'rascunho_pronto';
+const INBOX_STATUS_LABEL = { aguardando:'IA processando', rascunho_pronto:'Aguardando revisão', enviado:'Enviada', descartado:'Descartada' };
+const INBOX_STATUS_CLASS = { aguardando:'agendado', rascunho_pronto:'contato', enviado:'compareceu', descartado:'perdido' };
+document.querySelectorAll('#inboxFilters button').forEach(b=>{ b.addEventListener('click', ()=>{ inboxFilter = b.dataset.inboxf; document.querySelectorAll('#inboxFilters button').forEach(x=>x.classList.toggle('active', x===b)); renderInbox(); }); });
+function renderInbox(){
+  const list = INBOX.filter(c => c.status === inboxFilter).sort((a,b)=> (b.ultima_mensagem_em||'').localeCompare(a.ultima_mensagem_em||''));
+  const box = document.getElementById('inboxList');
+  if(!list.length){ box.innerHTML = '<div class="empty">Nada por aqui nesse filtro.</div>'; return; }
+  box.innerHTML = list.map(c=>{
+    const mensagensHtml = (c.mensagens||[]).map(m=>`<div style="background:var(--bg); border-radius:8px; padding:8px 10px; margin-bottom:6px; font-size:14px;">${(m.texto||'').replace(/</g,'&lt;')}</div>`).join('');
+    const leadBadge = c.lead_sugerido ? `<span class="badge fechado" data-inbox-abrir-lead="${c.lead_id||''}" style="cursor:${c.lead_id?'pointer':'default'};">Lead ${c.lead_id?'criado':'sugerido'}${(c.palavras_chave_detectadas||[]).length?(' — '+c.palavras_chave_detectadas.join(', ')):''}</span>` : '';
+    let corpo = '';
+    if(c.status === 'aguardando'){
+      corpo = `<p class="helptext">A IA ainda está esperando a conversa "parar" pra responder tudo junto. Volte em instantes.</p>`;
+    } else if(c.status === 'rascunho_pronto'){
+      corpo = `
+        <label>Sugestão de resposta da IA (edite se quiser)</label>
+        <textarea rows="3" data-inbox-rascunho="${c.id}">${(c.rascunho_resposta||'').replace(/</g,'&lt;')}</textarea>
+        <div class="lead-actions">
+          <button class="btn small" data-inbox-aprovar="${c.id}" data-telefone="${c.telefone}" data-nome="${(c.nome_contato||'').replace(/"/g,'')}">Aprovar e abrir WhatsApp</button>
+          <button class="btn small secondary" data-inbox-descartar="${c.id}">Descartar</button>
+          ${!c.lead_id ? `<button class="btn small gold" data-inbox-lead="${c.id}" data-telefone="${c.telefone}" data-nome="${(c.nome_contato||'').replace(/"/g,'')}">Transformar em lead</button>` : ''}
+        </div>`;
+    } else if(c.status === 'enviado'){
+      corpo = `<div class="lock-note">Resposta enviada: ${(c.rascunho_resposta||'').replace(/</g,'&lt;')}</div>`;
+    } else {
+      corpo = `<div class="helptext">Descartada — nenhuma resposta foi enviada.</div>`;
+    }
+    return `<div class="lead-card">
+      <div class="lead-top"><div><div class="lead-name">${c.nome_contato || c.telefone}</div><div class="lead-meta">${c.telefone} · última mensagem ${fmtDate((c.ultima_mensagem_em||'').slice(0,10))}</div></div>
+      <span class="badge ${INBOX_STATUS_CLASS[c.status]||'novo'}">${INBOX_STATUS_LABEL[c.status]||c.status}</span></div>
+      <div style="margin:10px 0;">${mensagensHtml}</div>
+      ${leadBadge}
+      ${corpo}
+    </div>`;
+  }).join('');
+
+  box.querySelectorAll('[data-inbox-abrir-lead]').forEach(el=>{ el.addEventListener('click', ()=>{ if(!el.dataset.inboxAbrirLead) return; openLeadId = el.dataset.inboxAbrirLead; switchTab('leads'); }); });
+
+  box.querySelectorAll('[data-inbox-descartar]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      await sb.from('wa_inbox').update({ status:'descartado' }).eq('id', btn.dataset.inboxDescartar);
+      showToast('Descartada.'); await loadAll(); renderInbox();
+    });
+  });
+
+  box.querySelectorAll('[data-inbox-lead]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const { data: novoLead, error } = await sb.from('leads').insert({
+        nome: btn.dataset.nome || btn.dataset.telefone, telefone: btn.dataset.telefone,
+        origem:'Lead próprio', status:'Novo', responsavel: CURRENT_PROFILE.nome,
+        obs: 'Criado manualmente a partir de uma conversa de WhatsApp na Caixa de Entrada.',
+        atividades:[{ data: todayISO(), tipo:'Criação', texto:'Lead criado a partir do WhatsApp', por: CURRENT_PROFILE.nome }],
+        created_by: CURRENT_PROFILE.nome,
+      }).select('id').single();
+      if(error){ showToast('Erro ao criar lead: '+error.message); return; }
+      await sb.from('wa_inbox').update({ lead_id: novoLead.id, lead_sugerido:true }).eq('id', btn.dataset.inboxLead);
+      showToast('Lead criado.'); await loadAll(); renderInbox();
+    });
+  });
+
+  box.querySelectorAll('[data-inbox-aprovar]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const id = btn.dataset.inboxAprovar;
+      const textarea = box.querySelector(`[data-inbox-rascunho="${id}"]`);
+      const texto = textarea ? textarea.value.trim() : '';
+      if(!texto){ showToast('A resposta está vazia.'); return; }
+      const link = waLink(btn.dataset.telefone, texto);
+      if(!link){ showToast('Telefone inválido.'); return; }
+      const win = window.open('', '_blank');
+      const check = await waThrottleCheck();
+      if(!check.ok){ if(win) win.close(); showToast(check.message); return; }
+      if(win) win.location.href = link; else window.open(link, '_blank');
+      await waLogSend(btn.dataset.telefone, btn.dataset.nome);
+      await sb.from('wa_inbox').update({ status:'enviado', rascunho_resposta: texto }).eq('id', id);
+      showToast('Aprovada — abrindo o WhatsApp.');
+      await loadAll(); renderInbox();
+    });
+  });
+}
 
 // ============================================================
 // FUNIL
@@ -1293,6 +1399,8 @@ function renderConfig(){
   document.getElementById('cfg_waIntervaloMax').value = CONFIG.wa_intervalo_max_seg;
   document.getElementById('cfg_waLimiteHora').value = CONFIG.wa_limite_hora;
   document.getElementById('cfg_waLimiteDia').value = CONFIG.wa_limite_dia;
+  document.getElementById('cfg_waSilencio').value = CONFIG.wa_silencio_seg;
+  document.getElementById('cfg_waKeywords').value = CONFIG.wa_keywords;
   renderTrash();
 }
 document.getElementById('salvarConfigBtn').addEventListener('click', async ()=>{
@@ -1302,6 +1410,7 @@ document.getElementById('salvarConfigBtn').addEventListener('click', async ()=>{
     lim_interno: Number(document.getElementById('cfg_limInterno').value)||0, lim_proprio: Number(document.getElementById('cfg_limProprio').value)||0,
     bonus: Number(document.getElementById('cfg_bonus').value)||0,
     meta_ag_dia: Number(document.getElementById('cfg_metaAgDia').value)||0, meta_ag_semana: Number(document.getElementById('cfg_metaAgSemana').value)||0, meta_vd_mes: Number(document.getElementById('cfg_metaVdMes').value)||0,
+    wa_silencio_seg: Number(document.getElementById('cfg_waSilencio').value)||12, wa_keywords: document.getElementById('cfg_waKeywords').value.trim(),
     wa_intervalo_min_seg: Number(document.getElementById('cfg_waIntervaloMin').value)||20, wa_intervalo_max_seg: Number(document.getElementById('cfg_waIntervaloMax').value)||50,
     wa_limite_hora: Number(document.getElementById('cfg_waLimiteHora').value)||30, wa_limite_dia: Number(document.getElementById('cfg_waLimiteDia').value)||120,
   };
