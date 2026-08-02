@@ -180,8 +180,17 @@ create table if not exists public.config (
   bonus numeric not null default 10,
   meta_ag_dia int not null default 3,
   meta_ag_semana int not null default 12,
-  meta_vd_mes int not null default 10
+  meta_vd_mes int not null default 10,
+  wa_intervalo_min_seg int not null default 20,
+  wa_intervalo_max_seg int not null default 50,
+  wa_limite_hora int not null default 30,
+  wa_limite_dia int not null default 120
 );
+-- garante as colunas novas mesmo em bancos que já rodaram este arquivo antes
+alter table public.config add column if not exists wa_intervalo_min_seg int not null default 20;
+alter table public.config add column if not exists wa_intervalo_max_seg int not null default 50;
+alter table public.config add column if not exists wa_limite_hora int not null default 30;
+alter table public.config add column if not exists wa_limite_dia int not null default 120;
 insert into public.config (id) values (1) on conflict (id) do nothing;
 
 -- ============================================================
@@ -210,6 +219,20 @@ create table if not exists public.confirmacoes_dia (
 );
 
 -- ============================================================
+-- WA_SEND_LOG (registro de cada mensagem de WhatsApp disparada pelo
+-- painel, usado pra aplicar o intervalo mínimo e os limites por
+-- hora/dia contra bloqueio do número — política anti-spam)
+-- ============================================================
+create table if not exists public.wa_send_log (
+  id uuid primary key default gen_random_uuid(),
+  telefone text,
+  nome text,
+  created_at timestamptz not null default now(),
+  created_by text
+);
+create index if not exists wa_send_log_created_at_idx on public.wa_send_log (created_at desc);
+
+-- ============================================================
 -- PERMISSÕES — qualquer usuário autenticado pode ler/gravar
 -- (o controle fino é feito pelas policies de RLS abaixo)
 -- ============================================================
@@ -230,6 +253,7 @@ alter table public.config enable row level security;
 alter table public.ia_prompt enable row level security;
 alter table public.checklist_state enable row level security;
 alter table public.confirmacoes_dia enable row level security;
+alter table public.wa_send_log enable row level security;
 
 -- profiles: todo mundo autenticado vê a equipe; cada um cria/edita o próprio
 -- perfil; só o proprietário pode mudar o "role" de outra pessoa.
@@ -246,6 +270,7 @@ create policy "contatos_all" on public.contatos for all to authenticated using (
 create policy "checklist_state_all" on public.checklist_state for all to authenticated using (true) with check (true);
 create policy "confirmacoes_dia_all" on public.confirmacoes_dia for all to authenticated using (true) with check (true);
 create policy "templates_all" on public.templates for all to authenticated using (true) with check (true);
+create policy "wa_send_log_all" on public.wa_send_log for all to authenticated using (true) with check (true);
 
 -- rotinas: todo mundo lê; só o proprietário cria/edita/exclui.
 create policy "rotinas_select" on public.rotinas for select to authenticated using (true);

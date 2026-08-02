@@ -335,6 +335,11 @@
           <img id="waQrImg" style="max-width:260px; width:100%; border:1px solid var(--line); border-radius:10px;">
         </div>
       </div>
+      <div class="card">
+        <div class="section-label">Política anti-bloqueio</div>
+        <p class="helptext" style="margin-top:-4px;">Toda vez que alguém clica em "WhatsApp" ou manda mensagem com modelo, o painel espera um intervalo (variável, pra não parecer robô) e respeita um teto por hora/dia. Ajuste em Configurações.</p>
+        <div class="grid-stats" id="waThrottleStats" style="margin-top:12px;"></div>
+      </div>
     </div>
 
     <div class="admin-subview" id="admin-ia">
@@ -362,6 +367,10 @@
         <label>Bônus por comparecimento (R$)</label><input type="number" id="cfg_bonus">
         <div class="section-label" style="margin-top:22px;">Metas</div>
         <div class="row3"><div><label>Agendamentos / dia</label><input type="number" id="cfg_metaAgDia"></div><div><label>Agendamentos / semana</label><input type="number" id="cfg_metaAgSemana"></div><div><label>Vendas / mês</label><input type="number" id="cfg_metaVdMes"></div></div>
+        <div class="section-label" style="margin-top:22px;">WhatsApp — anti-bloqueio</div>
+        <p class="helptext" style="margin-top:-4px; margin-bottom:10px;">Intervalo mínimo/máximo (segundos) entre uma mensagem e outra, e limites de segurança por hora/dia.</p>
+        <div class="row2"><div><label>Intervalo mínimo (seg)</label><input type="number" id="cfg_waIntervaloMin"></div><div><label>Intervalo máximo (seg)</label><input type="number" id="cfg_waIntervaloMax"></div></div>
+        <div class="row2"><div><label>Limite por hora</label><input type="number" id="cfg_waLimiteHora"></div><div><label>Limite por dia</label><input type="number" id="cfg_waLimiteDia"></div></div>
         <button class="btn" id="salvarConfigBtn">Salvar configurações</button>
       </div>
       <div class="card">
@@ -405,7 +414,7 @@ try {
 // ============================================================
 // STATE
 // ============================================================
-const DEFAULT_CONFIG = { diaria:120, almoco:30, com_interno:5, com_proprio:10, lim_interno:150, lim_proprio:250, bonus:10, meta_ag_dia:3, meta_ag_semana:12, meta_vd_mes:10 };
+const DEFAULT_CONFIG = { diaria:120, almoco:30, com_interno:5, com_proprio:10, lim_interno:150, lim_proprio:250, bonus:10, meta_ag_dia:3, meta_ag_semana:12, meta_vd_mes:10, wa_intervalo_min_seg:20, wa_intervalo_max_seg:50, wa_limite_hora:30, wa_limite_dia:120 };
 let CONFIG = {...DEFAULT_CONFIG};
 let LEADS = [], DIARIAS = [], ATIVOS = [], CONTATOS = [], TEMPLATES = [], ROTINAS = [], PROFILES = [];
 let IA_PROMPT = '';
@@ -420,10 +429,32 @@ function fmtDate(iso){ if(!iso) return '—'; const [y,m,d] = iso.split('-'); re
 function showToast(msg){ const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'), 2600); }
 function startOfWeekISO(){ const d = new Date(); const day = d.getDay(); const diff = (day===0? -6 : 1) - day; const monday = new Date(d); monday.setDate(d.getDate()+diff); return monday.toISOString().slice(0,10); }
 function waLink(telefone, msg){ const digits = String(telefone||'').replace(/\D/g,''); if(!digits) return null; const full = digits.startsWith('55') ? digits : '55'+digits; return 'https://wa.me/'+full+(msg?('?text='+encodeURIComponent(msg)):''); }
-function waButtonHTML(telefone, label){ const link = waLink(telefone); if(!link) return `<button class="btn small secondary" disabled title="Sem telefone">${label||'WhatsApp'}</button>`; return `<button class="btn small" style="background:#25D366; color:#fff;" data-wa-phone="${String(telefone).replace(/"/g,'')}">${label||'Abrir WhatsApp'}</button>`; }
+function waButtonHTML(telefone, label, nome){ const link = waLink(telefone); if(!link) return `<button class="btn small secondary" disabled title="Sem telefone">${label||'WhatsApp'}</button>`; const safeNome = String(nome||'').replace(/"/g,''); return `<button class="btn small" style="background:#25D366; color:#fff;" data-wa-phone="${String(telefone).replace(/"/g,'')}" data-wa-nome="${safeNome}">${label||'Abrir WhatsApp'}</button>`; }
 function templateSelectHTML(telefone, nome){ if(!telefone || !TEMPLATES.length) return ''; const safeNome = String(nome||'').replace(/"/g,''); return `<select data-tplsel="1" data-phone="${String(telefone).replace(/"/g,'')}" data-nome="${safeNome}" style="width:auto; padding:7px 10px; font-size:13px;"><option value="">Mensagem com modelo...</option>${TEMPLATES.map(t=>`<option value="${t.id}">${t.titulo}</option>`).join('')}</select>`; }
-document.addEventListener('click', (e)=>{ const btn = e.target.closest('[data-wa-phone]'); if(!btn) return; const link = waLink(btn.dataset.waPhone); if(link) window.open(link, '_blank'); });
-document.addEventListener('change', (e)=>{ const sel = e.target.closest('[data-tplsel]'); if(!sel || !sel.value) return; const t = TEMPLATES.find(x=>x.id===sel.value); if(!t) return; const texto = t.texto.replace(/\{nome\}/g, sel.dataset.nome||''); const link = waLink(sel.dataset.phone, texto); if(link) window.open(link, '_blank'); sel.value=''; });
+document.addEventListener('click', async (e)=>{
+  const btn = e.target.closest('[data-wa-phone]'); if(!btn) return;
+  const link = waLink(btn.dataset.waPhone); if(!link) return;
+  // Abre a aba já no clique (senão o navegador trata como pop-up bloqueado
+  // depois do "await" da checagem) e só decide depois se deixa ir ou fecha.
+  const win = window.open('', '_blank');
+  const check = await waThrottleCheck();
+  if(!check.ok){ if(win) win.close(); showToast(check.message); return; }
+  if(win) win.location.href = link; else window.open(link, '_blank');
+  await waLogSend(btn.dataset.waPhone, btn.dataset.waNome);
+});
+document.addEventListener('change', async (e)=>{
+  const sel = e.target.closest('[data-tplsel]'); if(!sel || !sel.value) return;
+  const t = TEMPLATES.find(x=>x.id===sel.value); if(!t){ sel.value=''; return; }
+  const texto = t.texto.replace(/\{nome\}/g, sel.dataset.nome||'');
+  const link = waLink(sel.dataset.phone, texto);
+  sel.value='';
+  if(!link) return;
+  const win = window.open('', '_blank');
+  const check = await waThrottleCheck();
+  if(!check.ok){ if(win) win.close(); showToast(check.message); return; }
+  if(win) win.location.href = link; else window.open(link, '_blank');
+  await waLogSend(sel.dataset.phone, sel.dataset.nome);
+});
 
 // ============================================================
 // AUTH
@@ -578,7 +609,7 @@ function switchTab(tab){
   if(tab==='templates') renderTemplates();
   if(tab==='rotinas') renderRotinas();
   if(tab==='fechamento') renderFechamento();
-  if(tab==='admin'){ renderIa(); renderEquipe(); renderConfig(); checkWaStatus(); }
+  if(tab==='admin'){ renderIa(); renderEquipe(); renderConfig(); checkWaStatus(); renderWaThrottleStatus(); }
 }
 function renderAll(){
   renderChecklist(); renderFunil(); renderLeads(); renderAtivos(); renderContatos();
@@ -647,6 +678,69 @@ document.getElementById('waDesconectarBtn').addEventListener('click', async ()=>
   showToast('WhatsApp desconectado.');
   await checkWaStatus();
 });
+
+// ============================================================
+// WHATSAPP — política anti-spam (intervalo aleatório + limites)
+// ============================================================
+// Baseado em práticas recomendadas contra bloqueio em conexões não-oficiais:
+// intervalo variável (nunca fixo, pra não parecer robô) entre mensagens, e
+// um teto de mensagens por hora/dia. Vale pra qualquer envio pelo painel,
+// seja abrindo o WhatsApp Web ou (futuramente) enviando direto pela API.
+function waRandomIntervalMs(){
+  const min = Number(CONFIG.wa_intervalo_min_seg) || 20;
+  const max = Math.max(min, Number(CONFIG.wa_intervalo_max_seg) || 50);
+  return (min + Math.random() * (max - min)) * 1000;
+}
+async function waRecentSends(){
+  try {
+    const umDiaAtras = new Date(Date.now() - 24*60*60*1000).toISOString();
+    const { data, error } = await sb.from('wa_send_log').select('created_at').gte('created_at', umDiaAtras).order('created_at', { ascending: false });
+    if(error) return null;
+    return data || [];
+  } catch(e){
+    return null; // falha de rede não pode travar o envio
+  }
+}
+async function waThrottleCheck(){
+  const logs = await waRecentSends();
+  if(logs === null) return { ok: true }; // não trava o uso se a checagem falhar
+  const limiteHora = Number(CONFIG.wa_limite_hora) || 30;
+  const limiteDia = Number(CONFIG.wa_limite_dia) || 120;
+  const now = Date.now();
+  if(logs.length){
+    const ultimoEnvio = new Date(logs[0].created_at).getTime();
+    const esperar = waRandomIntervalMs();
+    const passou = now - ultimoEnvio;
+    if(passou < esperar){
+      const faltamSeg = Math.ceil((esperar - passou)/1000);
+      return { ok: false, message: `Aguarde ~${faltamSeg}s antes da próxima mensagem (proteção contra bloqueio do WhatsApp).` };
+    }
+  }
+  const umaHoraAtras = now - 60*60*1000;
+  const naUltimaHora = logs.filter(l => new Date(l.created_at).getTime() > umaHoraAtras).length;
+  if(naUltimaHora >= limiteHora) return { ok: false, message: `Limite de ${limiteHora} mensagens por hora atingido. Espere um pouco — isso protege o número contra bloqueio.` };
+  if(logs.length >= limiteDia) return { ok: false, message: `Limite de ${limiteDia} mensagens no dia atingido. Continue amanhã — isso protege o número contra bloqueio.` };
+  return { ok: true };
+}
+async function waLogSend(telefone, nome){
+  try {
+    await sb.from('wa_send_log').insert({ telefone, nome: nome || null, created_by: CURRENT_PROFILE?.nome || null });
+    renderWaThrottleStatus();
+  } catch(e){
+    // não deixa uma falha ao registrar o envio parecer um erro pro usuário
+  }
+}
+async function renderWaThrottleStatus(){
+  const box = document.getElementById('waThrottleStats');
+  if(!box) return;
+  const logs = await waRecentSends();
+  const limiteHora = Number(CONFIG.wa_limite_hora) || 30;
+  const limiteDia = Number(CONFIG.wa_limite_dia) || 120;
+  if(logs === null){ box.innerHTML = ''; return; }
+  const umaHoraAtras = Date.now() - 60*60*1000;
+  const naUltimaHora = logs.filter(l => new Date(l.created_at).getTime() > umaHoraAtras).length;
+  box.innerHTML = `<div class="stat"><span class="num">${naUltimaHora}/${limiteHora}</span><span class="lab">Mensagens na última hora</span></div><div class="stat"><span class="num">${logs.length}/${limiteDia}</span><span class="lab">Mensagens nas últimas 24h</span></div>`;
+}
 
 // ============================================================
 // CALC HELPERS
@@ -727,7 +821,7 @@ async function renderChecklist(){
   document.getElementById('followupList').innerHTML = followups.length ? followups.map(l=>`
     <div class="lead-card" style="margin-bottom:8px;">
       <div class="lead-top"><div><div class="lead-name">${l.nome}</div><div class="lead-meta">${l.procedimento||'—'} · último contato: ${fmtDate(l.data_ultimo_contato)||'nunca'} ${l.data_proxima_acao?'· ação prevista: '+fmtDate(l.data_proxima_acao):''}</div></div>${statusBadge(l.status)}</div>
-      <div class="lead-actions">${waButtonHTML(l.telefone)}<button class="btn small" data-contato="${l.id}">Marcar contato feito hoje</button><button class="btn small secondary" data-abrir="${l.id}">Abrir lead</button></div>
+      <div class="lead-actions">${waButtonHTML(l.telefone, null, l.nome)}<button class="btn small" data-contato="${l.id}">Marcar contato feito hoje</button><button class="btn small secondary" data-abrir="${l.id}">Abrir lead</button></div>
     </div>`).join('') : '<div class="empty">Nenhum follow-up pendente. 🎉</div>';
   document.querySelectorAll('[data-contato]').forEach(btn=>{
     btn.addEventListener('click', async ()=>{ await sb.from('leads').update({ data_ultimo_contato: todayISO() }).eq('id', btn.dataset.contato); await loadAll(); showToast('Contato registrado.'); renderChecklist(); });
@@ -737,7 +831,7 @@ async function renderChecklist(){
   const dueAtivos = ATIVOS.filter(a => a.status !== 'Reagendado' && a.status !== 'Perdido' && a.proximo_contato && a.proximo_contato <= todayISO());
   document.getElementById('reativacaoDueList').innerHTML = dueAtivos.length ? dueAtivos.map(a=>`
     <div class="lead-card" style="margin-bottom:8px;"><div class="lead-top"><div><div class="lead-name">${a.nome}</div><div class="lead-meta">Última visita: ${fmtDate(a.ultima_visita)} · contato previsto: ${fmtDate(a.proximo_contato)}</div></div></div>
-    <div class="lead-actions">${waButtonHTML(a.telefone)}<button class="btn small" data-ativo-contatado="${a.id}">Marcar contatado</button></div></div>`).join('') : '<div class="empty">Nenhum paciente vencido hoje.</div>';
+    <div class="lead-actions">${waButtonHTML(a.telefone, null, a.nome)}<button class="btn small" data-ativo-contatado="${a.id}">Marcar contatado</button></div></div>`).join('') : '<div class="empty">Nenhum paciente vencido hoje.</div>';
   document.querySelectorAll('[data-ativo-contatado]').forEach(btn=>{
     btn.addEventListener('click', async ()=>{ await sb.from('ativos').update({ status:'Contatado' }).eq('id', btn.dataset.ativoContatado); await loadAll(); showToast('Marcado.'); renderChecklist(); });
   });
@@ -839,7 +933,7 @@ function leadDetailHTML(l, com){
     <label>Motivo da perda</label><input type="text" data-f="motivo_perda" value="${l.motivo_perda||''}">
     <label>Observações</label><textarea data-f="obs" rows="2">${l.obs||''}</textarea>
     ${l.fechou==='Sim' && l.valor_recebido ? `<div class="lock-note" style="margin-top:12px;">Comissão calculada: <strong>${fmtMoney(com)}</strong></div>` : ''}
-    <div class="lead-actions">${waButtonHTML(l.telefone)}${templateSelectHTML(l.telefone, l.nome)}
+    <div class="lead-actions">${waButtonHTML(l.telefone, null, l.nome)}${templateSelectHTML(l.telefone, l.nome)}
       <button class="btn small" data-action="save">Salvar alterações</button>
       <button class="btn small secondary" data-action="close">Fechar</button>
       <button class="btn small danger" data-action="delete">Excluir lead</button></div>
@@ -915,7 +1009,7 @@ function renderAtivos(){
   box.innerHTML = list.length ? list.map(a=>`
     <div class="lead-card"><div class="lead-top"><div><div class="lead-name">${a.nome}</div><div class="lead-meta">${a.telefone||'sem telefone'} · última visita: ${fmtDate(a.ultima_visita)} · próximo contato: ${fmtDate(a.proximo_contato)}</div>${a.obs?`<div class="lead-meta">${a.obs}</div>`:''}</div>
     <span class="badge ${a.status==='Contatado'?'compareceu':(a.status==='Reagendado'?'fechado':(a.status==='Perdido'?'perdido':'novo'))}">${a.status}</span></div>
-    <div class="lead-actions"><select data-ativo-status="${a.id}" style="width:auto; padding:7px 10px; font-size:13px;"><option value="Ativo" ${a.status==='Ativo'?'selected':''}>Ativo</option><option value="Contatado" ${a.status==='Contatado'?'selected':''}>Contatado</option><option value="Reagendado" ${a.status==='Reagendado'?'selected':''}>Reagendado</option><option value="Perdido" ${a.status==='Perdido'?'selected':''}>Perdido</option></select>${waButtonHTML(a.telefone)}<button class="btn small danger" data-ativo-del="${a.id}">Remover</button></div></div>`).join('') : '<div class="empty">Nenhum paciente na lista.</div>';
+    <div class="lead-actions"><select data-ativo-status="${a.id}" style="width:auto; padding:7px 10px; font-size:13px;"><option value="Ativo" ${a.status==='Ativo'?'selected':''}>Ativo</option><option value="Contatado" ${a.status==='Contatado'?'selected':''}>Contatado</option><option value="Reagendado" ${a.status==='Reagendado'?'selected':''}>Reagendado</option><option value="Perdido" ${a.status==='Perdido'?'selected':''}>Perdido</option></select>${waButtonHTML(a.telefone, null, a.nome)}<button class="btn small danger" data-ativo-del="${a.id}">Remover</button></div></div>`).join('') : '<div class="empty">Nenhum paciente na lista.</div>';
   box.querySelectorAll('[data-ativo-status]').forEach(sel=>{ sel.addEventListener('change', async ()=>{ await sb.from('ativos').update({status:sel.value}).eq('id', sel.dataset.ativoStatus); await loadAll(); showToast('Atualizado.'); renderAtivos(); }); });
   box.querySelectorAll('[data-ativo-del]').forEach(btn=>{ btn.addEventListener('click', async ()=>{ if(!confirm('Remover?')) return; await sb.from('ativos').delete().eq('id', btn.dataset.ativoDel); await loadAll(); renderAtivos(); }); });
 }
@@ -952,7 +1046,7 @@ function renderContatos(){
     list = list.filter(c => (c.nome||'').toLowerCase().includes(contatoBusca) || (buscaDigits && (c.telefone||'').replace(/\D/g,'').includes(buscaDigits)));
   }
   const box = document.getElementById('contatosList');
-  box.innerHTML = list.length ? list.map(c=>`<div class="lead-card"><div class="lead-top"><div><div class="lead-name">${c.nome}</div><div class="lead-meta">${c.telefone||'sem telefone'} ${c.cidade?(' · '+c.cidade):''} ${c.estado?(' - '+c.estado):''} · ${c.origem||'—'} ${c.categoria?(' · '+c.categoria):''}</div></div></div><div class="lead-actions">${waButtonHTML(c.telefone)}${templateSelectHTML(c.telefone, c.nome)}<button class="btn small danger" data-contato-del="${c.id}">Remover</button></div></div>`).join('') : '<div class="empty">Nenhum contato ainda.</div>';
+  box.innerHTML = list.length ? list.map(c=>`<div class="lead-card"><div class="lead-top"><div><div class="lead-name">${c.nome}</div><div class="lead-meta">${c.telefone||'sem telefone'} ${c.cidade?(' · '+c.cidade):''} ${c.estado?(' - '+c.estado):''} · ${c.origem||'—'} ${c.categoria?(' · '+c.categoria):''}</div></div></div><div class="lead-actions">${waButtonHTML(c.telefone, null, c.nome)}${templateSelectHTML(c.telefone, c.nome)}<button class="btn small danger" data-contato-del="${c.id}">Remover</button></div></div>`).join('') : '<div class="empty">Nenhum contato ainda.</div>';
   box.querySelectorAll('[data-contato-del]').forEach(btn=>{ btn.addEventListener('click', async ()=>{ if(!confirm('Remover?')) return; await sb.from('contatos').delete().eq('id', btn.dataset.contatoDel); await loadAll(); renderContatos(); }); });
 }
 function splitCSVLine(line){
@@ -1195,6 +1289,10 @@ function renderConfig(){
   document.getElementById('cfg_metaAgDia').value = CONFIG.meta_ag_dia;
   document.getElementById('cfg_metaAgSemana').value = CONFIG.meta_ag_semana;
   document.getElementById('cfg_metaVdMes').value = CONFIG.meta_vd_mes;
+  document.getElementById('cfg_waIntervaloMin').value = CONFIG.wa_intervalo_min_seg;
+  document.getElementById('cfg_waIntervaloMax').value = CONFIG.wa_intervalo_max_seg;
+  document.getElementById('cfg_waLimiteHora').value = CONFIG.wa_limite_hora;
+  document.getElementById('cfg_waLimiteDia').value = CONFIG.wa_limite_dia;
   renderTrash();
 }
 document.getElementById('salvarConfigBtn').addEventListener('click', async ()=>{
@@ -1204,6 +1302,8 @@ document.getElementById('salvarConfigBtn').addEventListener('click', async ()=>{
     lim_interno: Number(document.getElementById('cfg_limInterno').value)||0, lim_proprio: Number(document.getElementById('cfg_limProprio').value)||0,
     bonus: Number(document.getElementById('cfg_bonus').value)||0,
     meta_ag_dia: Number(document.getElementById('cfg_metaAgDia').value)||0, meta_ag_semana: Number(document.getElementById('cfg_metaAgSemana').value)||0, meta_vd_mes: Number(document.getElementById('cfg_metaVdMes').value)||0,
+    wa_intervalo_min_seg: Number(document.getElementById('cfg_waIntervaloMin').value)||20, wa_intervalo_max_seg: Number(document.getElementById('cfg_waIntervaloMax').value)||50,
+    wa_limite_hora: Number(document.getElementById('cfg_waLimiteHora').value)||30, wa_limite_dia: Number(document.getElementById('cfg_waLimiteDia').value)||120,
   };
   const { error } = await sb.from('config').update(patch).eq('id',1);
   if(error){ showToast('Erro: '+error.message); return; }
