@@ -38,7 +38,13 @@
   nav.tabs button.active{ background:rgba(255,255,255,.12); color:#fff; }
   nav.tabs button.active .ic{ color:var(--gold); }
   nav.tabs button .ic{ flex:0 0 20px; display:flex; align-items:center; justify-content:center; opacity:.9; }
+  nav.tabs button .lab{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; }
   nav.tabs.collapsed button .lab{ display:none; }
+  /* Passar o mouse na sidebar recolhida expande temporariamente e mostra os
+     nomes completos, sem precisar clicar no botão de recolher/expandir. */
+  nav.tabs.collapsed:hover{ flex-basis:226px; width:226px; }
+  nav.tabs.collapsed:hover .sidebar-group-label{ display:block; }
+  nav.tabs.collapsed:hover button .lab{ display:inline; }
   nav.tabs button.sidebar-action{ color:var(--gold-light); }
   nav.tabs button.sidebar-action .ic{ color:var(--gold); }
   .sidebar-collapse-btn{ margin-top:14px !important; padding-top:14px !important; border-top:1px solid rgba(255,255,255,.1); border-radius:0 !important; }
@@ -264,23 +270,27 @@
     <h2 class="page-title">Checklist de hoje</h2>
     <p class="page-sub" id="checklistDateLabel">—</p>
     <div class="grid-stats" id="checklistStats"></div>
-    <div class="card">
-      <div class="section-label">Metas</div>
-      <div class="progress-wrap"><div class="progress-label"><span>Agendamentos hoje</span><span id="pl-ag-dia">0 / 0</span></div><div class="progress-bar"><div id="pb-ag-dia" style="width:0%"></div></div></div>
-      <div class="progress-wrap"><div class="progress-label"><span>Agendamentos esta semana</span><span id="pl-ag-sem">0 / 0</span></div><div class="progress-bar"><div id="pb-ag-sem" style="width:0%"></div></div></div>
-      <div class="progress-wrap"><div class="progress-label"><span>Vendas fechadas este mês</span><span id="pl-vd-mes">0 / 0</span></div><div class="progress-bar"><div id="pb-vd-mes" style="width:0%"></div></div></div>
-      <div class="helptext">As metas são definidas na aba Configurações.</div>
+    <div class="row2">
+      <div class="card">
+        <div class="section-label">Metas</div>
+        <div class="progress-wrap"><div class="progress-label"><span>Agendamentos hoje</span><span id="pl-ag-dia">0 / 0</span></div><div class="progress-bar"><div id="pb-ag-dia" style="width:0%"></div></div></div>
+        <div class="progress-wrap"><div class="progress-label"><span>Agendamentos esta semana</span><span id="pl-ag-sem">0 / 0</span></div><div class="progress-bar"><div id="pb-ag-sem" style="width:0%"></div></div></div>
+        <div class="progress-wrap"><div class="progress-label"><span>Vendas fechadas este mês</span><span id="pl-vd-mes">0 / 0</span></div><div class="progress-bar"><div id="pb-vd-mes" style="width:0%"></div></div></div>
+        <div class="helptext">As metas são definidas na aba Configurações.</div>
+      </div>
+      <div class="card"><div class="section-label">Movimentação no funil hoje</div><div id="movimentacaoHoje"></div></div>
     </div>
-    <div class="card"><div class="section-label">Movimentação no funil hoje</div><div id="movimentacaoHoje"></div></div>
     <div class="card"><div class="section-label">Tarefas do dia</div><div id="checklistItems"></div></div>
-    <div class="card">
-      <div class="section-label">Confirmar pacientes de hoje (Google Agenda / Clinicorp)</div>
-      <p class="helptext" style="margin-top:-4px; margin-bottom:12px;">Confira na agenda oficial e digite aqui os nomes de hoje pra marcar a confirmação um a um.</p>
-      <div class="row2"><input type="text" id="hojePacienteNome" placeholder="Nome do paciente de hoje"><button class="btn secondary" id="addHojePaciente" style="margin-top:0;">Adicionar</button></div>
-      <div id="hojePacientesList" style="margin-top:12px;"></div>
+    <div class="row2">
+      <div class="card">
+        <div class="section-label">Confirmar pacientes de hoje (Google Agenda / Clinicorp)</div>
+        <p class="helptext" style="margin-top:-4px; margin-bottom:12px;">Confira na agenda oficial e digite aqui os nomes de hoje pra marcar a confirmação um a um.</p>
+        <div class="row2"><input type="text" id="hojePacienteNome" placeholder="Nome do paciente de hoje"><button class="btn secondary" id="addHojePaciente" style="margin-top:0;">Adicionar</button></div>
+        <div id="hojePacientesList" style="margin-top:12px;"></div>
+      </div>
+      <div class="card"><div class="section-label">Pacientes para reativação, vencidos hoje</div><div id="reativacaoDueList"></div></div>
     </div>
     <div class="card"><div class="section-label">Follow-up pendente (sem contato há 7+ dias, ou vencido)</div><div id="followupList"></div></div>
-    <div class="card"><div class="section-label">Pacientes para reativação, vencidos hoje</div><div id="reativacaoDueList"></div></div>
   </div>
 
   <!-- WHATSAPP (conexão + central de conversas) -->
