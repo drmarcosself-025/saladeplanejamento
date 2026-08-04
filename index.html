@@ -28,9 +28,9 @@
   .btn-troca{ background:var(--gold); color:#1c2333; border:none; border-radius:999px; padding:8px 15px; font-weight:700; font-size:13.5px; cursor:pointer; transition:filter .15s var(--ease); }
   .btn-troca:hover{ filter:brightness(1.08); }
   .app-shell{ display:flex; align-items:flex-start; }
-  nav.tabs{ flex:0 0 226px; width:226px; background:linear-gradient(185deg, var(--navy) 0%, var(--navy-2) 100%); min-height:calc(100vh - 71px); position:sticky; top:71px; overflow-y:auto; overflow-x:hidden; padding-bottom:14px; transition:width .18s var(--ease), flex-basis .18s var(--ease); }
+  nav.tabs{ flex:0 0 240px; width:240px; display:flex; flex-direction:column; background:linear-gradient(185deg, var(--navy) 0%, var(--navy-2) 100%); min-height:calc(100vh - 71px); position:sticky; top:71px; overflow-y:auto; overflow-x:hidden; padding-bottom:14px; transition:width .18s var(--ease), flex-basis .18s var(--ease); }
   nav.tabs.collapsed{ flex-basis:68px; width:68px; }
-  .sidebar-group{ padding-top:14px; }
+  .sidebar-group{ display:flex; flex-direction:column; padding-top:14px; }
   .sidebar-group-label{ font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:1px; color:#8791b3; padding:4px 18px 6px; }
   nav.tabs.collapsed .sidebar-group-label{ display:none; }
   nav.tabs button{ display:flex; align-items:center; gap:11px; width:calc(100% - 16px); margin:1px 8px; background:transparent; border:none; color:#b7bedd; font-size:14px; font-weight:600; padding:9px 10px; border-radius:10px; cursor:pointer; white-space:nowrap; text-align:left; transition:background .15s var(--ease), color .15s var(--ease); }
@@ -40,25 +40,30 @@
   nav.tabs button .ic{ flex:0 0 20px; display:flex; align-items:center; justify-content:center; opacity:.9; }
   nav.tabs button .lab{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; }
   nav.tabs.collapsed button .lab{ display:none; }
-  /* Passar o mouse na sidebar recolhida expande temporariamente e mostra os
-     nomes completos, sem precisar clicar no botão de recolher/expandir. */
-  nav.tabs.collapsed:hover{ flex-basis:226px; width:226px; }
-  nav.tabs.collapsed:hover .sidebar-group-label{ display:block; }
-  nav.tabs.collapsed:hover button .lab{ display:inline; }
   nav.tabs button.sidebar-action{ color:var(--gold-light); }
   nav.tabs button.sidebar-action .ic{ color:var(--gold); }
   .sidebar-collapse-btn{ margin-top:14px !important; padding-top:14px !important; border-top:1px solid rgba(255,255,255,.1); border-radius:0 !important; }
   .app-main{ flex:1; min-width:0; }
   main{ max-width:1000px; margin:0 auto; padding:20px 14px 80px; }
+  main.wa-wide{ max-width:none; }
+  #mobileMenuBtn{ display:none; background:rgba(255,255,255,.1); border:none; color:#fff; border-radius:8px; width:36px; height:36px; align-items:center; justify-content:center; cursor:pointer; flex:0 0 auto; }
+  #sidebarBackdrop{ display:none; position:fixed; inset:0; background:rgba(10,14,30,.5); z-index:250; }
+  #sidebarBackdrop.show{ display:block; }
+  /* Sidebar continua sempre em coluna vertical, em qualquer largura de tela.
+     Abaixo de 900px ela vira um drawer (gaveta) que desliza por cima do
+     conteúdo, aberto pelo botão de menu no cabeçalho — nunca uma fileira
+     horizontal de abas. */
   @media(max-width:900px){
-    .app-shell{ flex-direction:column; }
-    nav.tabs, nav.tabs.collapsed{ position:static; width:100%; flex-basis:auto; min-height:auto; display:flex; flex-direction:row; overflow-x:auto; padding-bottom:0; }
-    .sidebar-group{ display:flex; padding-top:0; flex:0 0 auto; }
-    .sidebar-group-label{ display:none; }
-    nav.tabs button .lab{ display:inline; }
-    .sidebar-collapse-btn{ display:none; }
+    nav.tabs{ position:fixed; top:0; left:0; height:100vh; min-height:100vh; z-index:300; transform:translateX(-100%); box-shadow:4px 0 28px rgba(0,0,0,.3); transition:transform .22s var(--ease); }
+    nav.tabs.mobile-open{ transform:translateX(0); }
+    nav.tabs.collapsed{ width:240px; flex-basis:240px; } /* no mobile o modo "recolhido" não existe */
+    nav.tabs.collapsed .sidebar-group-label{ display:block; }
+    nav.tabs.collapsed button .lab{ display:inline; }
+    .sidebar-collapse-btn{ display:none !important; } /* precisa vencer "nav.tabs button{display:flex}", mais específico */
+    #mobileMenuBtn{ display:flex; }
   }
-  .wa-crm{ display:grid; grid-template-columns:280px 1fr 260px; border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; height:70vh; background:#fff; box-shadow:var(--shadow-sm); }
+  .wa-crm{ display:grid; grid-template-columns:300px 1fr 290px; border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; height:calc(100vh - 230px); min-height:520px; background:#fff; box-shadow:var(--shadow-sm); }
+  .wa-throttle-mini{ font-size:11px; color:var(--muted); white-space:nowrap; }
   .wa-crm-list{ border-right:1px solid var(--line); display:flex; flex-direction:column; padding:14px; overflow-y:auto; }
   .wa-crm-list-header{ display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
   .wa-conv-list{ margin-top:10px; overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:2px; }
@@ -195,9 +200,12 @@
 
 <header>
   <div class="header-row">
-    <div class="brand">
-      <span class="name">Maison D'Or</span>
-      <span class="sub">Painel da Recepção</span>
+    <div style="display:flex; align-items:center; gap:12px;">
+      <button id="mobileMenuBtn" title="Menu" aria-label="Abrir menu"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+      <div class="brand">
+        <span class="name">Maison D'Or</span>
+        <span class="sub">Painel da Recepção</span>
+      </div>
     </div>
     <div class="whoami" id="whoamiBox" style="display:none;">
       <span id="whoamiText">—</span>
@@ -238,6 +246,7 @@
     </div>
     <button class="sidebar-collapse-btn" id="sidebarCollapseBtn"><span class="ic"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M9.5 4.5v15"/></svg></span><span class="lab">Recolher menu</span></button>
   </nav>
+  <div id="sidebarBackdrop"></div>
   <div class="app-main">
 <main>
 
@@ -325,13 +334,15 @@
       <div class="wa-crm-list">
         <div class="wa-crm-list-header">
           <span class="badge compareceu">Conectado</span>
+          <span class="wa-throttle-mini" id="waThrottleMini" title="Proteção anti-bloqueio"></span>
           <button class="btn small secondary" id="waCrmDesconectarBtn">Desconectar</button>
         </div>
         <input type="text" id="waConvBusca" placeholder="🔍 Buscar conversa...">
+        <div id="waConvError" class="warn-note" style="display:none; margin-top:10px;"></div>
         <div id="waConvList" class="wa-conv-list"></div>
       </div>
       <div class="wa-crm-thread">
-        <div id="waThreadEmpty" class="empty" style="padding:60px 20px;">Selecione uma conversa para iniciar o atendimento.</div>
+        <div id="waThreadEmpty" class="empty" style="padding:60px 20px;">Suas conversas aparecerão aqui.</div>
         <div id="waThreadBox" style="display:none;">
           <div class="wa-thread-header">
             <div id="waThreadAvatar"></div>
@@ -340,7 +351,10 @@
           <div class="wa-thread-messages" id="waThreadMessages"></div>
           <div class="wa-thread-compose">
             <textarea id="waComposeText" rows="2" placeholder="Digite uma mensagem..."></textarea>
-            <button class="btn" id="waComposeSendBtn">Enviar</button>
+            <div style="display:flex; flex-direction:column; gap:6px;">
+              <button class="btn" id="waComposeSendBtn">Enviar</button>
+              <button class="btn small secondary" id="waComposeOpenWebBtn" title="Abre o WhatsApp Web com a mensagem pronta pra enviar manualmente">Abrir no WhatsApp Web</button>
+            </div>
           </div>
         </div>
       </div>
@@ -790,8 +804,17 @@ async function loadAll(){
 // ============================================================
 // TABS
 // ============================================================
-document.querySelectorAll('nav.tabs button[data-tab]').forEach(btn=>{ btn.addEventListener('click', ()=> switchTab(btn.dataset.tab)); });
+function closeMobileSidebar(){
+  document.getElementById('tabs').classList.remove('mobile-open');
+  document.getElementById('sidebarBackdrop').classList.remove('show');
+}
+document.querySelectorAll('nav.tabs button[data-tab]').forEach(btn=>{ btn.addEventListener('click', ()=>{ switchTab(btn.dataset.tab); closeMobileSidebar(); }); });
 document.getElementById('sidebarCollapseBtn').addEventListener('click', ()=> document.getElementById('tabs').classList.toggle('collapsed'));
+document.getElementById('mobileMenuBtn').addEventListener('click', ()=>{
+  document.getElementById('tabs').classList.add('mobile-open');
+  document.getElementById('sidebarBackdrop').classList.add('show');
+});
+document.getElementById('sidebarBackdrop').addEventListener('click', closeMobileSidebar);
 function switchTab(tab){
   if(tab === 'admin' && (!CURRENT_PROFILE || CURRENT_PROFILE.role !== 'owner')){
     showToast('Só o proprietário acessa essa aba.');
@@ -801,7 +824,8 @@ function switchTab(tab){
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   document.getElementById('view-'+tab).classList.add('active');
   if(tab==='checklist') renderChecklist();
-  if(tab==='whatsapp'){ checkWaStatus(); renderWaThrottleStatus(); waStartPolling(); } else { waStopPolling(); }
+  document.querySelector('main').classList.toggle('wa-wide', tab==='whatsapp');
+  if(tab==='whatsapp'){ checkWaStatus(); renderWaThrottleStatus(); } else { waStopPolling(); waStopRealtime(); }
   if(tab==='inbox') renderInbox();
   if(tab==='crm') renderCrm();
   if(tab==='funil') renderFunil();
@@ -829,6 +853,10 @@ document.querySelectorAll('#adminSubTabs button').forEach(btn=>{
 // WHATSAPP (Evolution API / Baileys, via function segura do Supabase)
 // ============================================================
 let waPollInterval = null;
+let waCurrentPollMs = null;
+let waLastState = null;
+const WA_POLL_FAST_MS = 2500;  // enquanto desconectado/aguardando QR
+const WA_POLL_SLOW_MS = 25000; // depois de conectado, só pra confirmar que continua
 async function waCall(action, params){
   const { data, error } = await sb.functions.invoke('whatsapp-proxy', { body: { action, ...params } });
   if(error){
@@ -845,19 +873,53 @@ function waSetBadge(text, cls){
   b.textContent = text;
   b.className = 'badge ' + cls;
 }
-function waStopPolling(){ if(waPollInterval){ clearInterval(waPollInterval); waPollInterval = null; } }
-function waStartPolling(){ waStopPolling(); waPollInterval = setInterval(checkWaStatus, 6000); }
+function waStopPolling(){ if(waPollInterval){ clearInterval(waPollInterval); waPollInterval = null; waCurrentPollMs = null; } }
+function waSetPollInterval(ms){
+  if(waCurrentPollMs === ms && waPollInterval) return; // já está no intervalo certo, não recria
+  if(waPollInterval) clearInterval(waPollInterval);
+  waCurrentPollMs = ms;
+  waPollInterval = setInterval(checkWaStatus, ms);
+}
+// A Evolution API não tem um formato 100% padronizado de resposta entre
+// versões — o valor de conexão pode vir em vários caminhos diferentes,
+// com grafias diferentes (maiúscula/minúscula). Esta função normaliza
+// tudo isso pra só 4 estados que o resto do código entende.
+function normalizeWaConnectionState(response){
+  if(!response || response.error) return 'error';
+  const candidatos = [
+    response.state,
+    response.instance?.state,
+    response.instance?.connectionStatus,
+    response.connection,
+    response.status,
+  ].filter(v => v !== undefined && v !== null).map(v => String(v).toLowerCase());
+  // Fica no console pra a gente conferir o formato real que a Evolution
+  // API instalada está devolvendo (varia entre versões/forks).
+  console.log('[WhatsApp] resposta bruta do status:', response, '| valores candidatos:', candidatos);
+  const CONECTADO = ['open', 'connected', 'connection_open', 'ready'];
+  const CONECTANDO = ['connecting', 'qr', 'pending', 'close_wait'];
+  if(candidatos.some(c => CONECTADO.includes(c))) return 'connected';
+  if(candidatos.some(c => CONECTANDO.includes(c))) return 'connecting';
+  if(candidatos.length) return 'disconnected';
+  return 'error';
+}
 async function checkWaStatus(){
   const r = await waCall('status');
   const disconnectedPanel = document.getElementById('waDisconnectedPanel');
   const crmPanel = document.getElementById('waCrmPanel');
-  if(r.error){
-    waSetBadge('Não configurado', 'perdido');
+  const state = normalizeWaConnectionState(r);
+
+  if(state === 'error'){
+    waSetBadge(r.error ? 'Não configurado' : 'Erro ao verificar conexão', 'perdido');
     disconnectedPanel.style.display = 'block'; crmPanel.style.display = 'none';
+    waStopRealtime();
+    waSetPollInterval(WA_POLL_SLOW_MS);
+    waLastState = state;
     return;
   }
-  const state = r.instance?.state || r.state;
-  if(state === 'open'){
+
+  if(state === 'connected'){
+    if(waLastState !== 'connected') showToast('WhatsApp conectado!');
     waSetBadge('Conectado', 'compareceu');
     document.getElementById('waConectarBtn').style.display = 'none';
     document.getElementById('waDesconectarBtn').style.display = 'inline-block';
@@ -865,13 +927,18 @@ async function checkWaStatus(){
     disconnectedPanel.style.display = 'none';
     crmPanel.style.display = 'grid';
     await renderWaConversations();
+    waStartRealtime();
+    waSetPollInterval(WA_POLL_SLOW_MS); // depois de conectado, não precisa checar toda hora
   } else {
+    waStopRealtime();
     waSetBadge(state === 'connecting' ? 'Aguardando escanear o QR Code' : 'Desconectado', state === 'connecting' ? 'agendado' : 'perdido');
     document.getElementById('waConectarBtn').style.display = 'inline-block';
     document.getElementById('waDesconectarBtn').style.display = 'none';
     disconnectedPanel.style.display = 'block';
     crmPanel.style.display = 'none';
+    waSetPollInterval(state === 'connecting' ? WA_POLL_FAST_MS : WA_POLL_SLOW_MS);
   }
+  waLastState = state;
 }
 document.getElementById('waConectarBtn').addEventListener('click', async ()=>{
   waSetBadge('Conectando...', 'contato');
@@ -882,6 +949,8 @@ document.getElementById('waConectarBtn').addEventListener('click', async ()=>{
   img.src = r.base64.startsWith('data:') ? r.base64 : ('data:image/png;base64,' + r.base64);
   document.getElementById('waQrBox').style.display = 'block';
   waSetBadge('Aguardando escanear o QR Code', 'agendado');
+  // Depois de gerar o QR, checa a cada 2.5s até conectar (ou até sair da aba).
+  waSetPollInterval(WA_POLL_FAST_MS);
 });
 async function waDisconnect(){
   if(!confirm('Desconectar o WhatsApp do sistema?')) return;
@@ -946,14 +1015,15 @@ async function waLogSend(telefone, nome, texto){
 }
 async function renderWaThrottleStatus(){
   const box = document.getElementById('waThrottleStats');
-  if(!box) return;
+  const mini = document.getElementById('waThrottleMini');
   const logs = await waRecentSends();
   const limiteHora = Number(CONFIG.wa_limite_hora) || 30;
   const limiteDia = Number(CONFIG.wa_limite_dia) || 120;
-  if(logs === null){ box.innerHTML = ''; return; }
+  if(logs === null){ if(box) box.innerHTML = ''; if(mini) mini.textContent = ''; return; }
   const umaHoraAtras = Date.now() - 60*60*1000;
   const naUltimaHora = logs.filter(l => new Date(l.created_at).getTime() > umaHoraAtras).length;
-  box.innerHTML = `<div class="stat"><span class="num">${naUltimaHora}/${limiteHora}</span><span class="lab">Mensagens na última hora</span></div><div class="stat"><span class="num">${logs.length}/${limiteDia}</span><span class="lab">Mensagens nas últimas 24h</span></div>`;
+  if(box) box.innerHTML = `<div class="stat"><span class="num">${naUltimaHora}/${limiteHora}</span><span class="lab">Mensagens na última hora</span></div><div class="stat"><span class="num">${logs.length}/${limiteDia}</span><span class="lab">Mensagens nas últimas 24h</span></div>`;
+  if(mini) mini.textContent = `${naUltimaHora}/${limiteHora} msgs/hora`;
 }
 
 // ============================================================
@@ -966,7 +1036,13 @@ let waConvBusca = '';
 document.getElementById('waConvBusca').addEventListener('input', (e)=>{ waConvBusca = e.target.value.trim().toLowerCase(); renderWaConvList(); });
 async function renderWaConversations(){
   const { data, error } = await sb.from('wa_messages').select('*').order('created_at', { ascending: true });
-  if(error) return;
+  const errBox = document.getElementById('waConvError');
+  if(error){
+    console.error('[WhatsApp] falha ao carregar wa_messages:', error);
+    if(errBox){ errBox.style.display = 'block'; errBox.textContent = 'Não foi possível carregar as conversas. Verifique a integração do WhatsApp.'; }
+    return;
+  }
+  if(errBox) errBox.style.display = 'none';
   const porTelefone = {};
   (data||[]).forEach(m=>{
     if(!porTelefone[m.telefone]) porTelefone[m.telefone] = { telefone: m.telefone, nome_contato: m.nome_contato, mensagens: [] };
@@ -981,7 +1057,24 @@ async function renderWaConversations(){
   if(waConvSelecionada){
     const ainda = WA_CONVERSAS.find(c=>c.telefone===waConvSelecionada);
     if(ainda) renderWaThread(ainda); else { waConvSelecionada = null; renderWaThreadEmpty(); }
+  } else {
+    renderWaThreadEmpty();
   }
+}
+// Atualização em tempo real: assina mudanças na wa_messages enquanto a
+// conexão estiver ativa, pra não depender de dar refresh na página. Sempre
+// derruba a inscrição anterior antes de criar outra, pra nunca acumular
+// mais de uma (o que duplicaria as atualizações).
+let waRealtimeChannel = null;
+function waStartRealtime(){
+  waStopRealtime();
+  waRealtimeChannel = sb
+    .channel('wa_messages_live')
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'wa_messages' }, () => { renderWaConversations(); })
+    .subscribe();
+}
+function waStopRealtime(){
+  if(waRealtimeChannel){ sb.removeChannel(waRealtimeChannel); waRealtimeChannel = null; }
 }
 function waAvatarHTML(nome, telefone){
   const label = (nome || telefone || '?').trim();
@@ -1018,6 +1111,7 @@ function renderWaConvList(){
   });
 }
 function renderWaThreadEmpty(){
+  document.getElementById('waThreadEmpty').textContent = WA_CONVERSAS.length ? 'Selecione uma conversa para iniciar o atendimento.' : 'Suas conversas aparecerão aqui.';
   document.getElementById('waThreadEmpty').style.display = 'block';
   document.getElementById('waThreadBox').style.display = 'none';
   document.getElementById('waContactEmpty').style.display = 'block';
@@ -1064,8 +1158,39 @@ document.getElementById('waComposeSendBtn').addEventListener('click', async ()=>
   const textarea = document.getElementById('waComposeText');
   const texto = textarea.value.trim();
   if(!texto){ showToast('Digite uma mensagem.'); return; }
+  if(waSendBusy){ showToast('Aguarde, processando o envio anterior...'); return; }
   const conv = WA_CONVERSAS.find(c=>c.telefone===waConvSelecionada);
-  const link = waLink(waConvSelecionada, texto);
+  const btn = document.getElementById('waComposeSendBtn');
+  const originalLabel = btn.textContent;
+  waSendBusy = true;
+  btn.disabled = true;
+  btn.textContent = 'Enviando...';
+  try {
+    const check = await waThrottleCheck();
+    if(!check.ok){ showToast(check.message); return; }
+    // Envio real pela Evolution API — o servidor (whatsapp-proxy) já grava
+    // wa_send_log e wa_messages depois de confirmar o envio, então o
+    // navegador só precisa atualizar a tela.
+    const r = await waCall('send-text', { number: waConvSelecionada, text: texto, nome: conv?.nome_contato });
+    if(r.error){ showToast('Erro ao enviar: ' + r.error); return; } // mantém o texto digitado pra tentar de novo
+    textarea.value = '';
+    await renderWaConversations();
+    renderWaThrottleStatus();
+    showToast('Mensagem enviada.');
+  } finally {
+    waSendBusy = false;
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+  }
+});
+// Botão secundário: continua abrindo o WhatsApp Web pra envio manual
+// (útil se a API de envio direto falhar, ou por preferência do atendente).
+document.getElementById('waComposeOpenWebBtn').addEventListener('click', async ()=>{
+  if(!waConvSelecionada) return;
+  const textarea = document.getElementById('waComposeText');
+  const texto = textarea.value.trim();
+  const conv = WA_CONVERSAS.find(c=>c.telefone===waConvSelecionada);
+  const link = waLink(waConvSelecionada, texto || undefined);
   if(!link){ showToast('Telefone inválido.'); return; }
   if(waSendBusy){ showToast('Aguarde, processando o envio anterior...'); return; }
   waSendBusy = true;
@@ -1074,9 +1199,7 @@ document.getElementById('waComposeSendBtn').addEventListener('click', async ()=>
     const check = await waThrottleCheck();
     if(!check.ok){ if(win) win.close(); showToast(check.message); return; }
     if(win) win.location.href = link; else window.open(link, '_blank');
-    await waLogSend(waConvSelecionada, conv?.nome_contato, texto);
-    textarea.value = '';
-    await renderWaConversations();
+    if(texto){ await waLogSend(waConvSelecionada, conv?.nome_contato, texto); textarea.value = ''; await renderWaConversations(); }
   } finally { waSendBusy = false; }
 });
 

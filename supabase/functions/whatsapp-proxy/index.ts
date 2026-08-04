@@ -94,7 +94,7 @@ Deno.serve(async (req) => {
     }
 
     if (action === "send-text") {
-      const { number, text } = params as { number?: string; text?: string };
+      const { number, text, nome } = params as { number?: string; text?: string; nome?: string };
       if (!number || !text) return json({ error: "Faltou número ou texto." }, 400);
 
       // O painel nunca chama esta ação hoje (ele só abre um link wa.me pro
@@ -141,8 +141,19 @@ Deno.serve(async (req) => {
         headers,
         body: JSON.stringify({ number: digits, text }),
       });
-      if (r.ok) await supabase.from("wa_send_log").insert({ telefone: digits, created_by: user.email ?? null });
-      return json(await r.json(), r.status);
+      const respBody = await r.json();
+      if (r.ok) {
+        // Grava aqui (no servidor), não no navegador — assim o histórico
+        // fica correto mesmo se o navegador do atendente fechar ou cair
+        // logo depois do envio já ter sido confirmado pela Evolution API.
+        const waMessageId: string | null = respBody?.key?.id ?? null;
+        await supabase.from("wa_send_log").insert({ telefone: digits, nome: nome ?? null, created_by: user.email ?? null });
+        await supabase.from("wa_messages").insert({
+          telefone: digits, nome_contato: nome ?? null, direcao: "enviada", texto: text,
+          wa_message_id: waMessageId, created_by: user.email ?? null,
+        });
+      }
+      return json(respBody, r.status);
     }
 
     return json({ error: "Ação desconhecida." }, 400);

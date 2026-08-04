@@ -272,6 +272,14 @@ create table if not exists public.wa_messages (
   created_at timestamptz not null default now(),
   created_by text
 );
+-- wa_message_id: o ID da mensagem de verdade no WhatsApp (item.key.id na
+-- Evolution API), usado pra nunca duplicar a mesma mensagem caso o webhook
+-- dispare mais de uma vez pro mesmo evento (acontece na prática).
+-- tipo: texto/imagem/video/outro — guardado mesmo sem exibir ainda, pra já
+-- ficar disponível quando anexos forem suportados na tela.
+alter table public.wa_messages add column if not exists wa_message_id text;
+alter table public.wa_messages add column if not exists tipo text not null default 'texto';
+create unique index if not exists wa_messages_wa_message_id_idx on public.wa_messages (wa_message_id) where wa_message_id is not null;
 create index if not exists wa_messages_telefone_idx on public.wa_messages (telefone, created_at desc);
 
 -- ============================================================
