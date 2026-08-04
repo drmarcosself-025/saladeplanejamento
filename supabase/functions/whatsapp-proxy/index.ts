@@ -229,6 +229,7 @@ Deno.serve(async (req) => {
 
       let sincronizadas = 0;
       const motivos = { semKey: 0, semTelefone: 0, semTexto: 0, erroGravar: 0, grupo: 0 };
+      let primeiroErroGravar: string | null = null;
       for (const item of items) {
         if (!item?.key) { motivos.semKey++; continue; }
         const remoteJid: string = item.key.remoteJid || "";
@@ -253,14 +254,19 @@ Deno.serve(async (req) => {
           : await supabase.from("wa_messages").insert({
               telefone, nome_contato: nomeContato, direcao, texto, tipo, created_at: timestamp,
             });
-        if (error) motivos.erroGravar++; else sincronizadas++;
+        if (error) {
+          motivos.erroGravar++;
+          if (!primeiroErroGravar) primeiroErroGravar = error.message;
+        } else {
+          sincronizadas++;
+        }
       }
 
       // Se quase nada foi salvo, manda uma amostra dos itens brutos junto —
       // sem isso não dá pra saber, sem acesso à Evolution API real, se o
       // formato de "message" é diferente do que o extractText espera.
       const amostra = sincronizadas === 0 ? items.slice(0, 3) : undefined;
-      return json({ ok: true, sincronizadas, total_recebido: items.length, motivos, amostra });
+      return json({ ok: true, sincronizadas, total_recebido: items.length, motivos, primeiroErroGravar, amostra });
     }
 
     return json({ error: "Ação desconhecida." }, 400);
