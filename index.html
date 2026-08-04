@@ -976,7 +976,12 @@ document.getElementById('waSyncBtn').addEventListener('click', async ()=>{
       showToast('Erro ao sincronizar: ' + r.error);
       return;
     }
-    showToast(`${r.sincronizadas} de ${r.total_recebido} mensagem(ns) sincronizada(s).`);
+    console.log('[WhatsApp] resultado da sincronização:', r);
+    if(r.sincronizadas === 0 && r.total_recebido > 0){
+      showToast(`0 de ${r.total_recebido} salvas — veja o console (F12) pra detalhes.`);
+    } else {
+      showToast(`${r.sincronizadas} de ${r.total_recebido} mensagem(ns) sincronizada(s).`);
+    }
     await renderWaConversations();
   } finally {
     btn.disabled = false; btn.textContent = original;
