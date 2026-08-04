@@ -227,13 +227,14 @@ Deno.serve(async (req) => {
       }
 
       let sincronizadas = 0;
+      const motivos = { semKey: 0, semTelefone: 0, semTexto: 0, erroGravar: 0 };
       for (const item of items) {
-        if (!item?.key) continue;
+        if (!item?.key) { motivos.semKey++; continue; }
         const remoteJid: string = item.key.remoteJid || "";
         const telefone = remoteJid.split("@")[0];
-        if (!telefone) continue;
+        if (!telefone) { motivos.semTelefone++; continue; }
         const texto = extractText(item.message);
-        if (!texto) continue;
+        if (!texto) { motivos.semTexto++; continue; }
         const waMessageId: string | null = item.key.id || null;
         const direcao = item.key.fromMe ? "enviada" : "recebida";
         const nomeContato = item.pushName || null;
@@ -242,21 +243,22 @@ Deno.serve(async (req) => {
           : new Date().toISOString();
         const tipo = extractTipo(item.message);
 
-        if (waMessageId) {
-          const { error } = await supabase.from("wa_messages").upsert({
-            telefone, nome_contato: nomeContato, direcao, texto, tipo,
-            created_at: timestamp, wa_message_id: waMessageId,
-          }, { onConflict: "wa_message_id" });
-          if (!error) sincronizadas++;
-        } else {
-          const { error } = await supabase.from("wa_messages").insert({
-            telefone, nome_contato: nomeContato, direcao, texto, tipo, created_at: timestamp,
-          });
-          if (!error) sincronizadas++;
-        }
+        const { error } = waMessageId
+          ? await supabase.from("wa_messages").upsert({
+              telefone, nome_contato: nomeContato, direcao, texto, tipo,
+              created_at: timestamp, wa_message_id: waMessageId,
+            }, { onConflict: "wa_message_id" })
+          : await supabase.from("wa_messages").insert({
+              telefone, nome_contato: nomeContato, direcao, texto, tipo, created_at: timestamp,
+            });
+        if (error) motivos.erroGravar++; else sincronizadas++;
       }
 
-      return json({ ok: true, sincronizadas, total_recebido: items.length });
+      // Se quase nada foi salvo, manda uma amostra dos itens brutos junto —
+      // sem isso não dá pra saber, sem acesso à Evolution API real, se o
+      // formato de "message" é diferente do que o extractText espera.
+      const amostra = sincronizadas === 0 ? items.slice(0, 3) : undefined;
+      return json({ ok: true, sincronizadas, total_recebido: items.length, motivos, amostra });
     }
 
     return json({ error: "Ação desconhecida." }, 400);
