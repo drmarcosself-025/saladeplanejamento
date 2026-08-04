@@ -90,6 +90,12 @@
      não mexe em ".empty" (usada em várias outras telas do sistema). */
   .wa-empty-state{ text-align:center; padding:40px 20px; color:var(--muted); font-size:14.5px; }
   .wa-empty-state svg{ display:block; margin:0 auto 10px; opacity:.5; }
+  /* Aviso de telefone suspeito na lista de conversas: discreto (cinza, sem
+     chamar tanta atenção) — o aviso completo, em destaque, continua no
+     painel de contato quando a conversa é aberta. */
+  .wa-conv-warn{ color:var(--muted); flex:0 0 auto; opacity:.75; }
+  .wa-conv-warn:hover{ color:var(--amber); opacity:1; }
+  .wa-conv-warn svg{ width:11px; height:11px; }
   @media(max-width:900px){
     .wa-crm{ grid-template-columns:1fr; height:auto; }
     .wa-crm-list, .wa-crm-thread, .wa-crm-contact{ border:none; border-bottom:1px solid var(--line); }
@@ -1185,7 +1191,7 @@ function renderWaConvList(){
         <div class="nome"><span>${esc(c.nome_contato || c.telefone)}</span><span class="hora">${hora}</span></div>
         <span class="preview">${ultima ? esc((ultima.direcao==='enviada'?'Você: ':'') + (ultima.texto||'')) : ''}</span>
       </div>
-      ${telefoneSuspeito ? `<span style="color:var(--amber); flex:0 0 auto;" title="Número pode estar errado (não parece um telefone válido) — abra a conversa e use \'Editar\' pra corrigir">${ICON_WARN}</span>` : ''}
+      ${telefoneSuspeito ? `<span class="wa-conv-warn" title="Número pode estar errado (não parece um telefone válido) — abra a conversa e use \'Editar\' pra corrigir">${ICON_WARN}</span>` : ''}
     </div>`;
   }).join('');
   box.querySelectorAll('[data-wa-conv]').forEach(el=>{
