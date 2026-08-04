@@ -863,7 +863,14 @@ async function waCall(action, params){
   if(error){
     let detail = error.message || 'Falha ao falar com a function do WhatsApp.';
     if(error.context && typeof error.context.json === 'function'){
-      try { const body = await error.context.json(); if(body && body.error) detail = body.error; } catch(e){}
+      try {
+        const body = await error.context.json();
+        // Loga a resposta inteira (texto puro) — o campo "error" às vezes só
+        // tem um resumo genérico tipo "Bad Request"; o motivo real costuma
+        // estar em outro campo da resposta da Evolution API.
+        console.log(`[WhatsApp] resposta de erro completa da ação "${action}" (texto puro):\n` + JSON.stringify(body, null, 2));
+        if(body && body.error) detail = body.error;
+      } catch(e){}
     }
     return { error: detail };
   }
