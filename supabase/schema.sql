@@ -279,7 +279,13 @@ create table if not exists public.wa_messages (
 -- ficar disponível quando anexos forem suportados na tela.
 alter table public.wa_messages add column if not exists wa_message_id text;
 alter table public.wa_messages add column if not exists tipo text not null default 'texto';
-create unique index if not exists wa_messages_wa_message_id_idx on public.wa_messages (wa_message_id) where wa_message_id is not null;
+-- Precisa ser uma constraint "cheia" (não um índice parcial) pra funcionar
+-- com ON CONFLICT — no Postgres, uma coluna nullable com unique constraint
+-- já permite várias linhas com wa_message_id nulo sem problema nenhum, então
+-- não precisava do "where ... is not null" que eu tinha colocado antes.
+drop index if exists public.wa_messages_wa_message_id_idx;
+alter table public.wa_messages drop constraint if exists wa_messages_wa_message_id_key;
+alter table public.wa_messages add constraint wa_messages_wa_message_id_key unique (wa_message_id);
 create index if not exists wa_messages_telefone_idx on public.wa_messages (telefone, created_at desc);
 
 -- ============================================================
