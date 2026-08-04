@@ -272,7 +272,38 @@ create table if not exists public.wa_messages (
   created_at timestamptz not null default now(),
   created_by text
 );
+-- wa_message_id: o ID da mensagem de verdade no WhatsApp (item.key.id na
+-- Evolution API), usado pra nunca duplicar a mesma mensagem caso o webhook
+-- dispare mais de uma vez pro mesmo evento (acontece na prática).
+-- tipo: texto/imagem/video/outro — guardado mesmo sem exibir ainda, pra já
+-- ficar disponível quando anexos forem suportados na tela.
+alter table public.wa_messages add column if not exists wa_message_id text;
+alter table public.wa_messages add column if not exists tipo text not null default 'texto';
+create unique index if not exists wa_messages_wa_message_id_idx on public.wa_messages (wa_message_id) where wa_message_id is not null;
 create index if not exists wa_messages_telefone_idx on public.wa_messages (telefone, created_at desc);
+
+-- ============================================================
+-- CRM_SEGMENTADOS (mapa próprio de contatos segmentados pelo WhatsApp —
+-- separado do Funil/Leads. Alimentado automaticamente quando a IA detecta
+-- palavra-chave numa conversa, e também editável manualmente pela equipe.)
+-- ============================================================
+create table if not exists public.crm_segmentados (
+  id uuid primary key default gen_random_uuid(),
+  nome text not null,
+  telefone text,
+  etapa text not null default 'Detectado' check (etapa in (
+    'Detectado','Lead frio','Virou lead','Lead interessado',
+    'Proposta enviada','Ficou de fechar','Não agendou ainda'
+  )),
+  palavras_chave text[],
+  lead_id uuid references public.leads(id) on delete set null,
+  obs text,
+  criado_por text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists crm_segmentados_etapa_idx on public.crm_segmentados (etapa);
+create index if not exists crm_segmentados_telefone_idx on public.crm_segmentados (telefone);
 
 -- ============================================================
 -- PERMISSÕES — qualquer usuário autenticado pode ler/gravar
@@ -298,6 +329,7 @@ alter table public.confirmacoes_dia enable row level security;
 alter table public.wa_send_log enable row level security;
 alter table public.wa_inbox enable row level security;
 alter table public.wa_messages enable row level security;
+alter table public.crm_segmentados enable row level security;
 
 -- profiles: todo mundo autenticado vê a equipe; cada um cria/edita o próprio
 -- perfil; só o proprietário pode mudar o "role" de outra pessoa.
@@ -326,6 +358,7 @@ create policy "wa_send_log_insert" on public.wa_send_log for insert to authentic
 create policy "wa_send_log_delete" on public.wa_send_log for delete to authenticated using (public.is_owner());
 create policy "wa_inbox_all" on public.wa_inbox for all to authenticated using (true) with check (true);
 create policy "wa_messages_all" on public.wa_messages for all to authenticated using (true) with check (true);
+create policy "crm_segmentados_all" on public.crm_segmentados for all to authenticated using (true) with check (true);
 
 -- rotinas: todo mundo lê; só o proprietário cria/edita/exclui.
 create policy "rotinas_select" on public.rotinas for select to authenticated using (true);

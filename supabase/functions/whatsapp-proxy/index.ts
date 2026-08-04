@@ -15,6 +15,29 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 
+// Mesma lógica de extração usada no whatsapp-webhook (duplicada aqui de
+// propósito: cada Edge Function do Supabase é colada/publicada de forma
+// independente, sem importar arquivo de outra function).
+function extractText(message: any): string {
+  if (!message) return "";
+  return (
+    message.conversation ||
+    message.extendedTextMessage?.text ||
+    message.imageMessage?.caption ||
+    message.videoMessage?.caption ||
+    ""
+  );
+}
+function extractTipo(message: any): string {
+  if (!message) return "outro";
+  if (message.conversation || message.extendedTextMessage) return "texto";
+  if (message.imageMessage) return "imagem";
+  if (message.videoMessage) return "video";
+  if (message.audioMessage) return "audio";
+  if (message.stickerMessage) return "figurinha";
+  return "outro";
+}
+
 // "status" fica de fora: qualquer pessoa da equipe precisa poder ver se o
 // WhatsApp está conectado na tela de Atendimento. Só quem realmente
 // gerencia a conexão (gerar QR, desconectar) é owner-only.
@@ -94,7 +117,7 @@ Deno.serve(async (req) => {
     }
 
     if (action === "send-text") {
-      const { number, text } = params as { number?: string; text?: string };
+      const { number, text, nome } = params as { number?: string; text?: string; nome?: string };
       if (!number || !text) return json({ error: "Faltou número ou texto." }, 400);
 
       // O painel nunca chama esta ação hoje (ele só abre um link wa.me pro
@@ -141,8 +164,99 @@ Deno.serve(async (req) => {
         headers,
         body: JSON.stringify({ number: digits, text }),
       });
-      if (r.ok) await supabase.from("wa_send_log").insert({ telefone: digits, created_by: user.email ?? null });
-      return json(await r.json(), r.status);
+      const respBody = await r.json();
+      if (r.ok) {
+        // Grava aqui (no servidor), não no navegador — assim o histórico
+        // fica correto mesmo se o navegador do atendente fechar ou cair
+        // logo depois do envio já ter sido confirmado pela Evolution API.
+        const waMessageId: string | null = respBody?.key?.id ?? null;
+        await supabase.from("wa_send_log").insert({ telefone: digits, nome: nome ?? null, created_by: user.email ?? null });
+        await supabase.from("wa_messages").insert({
+          telefone: digits, nome_contato: nome ?? null, direcao: "enviada", texto: text,
+          wa_message_id: waMessageId, created_by: user.email ?? null,
+        });
+      }
+      return json(respBody, r.status);
+    }
+
+    if (action === "sync-messages") {
+      // Busca histórico direto da Evolution API (mensagens que já existiam
+      // antes do webhook estar configurado, ou que chegaram enquanto o
+      // painel estava fora do ar). Usa o endpoint /chat/findMessages, que é
+      // o documentado nas versões atuais (v2.x) do projeto Evolution API
+      // — mas como este ambiente não tem acesso à instância real do
+      // usuário pra confirmar, qualquer resposta em formato inesperado
+      // volta como erro detalhado (nunca falha silenciosamente, nem
+      // inventa dado).
+      const { number } = params as { number?: string };
+      const body: Record<string, unknown> = { limit: 200 };
+      if (number) {
+        const digits = String(number).replace(/\D/g, "");
+        body.where = { key: { remoteJid: `${digits}@s.whatsapp.net` } };
+      }
+
+      const r = await fetch(`${EVOLUTION_API_URL}/chat/findMessages/${EVOLUTION_INSTANCE}`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+      });
+      const data = await r.json().catch(() => null);
+
+      if (!r.ok) {
+        return json({
+          error: `A Evolution API respondeu ${r.status} em /chat/findMessages/${EVOLUTION_INSTANCE}. Essa versão instalada pode usar outro endpoint — confira a documentação da sua versão.`,
+          detalhe: data,
+        }, 502);
+      }
+
+      const items: any[] | null = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.messages)
+        ? data.messages
+        : Array.isArray(data?.messages?.records)
+        ? data.messages.records
+        : Array.isArray(data?.records)
+        ? data.records
+        : null;
+
+      if (!items) {
+        return json({
+          error: "A Evolution API respondeu, mas não num formato de lista de mensagens reconhecido. Veja 'detalhe' e me avise pra eu ajustar a leitura desse formato.",
+          detalhe: data,
+        }, 502);
+      }
+
+      let sincronizadas = 0;
+      for (const item of items) {
+        if (!item?.key) continue;
+        const remoteJid: string = item.key.remoteJid || "";
+        const telefone = remoteJid.split("@")[0];
+        if (!telefone) continue;
+        const texto = extractText(item.message);
+        if (!texto) continue;
+        const waMessageId: string | null = item.key.id || null;
+        const direcao = item.key.fromMe ? "enviada" : "recebida";
+        const nomeContato = item.pushName || null;
+        const timestamp = item.messageTimestamp
+          ? new Date(Number(item.messageTimestamp) * 1000).toISOString()
+          : new Date().toISOString();
+        const tipo = extractTipo(item.message);
+
+        if (waMessageId) {
+          const { error } = await supabase.from("wa_messages").upsert({
+            telefone, nome_contato: nomeContato, direcao, texto, tipo,
+            created_at: timestamp, wa_message_id: waMessageId,
+          }, { onConflict: "wa_message_id" });
+          if (!error) sincronizadas++;
+        } else {
+          const { error } = await supabase.from("wa_messages").insert({
+            telefone, nome_contato: nomeContato, direcao, texto, tipo, created_at: timestamp,
+          });
+          if (!error) sincronizadas++;
+        }
+      }
+
+      return json({ ok: true, sincronizadas, total_recebido: items.length });
     }
 
     return json({ error: "Ação desconhecida." }, 400);

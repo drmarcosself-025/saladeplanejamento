@@ -46,6 +46,18 @@ function extractText(message: any): string {
   );
 }
 
+// Identifica o tipo da mensagem, pra já ficar salvo mesmo sem exibir ainda
+// nada além de texto na tela (anexos ficam pra uma etapa futura).
+function extractTipo(message: any): string {
+  if (!message) return "outro";
+  if (message.conversation || message.extendedTextMessage) return "texto";
+  if (message.imageMessage) return "imagem";
+  if (message.videoMessage) return "video";
+  if (message.audioMessage) return "audio";
+  if (message.stickerMessage) return "figurinha";
+  return "outro";
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -107,10 +119,21 @@ Deno.serve(async (req) => {
         });
       }
 
-      // histórico completo da conversa, pra central de conversas do painel
-      await supabase.from("wa_messages").insert({
-        telefone, nome_contato: nomeContato, direcao: "recebida", texto, created_at: timestamp,
-      });
+      // histórico completo da conversa, pra central de conversas do painel.
+      // Usa upsert por wa_message_id pra nunca duplicar se a Evolution API
+      // reenviar o mesmo evento de webhook (acontece na prática).
+      const waMessageId: string | null = item.key?.id || null;
+      const tipo = extractTipo(item.message);
+      if (waMessageId) {
+        await supabase.from("wa_messages").upsert({
+          telefone, nome_contato: nomeContato, direcao: "recebida", texto, tipo,
+          created_at: timestamp, wa_message_id: waMessageId,
+        }, { onConflict: "wa_message_id" });
+      } else {
+        await supabase.from("wa_messages").insert({
+          telefone, nome_contato: nomeContato, direcao: "recebida", texto, tipo, created_at: timestamp,
+        });
+      }
     }
 
     return json({ ok: true });
