@@ -25,12 +25,13 @@ function extractText(message: any): string {
     message.extendedTextMessage?.text ||
     message.imageMessage?.caption ||
     message.videoMessage?.caption ||
+    message.text || // formato usado por /chat/findMessages nesta instância (confirmado com dado real)
     ""
   );
 }
 function extractTipo(message: any): string {
   if (!message) return "outro";
-  if (message.conversation || message.extendedTextMessage) return "texto";
+  if (message.conversation || message.extendedTextMessage || message.text) return "texto";
   if (message.imageMessage) return "imagem";
   if (message.videoMessage) return "video";
   if (message.audioMessage) return "audio";
@@ -227,10 +228,11 @@ Deno.serve(async (req) => {
       }
 
       let sincronizadas = 0;
-      const motivos = { semKey: 0, semTelefone: 0, semTexto: 0, erroGravar: 0 };
+      const motivos = { semKey: 0, semTelefone: 0, semTexto: 0, erroGravar: 0, grupo: 0 };
       for (const item of items) {
         if (!item?.key) { motivos.semKey++; continue; }
         const remoteJid: string = item.key.remoteJid || "";
+        if (remoteJid.endsWith("@g.us")) { motivos.grupo++; continue; } // grupo do WhatsApp, não conversa de paciente
         const telefone = remoteJid.split("@")[0];
         if (!telefone) { motivos.semTelefone++; continue; }
         const texto = extractText(item.message);
