@@ -338,6 +338,7 @@
           <button class="btn small secondary" id="waCrmDesconectarBtn">Desconectar</button>
         </div>
         <input type="text" id="waConvBusca" placeholder="🔍 Buscar conversa...">
+        <button class="btn small secondary" id="waSyncBtn" style="margin-top:8px;" title="Busca o histórico de mensagens direto da Evolution API">Sincronizar conversas</button>
         <div id="waConvError" class="warn-note" style="display:none; margin-top:10px;"></div>
         <div id="waConvList" class="wa-conv-list"></div>
       </div>
@@ -960,6 +961,27 @@ async function waDisconnect(){
 }
 document.getElementById('waDesconectarBtn').addEventListener('click', waDisconnect);
 document.getElementById('waCrmDesconectarBtn').addEventListener('click', waDisconnect);
+// Busca o histórico de mensagens direto da Evolution API (conversas de
+// antes do webhook estar configurado, ou de quando o painel ficou fora do
+// ar). Se a versão instalada usar outro endpoint, a function volta com um
+// erro detalhado em vez de falhar quieta — sem inventar dado nenhum.
+document.getElementById('waSyncBtn').addEventListener('click', async ()=>{
+  const btn = document.getElementById('waSyncBtn');
+  const original = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Sincronizando...';
+  try {
+    const r = await waCall('sync-messages', {});
+    if(r.error){
+      console.error('[WhatsApp] sync-messages falhou:', r.detalhe || r.error);
+      showToast('Erro ao sincronizar: ' + r.error);
+      return;
+    }
+    showToast(`${r.sincronizadas} de ${r.total_recebido} mensagem(ns) sincronizada(s).`);
+    await renderWaConversations();
+  } finally {
+    btn.disabled = false; btn.textContent = original;
+  }
+});
 
 // ============================================================
 // WHATSAPP — política anti-spam (intervalo aleatório + limites)
