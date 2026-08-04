@@ -1210,8 +1210,12 @@ document.getElementById('waContactCancelarTelBtn').addEventListener('click', ()=
   document.getElementById('waContactTelefoneForm').style.display = 'none';
 });
 document.getElementById('waContactSalvarTelBtn').addEventListener('click', async ()=>{
-  const novoTelefone = document.getElementById('waContactTelefoneInput').value.trim().replace(/\D/g,'');
+  let novoTelefone = document.getElementById('waContactTelefoneInput').value.trim().replace(/\D/g,'');
   if(!novoTelefone || novoTelefone.length < 10){ showToast('Digite um telefone válido (com DDD).'); return; }
+  // Mesma convenção usada no resto do sistema (waLink) e no envio real:
+  // sempre com o código do país (55), senão o envio falha achando que o
+  // número "não existe" no WhatsApp.
+  if(!novoTelefone.startsWith('55')) novoTelefone = '55' + novoTelefone;
   if(!waConvSelecionada) return;
   const telefoneAntigo = waConvSelecionada;
   const { error } = await sb.from('wa_messages').update({ telefone: novoTelefone }).eq('telefone', telefoneAntigo);

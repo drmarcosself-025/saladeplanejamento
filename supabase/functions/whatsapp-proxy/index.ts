@@ -39,6 +39,14 @@ function extractTipo(message: any): string {
   return "outro";
 }
 
+// Mesma regra do waLink() no index.html: número sem código de país (55) é
+// inválido pro WhatsApp verificar ("exists: false"), mesmo sendo um número
+// de verdade — confirmado com o teste real do usuário.
+function toWhatsappDigits(number: string): string {
+  const digits = String(number || "").replace(/\D/g, "");
+  return digits.startsWith("55") ? digits : "55" + digits;
+}
+
 // "status" fica de fora: qualquer pessoa da equipe precisa poder ver se o
 // WhatsApp está conectado na tela de Atendimento. Só quem realmente
 // gerencia a conexão (gerar QR, desconectar) é owner-only.
@@ -159,7 +167,7 @@ Deno.serve(async (req) => {
         }
       }
 
-      const digits = String(number).replace(/\D/g, "");
+      const digits = toWhatsappDigits(number);
       const r = await fetch(`${EVOLUTION_API_URL}/message/sendText/${EVOLUTION_INSTANCE}`, {
         method: "POST",
         headers,
@@ -191,7 +199,7 @@ Deno.serve(async (req) => {
       // inventa dado).
       const { number } = params as { number?: string };
       const where: Record<string, unknown> | undefined = number
-        ? { key: { remoteJid: `${String(number).replace(/\D/g, "")}@s.whatsapp.net` } }
+        ? { key: { remoteJid: `${toWhatsappDigits(number)}@s.whatsapp.net` } }
         : undefined;
 
       // Busca em várias páginas em vez de só a primeira — uma única chamada
