@@ -368,6 +368,7 @@
             <span id="waContactTelefoneTexto">—</span>
             <button class="btn small secondary" id="waContactEditarTelBtn" style="padding:2px 8px; font-size:11px; margin-top:0;" title="Corrigir número (ex.: contato identificado por código interno do WhatsApp, não pelo número de telefone)">Editar</button>
           </div>
+          <div id="waContactTelefoneWarn" class="warn-note" style="display:none; margin-top:8px; padding:8px 10px; font-size:12.5px;">Esse número não parece um telefone válido — provavelmente é um código interno do WhatsApp (privacidade). Corrija clicando em "Editar", se souber o número real.</div>
           <div id="waContactTelefoneForm" style="display:none; margin-top:8px; gap:6px;">
             <input type="text" id="waContactTelefoneInput" placeholder="(27) 90000-0000" style="font-size:13px; padding:7px 9px;">
             <div style="display:flex; gap:6px; margin-top:6px;">
@@ -622,6 +623,7 @@ let leadFilter = 'todos';
 const ICON_PHONE = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6.6 10.8c1.4 2.8 3.8 5.2 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.3 21 3 13.7 3 4.9c0-.6.4-1 1-1h3.4c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1L6.6 10.8Z"/></svg>';
 const ICON_TRASH = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/></svg>';
 const ICON_PIN = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-6.1 7-11a7 7 0 1 0-14 0c0 4.9 7 11 7 11Z"/><circle cx="12" cy="10" r="2.4"/></svg>';
+const ICON_WARN = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4"/><path d="M10.3 3.9 1.8 18a1.6 1.6 0 0 0 1.4 2.4h17.6a1.6 1.6 0 0 0 1.4-2.4L13.7 3.9a1.6 1.6 0 0 0-2.8 0Z"/><circle cx="12" cy="16.3" r=".2" fill="currentColor"/></svg>';
 // Escapa texto vindo do banco (nome de paciente, obs, e principalmente o
 // nome de exibição do WhatsApp — que qualquer pessoa de fora pode definir
 // mandando mensagem pro número da clínica) antes de inserir em innerHTML,
@@ -1087,11 +1089,24 @@ async function renderWaConversations(){
     return;
   }
   if(errBox) errBox.style.display = 'none';
+  // Agrupa só pelos dígitos do telefone — sem isso, a mesma conversa podia
+  // virar duas na lista se um envio salvasse o número formatado de um jeito
+  // levemente diferente do que já existia (aconteceu na prática: "Marcos
+  // Cowpper" e "Você" com o mesmo número viraram duas conversas).
   const porTelefone = {};
   (data||[]).forEach(m=>{
-    if(!porTelefone[m.telefone]) porTelefone[m.telefone] = { telefone: m.telefone, nome_contato: m.nome_contato, mensagens: [] };
-    porTelefone[m.telefone].mensagens.push(m);
-    if(m.nome_contato) porTelefone[m.telefone].nome_contato = m.nome_contato;
+    const chave = String(m.telefone||'').replace(/\D/g,'');
+    if(!chave) return;
+    if(!porTelefone[chave]) porTelefone[chave] = { telefone: chave, nome_contato: null, mensagens: [] };
+    porTelefone[chave].mensagens.push(m);
+    // Prefere um nome de contato de verdade — não deixa "Você" (nome que o
+    // WhatsApp às vezes usa pra identificar a própria mensagem enviada)
+    // sobrescrever um nome real que já apareceu antes na mesma conversa.
+    if(m.nome_contato && m.nome_contato.trim().toLowerCase() !== 'você'){
+      porTelefone[chave].nome_contato = m.nome_contato;
+    } else if(m.nome_contato && !porTelefone[chave].nome_contato){
+      porTelefone[chave].nome_contato = m.nome_contato;
+    }
   });
   WA_CONVERSAS = Object.values(porTelefone).sort((a,b)=>{
     const la = a.mensagens[a.mensagens.length-1]; const lb = b.mensagens[b.mensagens.length-1];
@@ -1120,6 +1135,16 @@ function waStartRealtime(){
 function waStopRealtime(){
   if(waRealtimeChannel){ sb.removeChannel(waRealtimeChannel); waRealtimeChannel = null; }
 }
+// Número brasileiro de WhatsApp válido: 55 + DDD (2) + 8 ou 9 dígitos.
+// Contatos identificados por código interno do WhatsApp (LID) em vez do
+// telefone real caem fora desse padrão — não dá pra descobrir o número
+// verdadeiro por aqui (o WhatsApp esconde de propósito, por privacidade),
+// mas dá pra avisar visualmente que aquele contato provavelmente precisa
+// ser corrigido manualmente (botão "Editar" no painel de contato).
+function pareceTelefoneValido(telefone){
+  const digits = String(telefone||'').replace(/\D/g,'');
+  return /^55\d{10,11}$/.test(digits);
+}
 function waAvatarHTML(nome, telefone){
   const label = (nome || telefone || '?').trim();
   const parts = label.split(/\s+/).filter(Boolean);
@@ -1137,12 +1162,14 @@ function renderWaConvList(){
   box.innerHTML = list.map(c=>{
     const ultima = c.mensagens[c.mensagens.length-1];
     const hora = ultima ? new Date(ultima.created_at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '';
+    const telefoneSuspeito = !pareceTelefoneValido(c.telefone);
     return `<div class="wa-conv-item ${waConvSelecionada===c.telefone?'active':''}" data-wa-conv="${c.telefone}">
       ${waAvatarHTML(c.nome_contato, c.telefone)}
       <div class="wa-conv-body">
         <div class="nome"><span>${esc(c.nome_contato || c.telefone)}</span><span class="hora">${hora}</span></div>
         <span class="preview">${ultima ? esc((ultima.direcao==='enviada'?'Você: ':'') + (ultima.texto||'')) : ''}</span>
       </div>
+      ${telefoneSuspeito ? `<span style="color:var(--amber); flex:0 0 auto;" title="Número pode estar errado (não parece um telefone válido) — abra a conversa e use \'Editar\' pra corrigir">${ICON_WARN}</span>` : ''}
     </div>`;
   }).join('');
   box.querySelectorAll('[data-wa-conv]').forEach(el=>{
@@ -1177,6 +1204,7 @@ async function renderWaContact(conv){
   document.getElementById('waContactBox').style.display = 'block';
   document.getElementById('waContactNome').textContent = conv.nome_contato || conv.telefone;
   document.getElementById('waContactTelefoneTexto').textContent = conv.telefone;
+  document.getElementById('waContactTelefoneWarn').style.display = pareceTelefoneValido(conv.telefone) ? 'none' : 'block';
   document.getElementById('waContactTelefoneForm').style.display = 'none';
   document.getElementById('waContactTelefoneInput').value = conv.telefone;
   const info = document.getElementById('waContactLeadInfo');
@@ -1217,11 +1245,16 @@ document.getElementById('waContactSalvarTelBtn').addEventListener('click', async
   // número "não existe" no WhatsApp.
   if(!novoTelefone.startsWith('55')) novoTelefone = '55' + novoTelefone;
   if(!waConvSelecionada) return;
-  const telefoneAntigo = waConvSelecionada;
-  const { error } = await sb.from('wa_messages').update({ telefone: novoTelefone }).eq('telefone', telefoneAntigo);
+  const conv = WA_CONVERSAS.find(c=>c.telefone===waConvSelecionada);
+  // Corrige pelo id de cada mensagem da conversa (não por igualdade exata de
+  // telefone) — o telefone salvo em cada linha pode estar formatado de
+  // jeitos levemente diferentes mesmo sendo a mesma conversa.
+  const ids = (conv?.mensagens||[]).map(m=>m.id).filter(Boolean);
+  if(!ids.length){ showToast('Nada pra corrigir nessa conversa.'); return; }
+  const { error } = await sb.from('wa_messages').update({ telefone: novoTelefone }).in('id', ids);
   if(error){ showToast('Erro ao corrigir telefone: '+error.message); return; }
   showToast('Telefone corrigido.');
-  waConvSelecionada = novoTelefone;
+  waConvSelecionada = novoTelefone.replace(/\D/g,'');
   await renderWaConversations();
 });
 document.getElementById('waComposeSendBtn').addEventListener('click', async ()=>{
