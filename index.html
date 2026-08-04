@@ -173,6 +173,7 @@
   .kanban-card .kn{font-weight:700; color:var(--navy); font-size:14px;}
   .kanban-card .km{color:var(--muted); font-size:12px; margin-top:2px;}
   .stale-tag{ display:inline-block; background:var(--red-bg); color:var(--red); font-size:10.5px; font-weight:700; padding:2px 6px; border-radius:6px; margin-top:5px; }
+  .kw-tag{ display:inline-block; background:var(--amber-bg); color:var(--amber); font-size:10.5px; font-weight:700; padding:2px 6px; border-radius:6px; margin-top:5px; }
   .loading-screen{ text-align:center; padding:80px 20px; color:var(--muted); }
 </style>
 </head>
@@ -222,6 +223,7 @@
     <div class="sidebar-group">
       <div class="sidebar-group-label">Comercial</div>
       <button data-tab="novo" class="sidebar-action"><span class="ic"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></span><span class="lab">Novo Lead</span></button>
+      <button data-tab="crm"><span class="ic"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 9v11"/></svg></span><span class="lab">CRM</span></button>
       <button data-tab="funil"><span class="ic"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 20V11M12 20V4M19 20v-6.5"/></svg></span><span class="lab">Funil</span></button>
       <button data-tab="leads"><span class="ic"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/></svg></span><span class="lab">Leads</span></button>
       <button data-tab="ativos"><span class="ic"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4.5v5h5"/><path d="M20 19.5v-5h-5"/><path d="M5.6 9a6.5 6.5 0 0 1 11.2-3.2L20 9"/><path d="M18.4 15a6.5 6.5 0 0 1-11.2 3.2L4 15"/></svg></span><span class="lab">Reativação</span></button>
@@ -365,6 +367,22 @@
       <button data-inboxf="descartado">Descartadas</button>
     </div>
     <div id="inboxList"></div>
+  </div>
+
+  <!-- CRM (mapa próprio de contatos segmentados pelo WhatsApp) -->
+  <div class="view" id="view-crm">
+    <h2 class="page-title">CRM</h2>
+    <p class="page-sub">Contatos segmentados pela IA no WhatsApp (por palavra-chave), organizados por etapa. Toque num cartão pra abrir e mudar a etapa.</p>
+    <div class="card">
+      <div class="section-label">Adicionar manualmente</div>
+      <div class="row2">
+        <div><label>Nome</label><input type="text" id="nCrm_nome"></div>
+        <div><label>Telefone</label><input type="text" id="nCrm_telefone" placeholder="(27) 90000-0000"></div>
+      </div>
+      <button class="btn" id="salvarCrmBtn">Adicionar ao CRM</button>
+    </div>
+    <div class="kanban" id="crmBoard"></div>
+    <div class="card" id="crmDetailCard" style="display:none; margin-top:16px;"></div>
   </div>
 
   <!-- FUNIL -->
@@ -570,7 +588,7 @@ try {
 // ============================================================
 const DEFAULT_CONFIG = { diaria:120, almoco:30, com_interno:5, com_proprio:10, lim_interno:150, lim_proprio:250, bonus:10, meta_ag_dia:3, meta_ag_semana:12, meta_vd_mes:10, wa_intervalo_min_seg:20, wa_intervalo_max_seg:50, wa_limite_hora:30, wa_limite_dia:120, wa_silencio_seg:12, wa_keywords:'agendar,agendamento,consulta,avaliação,avaliacao,quanto custa,valor,preço,preco,marcar,interessad,orçamento,orcamento' };
 let CONFIG = {...DEFAULT_CONFIG};
-let LEADS = [], DIARIAS = [], ATIVOS = [], CONTATOS = [], TEMPLATES = [], ROTINAS = [], PROFILES = [], INBOX = [];
+let LEADS = [], DIARIAS = [], ATIVOS = [], CONTATOS = [], TEMPLATES = [], ROTINAS = [], PROFILES = [], INBOX = [], CRM_SEGMENTADOS = [];
 let IA_PROMPT = '';
 let CURRENT_PROFILE = null; // { id, nome, role }
 let openLeadId = null;
@@ -718,7 +736,7 @@ async function postLogin(){
 // DATA LOADING
 // ============================================================
 async function loadAll(){
-  const [leadsR, diariasR, ativosR, contatosR, templatesR, rotinasR, configR, profilesR, inboxR] = await Promise.all([
+  const [leadsR, diariasR, ativosR, contatosR, templatesR, rotinasR, configR, profilesR, inboxR, crmR] = await Promise.all([
     sb.from('leads').select('*').is('deleted_at', null).order('created_at', {ascending:false}),
     sb.from('diarias').select('*').order('data', {ascending:false}),
     sb.from('ativos').select('*'),
@@ -728,6 +746,7 @@ async function loadAll(){
     sb.from('config').select('*').eq('id',1).single(),
     sb.from('profiles').select('*'),
     sb.from('wa_inbox').select('*').order('ultima_mensagem_em', {ascending:false}),
+    sb.from('crm_segmentados').select('*').order('created_at', {ascending:false}),
   ]);
   LEADS = leadsR.data || [];
   DIARIAS = diariasR.data || [];
@@ -738,6 +757,7 @@ async function loadAll(){
   CONFIG = configR.data || {...DEFAULT_CONFIG};
   PROFILES = profilesR.data || [];
   INBOX = inboxR.data || [];
+  CRM_SEGMENTADOS = crmR.data || [];
 
   if(!TEMPLATES.length){
     const seeds = [
@@ -783,6 +803,7 @@ function switchTab(tab){
   if(tab==='checklist') renderChecklist();
   if(tab==='whatsapp'){ checkWaStatus(); renderWaThrottleStatus(); waStartPolling(); } else { waStopPolling(); }
   if(tab==='inbox') renderInbox();
+  if(tab==='crm') renderCrm();
   if(tab==='funil') renderFunil();
   if(tab==='leads') renderLeads();
   if(tab==='ativos') renderAtivos();
@@ -793,7 +814,7 @@ function switchTab(tab){
   if(tab==='admin'){ renderIa(); renderEquipe(); renderConfig(); }
 }
 function renderAll(){
-  renderChecklist(); renderInbox(); renderFunil(); renderLeads(); renderAtivos(); renderContatos();
+  renderChecklist(); renderInbox(); renderCrm(); renderFunil(); renderLeads(); renderAtivos(); renderContatos();
   renderTemplates(); renderRotinas(); renderFechamento();
   if(CURRENT_PROFILE.role==='owner'){ renderIa(); renderEquipe(); renderConfig(); }
 }
@@ -1283,6 +1304,85 @@ function renderInbox(){
       } finally { waSendBusy = false; }
     });
   });
+}
+
+// ============================================================
+// CRM (mapa próprio de contatos segmentados pelo WhatsApp — separado
+// do Funil/Leads, que continuam funcionando exatamente como antes)
+// ============================================================
+const CRM_STAGES = ['Detectado','Lead frio','Virou lead','Lead interessado','Proposta enviada','Ficou de fechar','Não agendou ainda'];
+let crmSelecionado = null;
+document.getElementById('salvarCrmBtn').addEventListener('click', async ()=>{
+  const nome = document.getElementById('nCrm_nome').value.trim();
+  if(!nome){ showToast('Preencha o nome.'); return; }
+  const telefone = document.getElementById('nCrm_telefone').value.trim();
+  const { error } = await sb.from('crm_segmentados').insert({ nome, telefone, etapa:'Detectado', criado_por: CURRENT_PROFILE.nome });
+  if(error){ showToast('Erro: '+error.message); return; }
+  document.getElementById('nCrm_nome').value=''; document.getElementById('nCrm_telefone').value='';
+  showToast('Adicionado ao CRM.'); await loadAll(); renderCrm();
+});
+function renderCrm(){
+  const board = document.getElementById('crmBoard');
+  if(!board) return;
+  board.innerHTML = CRM_STAGES.map(etapa=>{
+    const items = CRM_SEGMENTADOS.filter(c=>(c.etapa||'Detectado')===etapa).sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||''));
+    return `<div class="kanban-col"><h4>${etapa} <span>${items.length}</span></h4>
+      ${items.map(c=>`<div class="kanban-card" data-crm-open="${c.id}"><div class="kn">${esc(c.nome)}</div><div class="km">${esc(c.telefone)||'sem telefone'}</div>${(c.palavras_chave&&c.palavras_chave.length)?`<div class="kw-tag">${esc(c.palavras_chave.join(', '))}</div>`:''}</div>`).join('') || '<div style="font-size:12px; color:var(--muted); padding:6px 2px;">vazio</div>'}</div>`;
+  }).join('');
+  board.querySelectorAll('[data-crm-open]').forEach(card=>{
+    card.addEventListener('click', ()=>{ crmSelecionado = card.dataset.crmOpen; renderCrmDetail(); });
+  });
+  renderCrmDetail();
+}
+function renderCrmDetail(){
+  const box = document.getElementById('crmDetailCard');
+  if(!box) return;
+  const c = CRM_SEGMENTADOS.find(x=>x.id===crmSelecionado);
+  if(!c){ box.style.display = 'none'; crmSelecionado = null; return; }
+  box.style.display = 'block';
+  const lead = c.lead_id ? LEADS.find(l=>l.id===c.lead_id) : null;
+  box.innerHTML = `
+    <div class="section-label">${esc(c.nome)}</div>
+    <label>Etapa</label>
+    <select id="crmEtapaSel">${CRM_STAGES.map(e=>`<option value="${e}" ${c.etapa===e?'selected':''}>${e}</option>`).join('')}</select>
+    <label>Observações</label>
+    <textarea id="crmObsText" rows="2">${esc(c.obs)}</textarea>
+    <div class="lead-actions">
+      ${waButtonHTML(c.telefone, null, c.nome)}
+      <button class="btn small" data-crm-save="1">Salvar</button>
+      ${lead ? `<button class="btn small secondary" data-crm-ver-lead="${lead.id}">Ver lead</button>` : `<button class="btn small gold" data-crm-lead="1">Transformar em lead</button>`}
+      <button class="btn small secondary" data-crm-fechar="1">Fechar</button>
+      <button class="btn small danger" data-crm-del="1">Remover</button>
+    </div>`;
+  box.querySelector('[data-crm-save]').addEventListener('click', async ()=>{
+    const etapa = document.getElementById('crmEtapaSel').value;
+    const obs = document.getElementById('crmObsText').value.trim();
+    const { error } = await sb.from('crm_segmentados').update({ etapa, obs, updated_at: new Date().toISOString() }).eq('id', c.id);
+    if(error){ showToast('Erro: '+error.message); return; }
+    showToast('Atualizado.'); await loadAll(); renderCrm();
+  });
+  box.querySelector('[data-crm-fechar]').addEventListener('click', ()=>{ crmSelecionado = null; renderCrmDetail(); });
+  box.querySelector('[data-crm-del]').addEventListener('click', async ()=>{
+    if(!confirm('Remover do CRM?')) return;
+    await sb.from('crm_segmentados').delete().eq('id', c.id);
+    crmSelecionado = null;
+    showToast('Removido.'); await loadAll(); renderCrm();
+  });
+  if(lead){
+    box.querySelector('[data-crm-ver-lead]').addEventListener('click', ()=>{ openLeadId = lead.id; switchTab('leads'); });
+  } else {
+    box.querySelector('[data-crm-lead]').addEventListener('click', async ()=>{
+      const { data: novoLead, error } = await sb.from('leads').insert({
+        nome: c.nome, telefone: c.telefone, origem:'Lead próprio', status:'Novo', responsavel: CURRENT_PROFILE.nome,
+        obs: 'Criado a partir do CRM de segmentação por WhatsApp.',
+        atividades:[{ data: todayISO(), tipo:'Criação', texto:'Lead criado a partir do CRM (WhatsApp)', por: CURRENT_PROFILE.nome }],
+        created_by: CURRENT_PROFILE.nome,
+      }).select('id').single();
+      if(error){ showToast('Erro: '+error.message); return; }
+      await sb.from('crm_segmentados').update({ lead_id: novoLead.id }).eq('id', c.id);
+      showToast('Lead criado.'); await loadAll(); renderCrm();
+    });
+  }
 }
 
 // ============================================================

@@ -275,6 +275,29 @@ create table if not exists public.wa_messages (
 create index if not exists wa_messages_telefone_idx on public.wa_messages (telefone, created_at desc);
 
 -- ============================================================
+-- CRM_SEGMENTADOS (mapa próprio de contatos segmentados pelo WhatsApp —
+-- separado do Funil/Leads. Alimentado automaticamente quando a IA detecta
+-- palavra-chave numa conversa, e também editável manualmente pela equipe.)
+-- ============================================================
+create table if not exists public.crm_segmentados (
+  id uuid primary key default gen_random_uuid(),
+  nome text not null,
+  telefone text,
+  etapa text not null default 'Detectado' check (etapa in (
+    'Detectado','Lead frio','Virou lead','Lead interessado',
+    'Proposta enviada','Ficou de fechar','Não agendou ainda'
+  )),
+  palavras_chave text[],
+  lead_id uuid references public.leads(id) on delete set null,
+  obs text,
+  criado_por text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists crm_segmentados_etapa_idx on public.crm_segmentados (etapa);
+create index if not exists crm_segmentados_telefone_idx on public.crm_segmentados (telefone);
+
+-- ============================================================
 -- PERMISSÕES — qualquer usuário autenticado pode ler/gravar
 -- (o controle fino é feito pelas policies de RLS abaixo)
 -- ============================================================
@@ -298,6 +321,7 @@ alter table public.confirmacoes_dia enable row level security;
 alter table public.wa_send_log enable row level security;
 alter table public.wa_inbox enable row level security;
 alter table public.wa_messages enable row level security;
+alter table public.crm_segmentados enable row level security;
 
 -- profiles: todo mundo autenticado vê a equipe; cada um cria/edita o próprio
 -- perfil; só o proprietário pode mudar o "role" de outra pessoa.
@@ -326,6 +350,7 @@ create policy "wa_send_log_insert" on public.wa_send_log for insert to authentic
 create policy "wa_send_log_delete" on public.wa_send_log for delete to authenticated using (public.is_owner());
 create policy "wa_inbox_all" on public.wa_inbox for all to authenticated using (true) with check (true);
 create policy "wa_messages_all" on public.wa_messages for all to authenticated using (true) with check (true);
+create policy "crm_segmentados_all" on public.crm_segmentados for all to authenticated using (true) with check (true);
 
 -- rotinas: todo mundo lê; só o proprietário cria/edita/exclui.
 create policy "rotinas_select" on public.rotinas for select to authenticated using (true);

@@ -128,6 +128,34 @@ Deno.serve(async (req) => {
           }).select("id").single();
           leadId = novoLead?.id || null;
         }
+
+        // Também alimenta o CRM próprio (mapa separado do Funil/Leads,
+        // pra acompanhar a segmentação por palavra-chave). Se já existe
+        // uma linha pra esse telefone, só atualiza palavras-chave/lead —
+        // não mexe na etapa, porque a equipe pode já ter movido manualmente.
+        const { data: crmExistente } = await supabase
+          .from("crm_segmentados")
+          .select("id, palavras_chave")
+          .eq("telefone", conversa.telefone)
+          .maybeSingle();
+
+        if (crmExistente) {
+          const palavrasUnidas = Array.from(new Set([...(crmExistente.palavras_chave || []), ...encontradas]));
+          await supabase.from("crm_segmentados").update({
+            palavras_chave: palavrasUnidas,
+            lead_id: leadId,
+            updated_at: new Date().toISOString(),
+          }).eq("id", crmExistente.id);
+        } else {
+          await supabase.from("crm_segmentados").insert({
+            nome: conversa.nome_contato || conversa.telefone,
+            telefone: conversa.telefone,
+            etapa: "Detectado",
+            palavras_chave: encontradas,
+            lead_id: leadId,
+            criado_por: "IA (automático)",
+          });
+        }
       }
 
       await supabase.from("wa_inbox").update({
