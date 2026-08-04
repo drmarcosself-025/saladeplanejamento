@@ -190,41 +190,80 @@ Deno.serve(async (req) => {
       // volta como erro detalhado (nunca falha silenciosamente, nem
       // inventa dado).
       const { number } = params as { number?: string };
-      const body: Record<string, unknown> = { limit: 200 };
-      if (number) {
-        const digits = String(number).replace(/\D/g, "");
-        body.where = { key: { remoteJid: `${digits}@s.whatsapp.net` } };
-      }
+      const where: Record<string, unknown> | undefined = number
+        ? { key: { remoteJid: `${String(number).replace(/\D/g, "")}@s.whatsapp.net` } }
+        : undefined;
 
-      const r = await fetch(`${EVOLUTION_API_URL}/chat/findMessages/${EVOLUTION_INSTANCE}`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(body),
-      });
-      const data = await r.json().catch(() => null);
+      // Busca em várias páginas em vez de só a primeira — uma única chamada
+      // costuma devolver bem menos mensagem do que existe de verdade no
+      // histórico. Pra pelo canso a Edge Function não rodar pra sempre se a
+      // Evolution API não parar de devolver página, tem um teto de 10.
+      const items: any[] = [];
+      let paginaFormato: "page" | "offset" | null = null;
+      const MAX_PAGINAS = 10;
+      let ultimoStatus = 0;
 
-      if (!r.ok) {
-        return json({
-          error: `A Evolution API respondeu ${r.status} em /chat/findMessages/${EVOLUTION_INSTANCE}. Essa versão instalada pode usar outro endpoint — confira a documentação da sua versão.`,
-          detalhe: data,
-        }, 502);
-      }
+      for (let pagina = 1; pagina <= MAX_PAGINAS; pagina++) {
+        const body: Record<string, unknown> = { limit: 200 };
+        if (where) body.where = where;
+        // Tenta os dois nomes de parâmetro de paginação mais comuns em APIs
+        // baseadas em Prisma (como a Evolution API v2.x): "page" primeiro;
+        // se a primeira página já vier vazia com "page", tenta "offset".
+        if (paginaFormato === "offset") body.offset = (pagina - 1) * 200;
+        else body.page = pagina;
 
-      const items: any[] | null = Array.isArray(data)
-        ? data
-        : Array.isArray(data?.messages)
-        ? data.messages
-        : Array.isArray(data?.messages?.records)
-        ? data.messages.records
-        : Array.isArray(data?.records)
-        ? data.records
-        : null;
+        const r = await fetch(`${EVOLUTION_API_URL}/chat/findMessages/${EVOLUTION_INSTANCE}`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(body),
+        });
+        const data = await r.json().catch(() => null);
+        ultimoStatus = r.status;
 
-      if (!items) {
-        return json({
-          error: "A Evolution API respondeu, mas não num formato de lista de mensagens reconhecido. Veja 'detalhe' e me avise pra eu ajustar a leitura desse formato.",
-          detalhe: data,
-        }, 502);
+        if (!r.ok) {
+          if (pagina === 1) {
+            return json({
+              error: `A Evolution API respondeu ${r.status} em /chat/findMessages/${EVOLUTION_INSTANCE}. Essa versão instalada pode usar outro endpoint — confira a documentação da sua versão.`,
+              detalhe: data,
+            }, 502);
+          }
+          break; // já tinha trazido alguma coisa nas páginas anteriores, para por aqui
+        }
+
+        const pageItems: any[] | null = Array.isArray(data)
+          ? data
+          : Array.isArray(data?.messages)
+          ? data.messages
+          : Array.isArray(data?.messages?.records)
+          ? data.messages.records
+          : Array.isArray(data?.records)
+          ? data.records
+          : null;
+
+        if (!pageItems) {
+          if (pagina === 1) {
+            return json({
+              error: "A Evolution API respondeu, mas não num formato de lista de mensagens reconhecido. Veja 'detalhe' e me avise pra eu ajustar a leitura desse formato.",
+              detalhe: data,
+            }, 502);
+          }
+          break;
+        }
+
+        if (pageItems.length === 0) {
+          // "page" pode não ser o parâmetro certo pra essa instância — tenta
+          // "offset" uma vez antes de desistir, só na primeira página.
+          if (pagina === 1 && paginaFormato === null) {
+            paginaFormato = "offset";
+            pagina = 0; // reexecuta a página 1, agora com offset
+            continue;
+          }
+          break;
+        }
+        if (paginaFormato === null) paginaFormato = "page";
+
+        items.push(...pageItems);
+        if (pageItems.length < 200) break; // última página (veio menos que o limite pedido)
       }
 
       let sincronizadas = 0;
@@ -266,7 +305,10 @@ Deno.serve(async (req) => {
       // sem isso não dá pra saber, sem acesso à Evolution API real, se o
       // formato de "message" é diferente do que o extractText espera.
       const amostra = sincronizadas === 0 ? items.slice(0, 3) : undefined;
-      return json({ ok: true, sincronizadas, total_recebido: items.length, motivos, primeiroErroGravar, amostra });
+      return json({
+        ok: true, sincronizadas, total_recebido: items.length, motivos, primeiroErroGravar, amostra,
+        paginacao: { formato_usado: paginaFormato, ultimo_status: ultimoStatus },
+      });
     }
 
     return json({ error: "Ação desconhecida." }, 400);
