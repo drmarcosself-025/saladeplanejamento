@@ -896,7 +896,7 @@ function normalizeWaConnectionState(response){
   ].filter(v => v !== undefined && v !== null).map(v => String(v).toLowerCase());
   // Fica no console pra a gente conferir o formato real que a Evolution
   // API instalada está devolvendo (varia entre versões/forks).
-  console.log('[WhatsApp] resposta bruta do status:', response, '| valores candidatos:', candidatos);
+  console.log('[WhatsApp] resposta bruta do status (texto puro):\n' + JSON.stringify(response, null, 2) + '\nvalores candidatos: ' + JSON.stringify(candidatos));
   const CONECTADO = ['open', 'connected', 'connection_open', 'ready'];
   const CONECTANDO = ['connecting', 'qr', 'pending', 'close_wait'];
   if(candidatos.some(c => CONECTADO.includes(c))) return 'connected';
@@ -976,7 +976,7 @@ document.getElementById('waSyncBtn').addEventListener('click', async ()=>{
       showToast('Erro ao sincronizar: ' + r.error);
       return;
     }
-    console.log('[WhatsApp] resultado da sincronização:', r);
+    console.log('[WhatsApp] resultado da sincronização (texto puro, copie tudo abaixo):\n' + JSON.stringify(r, null, 2));
     if(r.sincronizadas === 0 && r.total_recebido > 0){
       showToast(`0 de ${r.total_recebido} salvas — veja o console (F12) pra detalhes.`);
     } else {
