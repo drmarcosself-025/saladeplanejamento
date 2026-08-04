@@ -364,7 +364,17 @@
         <div id="waContactBox" style="display:none;">
           <div class="section-label">Contato</div>
           <div class="lead-name" id="waContactNome">—</div>
-          <div class="lead-meta" id="waContactTelefone">—</div>
+          <div class="lead-meta" id="waContactTelefone" style="display:flex; align-items:center; gap:6px;">
+            <span id="waContactTelefoneTexto">—</span>
+            <button class="btn small secondary" id="waContactEditarTelBtn" style="padding:2px 8px; font-size:11px; margin-top:0;" title="Corrigir número (ex.: contato identificado por código interno do WhatsApp, não pelo número de telefone)">Editar</button>
+          </div>
+          <div id="waContactTelefoneForm" style="display:none; margin-top:8px; gap:6px;">
+            <input type="text" id="waContactTelefoneInput" placeholder="(27) 90000-0000" style="font-size:13px; padding:7px 9px;">
+            <div style="display:flex; gap:6px; margin-top:6px;">
+              <button class="btn small" id="waContactSalvarTelBtn">Salvar</button>
+              <button class="btn small secondary" id="waContactCancelarTelBtn">Cancelar</button>
+            </div>
+          </div>
           <div style="margin-top:14px;" id="waContactLeadInfo"></div>
         </div>
       </div>
@@ -1166,7 +1176,9 @@ async function renderWaContact(conv){
   document.getElementById('waContactEmpty').style.display = 'none';
   document.getElementById('waContactBox').style.display = 'block';
   document.getElementById('waContactNome').textContent = conv.nome_contato || conv.telefone;
-  document.getElementById('waContactTelefone').textContent = conv.telefone;
+  document.getElementById('waContactTelefoneTexto').textContent = conv.telefone;
+  document.getElementById('waContactTelefoneForm').style.display = 'none';
+  document.getElementById('waContactTelefoneInput').value = conv.telefone;
   const info = document.getElementById('waContactLeadInfo');
   const lead = LEADS.find(l => (l.telefone||'').replace(/\D/g,'') === conv.telefone.replace(/\D/g,''));
   if(lead){
@@ -1187,6 +1199,27 @@ async function renderWaContact(conv){
     });
   }
 }
+// Corrigir o telefone de uma conversa — útil quando o contato aparece
+// identificado por um código interno do WhatsApp (LID) em vez do número de
+// telefone real, o que impede o envio de mensagem de verdade pra ele.
+document.getElementById('waContactEditarTelBtn').addEventListener('click', ()=>{
+  document.getElementById('waContactTelefoneForm').style.display = 'flex';
+  document.getElementById('waContactTelefoneForm').style.flexDirection = 'column';
+});
+document.getElementById('waContactCancelarTelBtn').addEventListener('click', ()=>{
+  document.getElementById('waContactTelefoneForm').style.display = 'none';
+});
+document.getElementById('waContactSalvarTelBtn').addEventListener('click', async ()=>{
+  const novoTelefone = document.getElementById('waContactTelefoneInput').value.trim().replace(/\D/g,'');
+  if(!novoTelefone || novoTelefone.length < 10){ showToast('Digite um telefone válido (com DDD).'); return; }
+  if(!waConvSelecionada) return;
+  const telefoneAntigo = waConvSelecionada;
+  const { error } = await sb.from('wa_messages').update({ telefone: novoTelefone }).eq('telefone', telefoneAntigo);
+  if(error){ showToast('Erro ao corrigir telefone: '+error.message); return; }
+  showToast('Telefone corrigido.');
+  waConvSelecionada = novoTelefone;
+  await renderWaConversations();
+});
 document.getElementById('waComposeSendBtn').addEventListener('click', async ()=>{
   if(!waConvSelecionada) return;
   const textarea = document.getElementById('waComposeText');
