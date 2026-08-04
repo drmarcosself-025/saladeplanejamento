@@ -86,6 +86,10 @@
   .wa-thread-compose textarea{ flex:1; resize:none; }
   .wa-crm-contact{ padding:18px; overflow-y:auto; }
   #waThreadBox{ display:flex; flex-direction:column; height:100%; }
+  /* Estado vazio/carregando ilustrado da Central de WhatsApp — classe nova,
+     não mexe em ".empty" (usada em várias outras telas do sistema). */
+  .wa-empty-state{ text-align:center; padding:40px 20px; color:var(--muted); font-size:14.5px; }
+  .wa-empty-state svg{ display:block; margin:0 auto 10px; opacity:.5; }
   @media(max-width:900px){
     .wa-crm{ grid-template-columns:1fr; height:auto; }
     .wa-crm-list, .wa-crm-thread, .wa-crm-contact{ border:none; border-bottom:1px solid var(--line); }
@@ -343,7 +347,7 @@
         <div id="waConvList" class="wa-conv-list"></div>
       </div>
       <div class="wa-crm-thread">
-        <div id="waThreadEmpty" class="empty" style="padding:60px 20px;">Suas conversas aparecerão aqui.</div>
+        <div id="waThreadEmpty" class="wa-empty-state" style="padding:60px 20px;">Suas conversas aparecerão aqui.</div>
         <div id="waThreadBox" style="display:none;">
           <div class="wa-thread-header">
             <div id="waThreadAvatar"></div>
@@ -360,7 +364,7 @@
         </div>
       </div>
       <div class="wa-crm-contact">
-        <div class="empty" id="waContactEmpty">Nenhuma conversa selecionada.</div>
+        <div class="wa-empty-state" id="waContactEmpty"><svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M2.5 20c0-3.4 2.9-6 6.5-6s6.5 2.6 6.5 6"/><circle cx="17.5" cy="9" r="2.4"/><path d="M15.8 14.3c2.7.4 4.7 2.5 4.7 5.2"/></svg>Nenhuma conversa selecionada.</div>
         <div id="waContactBox" style="display:none;">
           <div class="section-label">Contato</div>
           <div class="lead-name" id="waContactNome">—</div>
@@ -624,6 +628,10 @@ const ICON_PHONE = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" 
 const ICON_TRASH = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/></svg>';
 const ICON_PIN = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-6.1 7-11a7 7 0 1 0-14 0c0 4.9 7 11 7 11Z"/><circle cx="12" cy="10" r="2.4"/></svg>';
 const ICON_WARN = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4"/><path d="M10.3 3.9 1.8 18a1.6 1.6 0 0 0 1.4 2.4h17.6a1.6 1.6 0 0 0 1.4-2.4L13.7 3.9a1.6 1.6 0 0 0-2.8 0Z"/><circle cx="12" cy="16.3" r=".2" fill="currentColor"/></svg>';
+// Ícone maior (balão de conversa) usado nos estados vazio/carregando da
+// Central de WhatsApp — mesmo desenho do ícone da aba "WhatsApp" na barra
+// lateral, só que em tamanho ilustrativo.
+const ICON_WA_CHAT = '<svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4.5h16v12H9.5L5 20v-3.5H4z"/></svg>';
 // Escapa texto vindo do banco (nome de paciente, obs, e principalmente o
 // nome de exibição do WhatsApp — que qualquer pessoa de fora pode definir
 // mandando mensagem pro número da clínica) antes de inserir em innerHTML,
@@ -1079,9 +1087,17 @@ async function renderWaThrottleStatus(){
 let WA_CONVERSAS = [];
 let waConvSelecionada = null;
 let waConvBusca = '';
+// Só mostra "Carregando conversas..." na primeiríssima vez que a lista é
+// buscada nesta sessão — depois disso o poll/realtime atualiza por baixo
+// dos panos sem piscar a tela a cada 25s.
+let waConversasCarregadasUmaVez = false;
 document.getElementById('waConvBusca').addEventListener('input', (e)=>{ waConvBusca = e.target.value.trim().toLowerCase(); renderWaConvList(); });
 async function renderWaConversations(){
+  if(!waConversasCarregadasUmaVez){
+    document.getElementById('waConvList').innerHTML = `<div class="wa-empty-state">${ICON_WA_CHAT}<span>Carregando conversas...</span></div>`;
+  }
   const { data, error } = await sb.from('wa_messages').select('*').order('created_at', { ascending: true });
+  waConversasCarregadasUmaVez = true;
   const errBox = document.getElementById('waConvError');
   if(error){
     console.error('[WhatsApp] falha ao carregar wa_messages:', error);
@@ -1158,7 +1174,7 @@ function renderWaConvList(){
   const box = document.getElementById('waConvList');
   let list = WA_CONVERSAS;
   if(waConvBusca){ const digitsBusca = waConvBusca.replace(/\D/g,''); list = list.filter(c => (c.nome_contato||'').toLowerCase().includes(waConvBusca) || (digitsBusca && c.telefone.includes(digitsBusca))); }
-  if(!list.length){ box.innerHTML = '<div class="empty">Nenhuma conversa encontrada.</div>'; return; }
+  if(!list.length){ box.innerHTML = `<div class="wa-empty-state">${ICON_WA_CHAT}<span>Nenhuma conversa encontrada.</span></div>`; return; }
   box.innerHTML = list.map(c=>{
     const ultima = c.mensagens[c.mensagens.length-1];
     const hora = ultima ? new Date(ultima.created_at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '';
@@ -1182,7 +1198,8 @@ function renderWaConvList(){
   });
 }
 function renderWaThreadEmpty(){
-  document.getElementById('waThreadEmpty').textContent = WA_CONVERSAS.length ? 'Selecione uma conversa para iniciar o atendimento.' : 'Suas conversas aparecerão aqui.';
+  const msg = WA_CONVERSAS.length ? 'Selecione uma conversa para iniciar o atendimento.' : 'Suas conversas aparecerão aqui.';
+  document.getElementById('waThreadEmpty').innerHTML = ICON_WA_CHAT + '<span>' + esc(msg) + '</span>';
   document.getElementById('waThreadEmpty').style.display = 'block';
   document.getElementById('waThreadBox').style.display = 'none';
   document.getElementById('waContactEmpty').style.display = 'block';
