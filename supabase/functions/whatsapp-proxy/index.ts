@@ -67,9 +67,12 @@ function json(body: unknown, status = 200) {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
-  const EVOLUTION_API_URL = Deno.env.get("EVOLUTION_API_URL") ?? "";
-  const EVOLUTION_API_KEY = Deno.env.get("EVOLUTION_API_KEY") ?? "";
-  const EVOLUTION_INSTANCE = Deno.env.get("EVOLUTION_INSTANCE") ?? "consultorio";
+  const EVOLUTION_API_URL = (Deno.env.get("EVOLUTION_API_URL") ?? "").trim().replace(/\/+$/, "");
+  const EVOLUTION_API_KEY = (Deno.env.get("EVOLUTION_API_KEY") ?? "").trim();
+  // .trim() aqui é de propósito: um espaço a mais no segredo (fácil de
+  // acontecer colando no painel do Supabase) faz a URL da instância virar
+  // outro nome pra Evolution API e a chamada dar 404 sem nenhuma pista clara.
+  const EVOLUTION_INSTANCE = (Deno.env.get("EVOLUTION_INSTANCE") ?? "consultorio").trim();
 
   if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
     return json({ error: "Evolution API ainda não configurada nos segredos da function." }, 500);
@@ -168,12 +171,26 @@ Deno.serve(async (req) => {
       }
 
       const digits = toWhatsappDigits(number);
+      const startedAt = Date.now();
       const r = await fetch(`${EVOLUTION_API_URL}/message/sendText/${EVOLUTION_INSTANCE}`, {
         method: "POST",
         headers,
         body: JSON.stringify({ number: digits, text }),
       });
       const respBody = await r.json();
+      // Log estruturado (aba "Logs" da function no Supabase) — nunca o
+      // número completo nem o texto da mensagem, só o suficiente pra
+      // diagnosticar (status, tempo, ack/status da Evolution).
+      console.log(JSON.stringify({
+        event: "whatsapp_send_text",
+        instance: EVOLUTION_INSTANCE,
+        numero_final: digits.slice(-4),
+        status_http: r.status,
+        elapsed_ms: Date.now() - startedAt,
+        ack_status: respBody?.status ?? respBody?.message?.[0]?.status ?? null,
+        message_id: respBody?.key?.id ?? null,
+        exists_check: respBody?.response?.message?.[0]?.exists ?? null,
+      }));
       if (r.ok) {
         // Grava aqui (no servidor), não no navegador — assim o histórico
         // fica correto mesmo se o navegador do atendente fechar ou cair
