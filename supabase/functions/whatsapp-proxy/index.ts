@@ -64,6 +64,45 @@ function json(body: unknown, status = 200) {
   });
 }
 
+// Protege qualquer envio (texto ou mídia) contra bloqueio do WhatsApp por
+// volume/ritmo suspeito. Reforçada aqui no servidor porque qualquer sessão
+// válida poderia chamar a ação direto, sem passar pela checagem que também
+// existe no navegador.
+async function checarThrottle(supabase: any): Promise<{ ok: true } | { ok: false; error: string }> {
+  const { data: cfg } = await supabase
+    .from("config")
+    .select("wa_intervalo_min_seg, wa_intervalo_max_seg, wa_limite_hora, wa_limite_dia")
+    .eq("id", 1)
+    .single();
+  const minSeg = cfg?.wa_intervalo_min_seg ?? 20;
+  const maxSeg = Math.max(minSeg, cfg?.wa_intervalo_max_seg ?? 50);
+  const limiteHora = cfg?.wa_limite_hora ?? 30;
+  const limiteDia = cfg?.wa_limite_dia ?? 120;
+
+  const umDiaAtras = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const { data: logs } = await supabase
+    .from("wa_send_log")
+    .select("created_at")
+    .gte("created_at", umDiaAtras)
+    .order("created_at", { ascending: false });
+
+  if (logs && logs.length) {
+    const ultimoEnvio = new Date(logs[0].created_at).getTime();
+    const esperar = (minSeg + Math.random() * (maxSeg - minSeg)) * 1000;
+    if (Date.now() - ultimoEnvio < esperar) {
+      return { ok: false, error: "Aguarde antes da próxima mensagem (proteção contra bloqueio do WhatsApp)." };
+    }
+    const umaHoraAtras = Date.now() - 60 * 60 * 1000;
+    if (logs.filter((l: { created_at: string }) => new Date(l.created_at).getTime() > umaHoraAtras).length >= limiteHora) {
+      return { ok: false, error: `Limite de ${limiteHora} mensagens por hora atingido.` };
+    }
+    if (logs.length >= limiteDia) {
+      return { ok: false, error: `Limite de ${limiteDia} mensagens no dia atingido.` };
+    }
+  }
+  return { ok: true };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -138,37 +177,8 @@ Deno.serve(async (req) => {
       // checagem de intervalo/limite que existe no navegador. Por isso a
       // política anti-bloqueio é reforçada aqui também, no servidor, e não
       // só no index.html.
-      const { data: cfg } = await supabase
-        .from("config")
-        .select("wa_intervalo_min_seg, wa_intervalo_max_seg, wa_limite_hora, wa_limite_dia")
-        .eq("id", 1)
-        .single();
-      const minSeg = cfg?.wa_intervalo_min_seg ?? 20;
-      const maxSeg = Math.max(minSeg, cfg?.wa_intervalo_max_seg ?? 50);
-      const limiteHora = cfg?.wa_limite_hora ?? 30;
-      const limiteDia = cfg?.wa_limite_dia ?? 120;
-
-      const umDiaAtras = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-      const { data: logs } = await supabase
-        .from("wa_send_log")
-        .select("created_at")
-        .gte("created_at", umDiaAtras)
-        .order("created_at", { ascending: false });
-
-      if (logs && logs.length) {
-        const ultimoEnvio = new Date(logs[0].created_at).getTime();
-        const esperar = (minSeg + Math.random() * (maxSeg - minSeg)) * 1000;
-        if (Date.now() - ultimoEnvio < esperar) {
-          return json({ error: "Aguarde antes da próxima mensagem (proteção contra bloqueio do WhatsApp)." }, 429);
-        }
-        const umaHoraAtras = Date.now() - 60 * 60 * 1000;
-        if (logs.filter((l: { created_at: string }) => new Date(l.created_at).getTime() > umaHoraAtras).length >= limiteHora) {
-          return json({ error: `Limite de ${limiteHora} mensagens por hora atingido.` }, 429);
-        }
-        if (logs.length >= limiteDia) {
-          return json({ error: `Limite de ${limiteDia} mensagens no dia atingido.` }, 429);
-        }
-      }
+      const throttle = await checarThrottle(supabase);
+      if (!throttle.ok) return json({ error: throttle.error }, 429);
 
       const digits = toWhatsappDigits(number);
       const startedAt = Date.now();
@@ -199,6 +209,74 @@ Deno.serve(async (req) => {
         await supabase.from("wa_send_log").insert({ telefone: digits, nome: nome ?? null, created_by: user.email ?? null });
         await supabase.from("wa_messages").insert({
           telefone: digits, nome_contato: nome ?? null, direcao: "enviada", texto: text,
+          wa_message_id: waMessageId, created_by: user.email ?? null,
+        });
+      }
+      return json(respBody, r.status);
+    }
+
+    if (action === "send-media") {
+      // Foto/vídeo/documento escolhido pelo atendente no painel: o navegador
+      // já subiu o arquivo pro bucket privado "wa-media" (usando a própria
+      // sessão autenticada) antes de chamar esta ação — aqui só baixamos de
+      // volta (com a service role, que sempre pode ler o bucket) e mandamos
+      // pra Evolution API em base64, do jeito que /message/sendMedia espera
+      // nas versões atuais (v2.x) — mesma ressalva de sempre: sem acesso à
+      // instância real pra confirmar, então o erro da Evolution API volta
+      // inteiro pra tela em vez de ser escondido.
+      const { number, path, mediatype, mimetype, fileName, caption, nome } = params as {
+        number?: string; path?: string; mediatype?: string; mimetype?: string;
+        fileName?: string; caption?: string; nome?: string;
+      };
+      if (!number || !path || !mediatype) return json({ error: "Faltou número, arquivo ou tipo de mídia." }, 400);
+      if (!["image", "video", "document"].includes(mediatype)) {
+        return json({ error: "Tipo de mídia não suportado ainda (use image, video ou document)." }, 400);
+      }
+      const throttle = await checarThrottle(supabase);
+      if (!throttle.ok) return json({ error: throttle.error }, 429);
+
+      const { data: fileBlob, error: downloadError } = await supabase.storage.from("wa-media").download(path);
+      if (downloadError || !fileBlob) {
+        return json({ error: "Não achei o arquivo enviado no Storage: " + (downloadError?.message ?? "desconhecido") }, 404);
+      }
+      const bytes = new Uint8Array(await fileBlob.arrayBuffer());
+      let binary = "";
+      for (let i = 0; i < bytes.length; i += 0x8000) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      }
+      const base64 = btoa(binary);
+
+      const digits = toWhatsappDigits(number);
+      const startedAt = Date.now();
+      const r = await fetch(`${EVOLUTION_API_URL}/message/sendMedia/${EVOLUTION_INSTANCE}`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          number: digits,
+          mediatype,
+          mimetype: mimetype || undefined,
+          fileName: fileName || undefined,
+          caption: caption || undefined,
+          media: base64,
+        }),
+      });
+      const respBody = await r.json();
+      console.log(JSON.stringify({
+        event: "whatsapp_send_media",
+        instance: EVOLUTION_INSTANCE,
+        numero_final: digits.slice(-4),
+        mediatype,
+        status_http: r.status,
+        elapsed_ms: Date.now() - startedAt,
+        message_id: respBody?.key?.id ?? null,
+      }));
+      if (r.ok) {
+        const waMessageId: string | null = respBody?.key?.id ?? null;
+        const tipo = mediatype === "image" ? "imagem" : mediatype === "video" ? "video" : "documento";
+        await supabase.from("wa_send_log").insert({ telefone: digits, nome: nome ?? null, created_by: user.email ?? null });
+        await supabase.from("wa_messages").insert({
+          telefone: digits, nome_contato: nome ?? null, direcao: "enviada", texto: caption || "", tipo,
+          media_path: path, media_mime: mimetype ?? null,
           wa_message_id: waMessageId, created_by: user.email ?? null,
         });
       }

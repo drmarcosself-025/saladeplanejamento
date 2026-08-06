@@ -287,6 +287,30 @@ drop index if exists public.wa_messages_wa_message_id_idx;
 alter table public.wa_messages drop constraint if exists wa_messages_wa_message_id_key;
 alter table public.wa_messages add constraint wa_messages_wa_message_id_key unique (wa_message_id);
 create index if not exists wa_messages_telefone_idx on public.wa_messages (telefone, created_at desc);
+-- media_path: caminho do arquivo dentro do bucket privado "wa-media" (não é
+-- uma URL pública — a tela gera um link assinado e temporário na hora de
+-- exibir). media_mime: tipo do arquivo (ex.: image/jpeg), usado pra escolher
+-- como renderizar (imagem, vídeo, player de áudio ou link de documento).
+alter table public.wa_messages add column if not exists media_path text;
+alter table public.wa_messages add column if not exists media_mime text;
+
+-- ============================================================
+-- STORAGE: bucket privado pra fotos/vídeos/áudios/documentos trocados no
+-- WhatsApp (dado de paciente — por isso privado, nunca público). Só quem
+-- está autenticado no painel consegue ler (via link assinado, temporário)
+-- ou enviar arquivo pra esse bucket.
+-- ============================================================
+insert into storage.buckets (id, name, public)
+values ('wa-media', 'wa-media', false)
+on conflict (id) do nothing;
+
+drop policy if exists "wa_media_select" on storage.objects;
+create policy "wa_media_select" on storage.objects for select to authenticated
+  using (bucket_id = 'wa-media');
+
+drop policy if exists "wa_media_insert" on storage.objects;
+create policy "wa_media_insert" on storage.objects for insert to authenticated
+  with check (bucket_id = 'wa-media');
 
 -- ============================================================
 -- CRM_SEGMENTADOS (mapa próprio de contatos segmentados pelo WhatsApp —
