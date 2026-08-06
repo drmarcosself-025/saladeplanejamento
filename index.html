@@ -82,8 +82,13 @@
   .wa-msg.recebida{ align-self:flex-start; background:#fff; border-bottom-left-radius:4px; }
   .wa-msg.enviada{ align-self:flex-end; background:var(--green-bg); border-bottom-right-radius:4px; }
   .wa-msg .hora{ font-size:10px; color:var(--muted); margin-top:3px; display:block; text-align:right; }
-  .wa-thread-compose{ display:flex; gap:10px; padding:14px; border-top:1px solid var(--line); }
+  .wa-thread-compose{ display:flex; gap:10px; padding:14px; border-top:1px solid var(--line); position:relative; }
   .wa-thread-compose textarea{ flex:1; resize:none; }
+  .wa-emoji-btn{ font-size:18px; line-height:1; padding:0 10px; }
+  .wa-emoji-panel{ position:absolute; bottom:64px; left:14px; width:260px; max-height:220px; overflow-y:auto; background:#fff; border:1px solid var(--line); border-radius:10px; box-shadow:var(--shadow-md,0 6px 20px rgba(0,0,0,.15)); padding:8px; display:none; grid-template-columns:repeat(8,1fr); gap:2px; z-index:20; }
+  .wa-emoji-panel.open{ display:grid; }
+  .wa-emoji-panel button{ background:none; border:none; cursor:pointer; font-size:19px; padding:4px; border-radius:6px; line-height:1; }
+  .wa-emoji-panel button:hover{ background:var(--bg); }
   .wa-crm-contact{ padding:18px; overflow-y:auto; }
   #waThreadBox{ display:flex; flex-direction:column; height:100%; }
   /* Estado vazio/carregando ilustrado da Central de WhatsApp — classe nova,
@@ -361,6 +366,8 @@
           </div>
           <div class="wa-thread-messages" id="waThreadMessages"></div>
           <div class="wa-thread-compose">
+            <button class="btn small secondary wa-emoji-btn" id="waEmojiBtn" type="button" title="Emoji">😊</button>
+            <div class="wa-emoji-panel" id="waEmojiPanel"></div>
             <textarea id="waComposeText" rows="2" placeholder="Digite uma mensagem..."></textarea>
             <div style="display:flex; flex-direction:column; gap:6px;">
               <button class="btn" id="waComposeSendBtn">Enviar</button>
@@ -1280,6 +1287,25 @@ document.getElementById('waContactSalvarTelBtn').addEventListener('click', async
   waConvSelecionada = novoTelefone.replace(/\D/g,'');
   await renderWaConversations();
 });
+const WA_EMOJIS = ['😀','😁','😂','🤣','😊','😉','😍','😘','😎','🤔','😅','😴','😢','😭','😡','🙏','👍','👎','👏','🙌','💪','🤝','❤️','💙','💚','💛','🧡','💜','🖤','✨','🎉','🔥','⭐','✅','❌','⚠️','📅','⏰','📞','📌'];
+(function initWaEmojiPicker(){
+  const panel = document.getElementById('waEmojiPanel');
+  const btn = document.getElementById('waEmojiBtn');
+  panel.innerHTML = WA_EMOJIS.map(e=>`<button type="button" data-emoji="${e}">${e}</button>`).join('');
+  btn.addEventListener('click', (ev)=>{ ev.stopPropagation(); panel.classList.toggle('open'); });
+  panel.addEventListener('click', (ev)=>{
+    const emojiBtn = ev.target.closest('button[data-emoji]');
+    if(!emojiBtn) return;
+    const textarea = document.getElementById('waComposeText');
+    const start = textarea.selectionStart ?? textarea.value.length;
+    const end = textarea.selectionEnd ?? textarea.value.length;
+    textarea.value = textarea.value.slice(0, start) + emojiBtn.dataset.emoji + textarea.value.slice(end);
+    const cursor = start + emojiBtn.dataset.emoji.length;
+    textarea.focus();
+    textarea.setSelectionRange(cursor, cursor);
+  });
+  document.addEventListener('click', (ev)=>{ if(!panel.contains(ev.target) && ev.target!==btn) panel.classList.remove('open'); });
+})();
 document.getElementById('waComposeSendBtn').addEventListener('click', async ()=>{
   if(!waConvSelecionada) return;
   const textarea = document.getElementById('waComposeText');
