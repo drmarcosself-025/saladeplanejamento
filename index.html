@@ -82,8 +82,20 @@
   .wa-msg.recebida{ align-self:flex-start; background:#fff; border-bottom-left-radius:4px; }
   .wa-msg.enviada{ align-self:flex-end; background:var(--green-bg); border-bottom-right-radius:4px; }
   .wa-msg .hora{ font-size:10px; color:var(--muted); margin-top:3px; display:block; text-align:right; }
-  .wa-thread-compose{ display:flex; gap:10px; padding:14px; border-top:1px solid var(--line); }
+  .wa-msg-media .wa-media-slot img, .wa-msg-media .wa-media-slot video{ display:block; max-width:100%; max-height:260px; border-radius:8px; }
+  .wa-msg-media .wa-media-slot img.wa-sticker{ max-height:130px; background:none; }
+  .wa-msg-media .wa-media-slot audio{ display:block; max-width:220px; }
+  .wa-msg-media .wa-media-caption{ margin-top:6px; }
+  .wa-media-loading, .wa-media-erro{ font-size:12px; color:var(--muted); font-style:italic; }
+  .wa-doc-link{ display:inline-flex; align-items:center; gap:6px; color:inherit; text-decoration:underline; }
+  .wa-attach-btn{ font-size:16px; line-height:1; padding:0 10px; }
+  .wa-thread-compose{ display:flex; gap:10px; padding:14px; border-top:1px solid var(--line); position:relative; }
   .wa-thread-compose textarea{ flex:1; resize:none; }
+  .wa-emoji-btn{ font-size:18px; line-height:1; padding:0 10px; }
+  .wa-emoji-panel{ position:absolute; bottom:64px; left:14px; width:260px; max-height:220px; overflow-y:auto; background:#fff; border:1px solid var(--line); border-radius:10px; box-shadow:var(--shadow-md,0 6px 20px rgba(0,0,0,.15)); padding:8px; display:none; grid-template-columns:repeat(8,1fr); gap:2px; z-index:20; }
+  .wa-emoji-panel.open{ display:grid; }
+  .wa-emoji-panel button{ background:none; border:none; cursor:pointer; font-size:19px; padding:4px; border-radius:6px; line-height:1; }
+  .wa-emoji-panel button:hover{ background:var(--bg); }
   .wa-crm-contact{ padding:18px; overflow-y:auto; }
   #waThreadBox{ display:flex; flex-direction:column; height:100%; }
   /* Estado vazio/carregando ilustrado da Central de WhatsApp — classe nova,
@@ -361,6 +373,10 @@
           </div>
           <div class="wa-thread-messages" id="waThreadMessages"></div>
           <div class="wa-thread-compose">
+            <button class="btn small secondary wa-emoji-btn" id="waEmojiBtn" type="button" title="Emoji">😊</button>
+            <div class="wa-emoji-panel" id="waEmojiPanel"></div>
+            <button class="btn small secondary wa-attach-btn" id="waAttachBtn" type="button" title="Anexar foto, vídeo ou documento">📎</button>
+            <input type="file" id="waAttachInput" accept="image/*,video/*,.pdf,.doc,.docx" style="display:none;">
             <textarea id="waComposeText" rows="2" placeholder="Digite uma mensagem..."></textarea>
             <div style="display:flex; flex-direction:column; gap:6px;">
               <button class="btn" id="waComposeSendBtn">Enviar</button>
@@ -1203,6 +1219,35 @@ function renderWaConvList(){
     });
   });
 }
+async function waCarregarMidias(box){
+  const slots = [...box.querySelectorAll('.wa-media-slot')];
+  if(!slots.length) return;
+  const paths = slots.map(s=>s.dataset.mediaPath);
+  const { data, error } = await sb.storage.from('wa-media').createSignedUrls(paths, 3600);
+  if(error){
+    slots.forEach(s=> s.innerHTML = '<span class="wa-media-erro">Não foi possível carregar o anexo.</span>');
+    return;
+  }
+  slots.forEach((slot, i)=>{
+    const info = data[i];
+    if(!info || info.error || !info.signedUrl){ slot.innerHTML = '<span class="wa-media-erro">Anexo indisponível.</span>'; return; }
+    const url = info.signedUrl;
+    const mime = slot.dataset.mediaMime || '';
+    const tipo = slot.dataset.tipo;
+    if(tipo==='imagem' || mime.startsWith('image/')){
+      slot.innerHTML = `<img src="${url}" alt="Imagem" loading="lazy">`;
+    } else if(tipo==='figurinha'){
+      slot.innerHTML = `<img src="${url}" alt="Figurinha" class="wa-sticker" loading="lazy">`;
+    } else if(tipo==='video' || mime.startsWith('video/')){
+      slot.innerHTML = `<video src="${url}" controls></video>`;
+    } else if(tipo==='audio' || mime.startsWith('audio/')){
+      slot.innerHTML = `<audio src="${url}" controls></audio>`;
+    } else {
+      const nome = slot.dataset.mediaPath.split('/').pop();
+      slot.innerHTML = `<a href="${url}" target="_blank" rel="noopener" class="wa-doc-link">📄 ${esc(nome)}</a>`;
+    }
+  });
+}
 function renderWaThreadEmpty(){
   const msg = WA_CONVERSAS.length ? 'Selecione uma conversa para iniciar o atendimento.' : 'Suas conversas aparecerão aqui.';
   document.getElementById('waThreadEmpty').innerHTML = ICON_WA_CHAT + '<span>' + esc(msg) + '</span>';
@@ -1211,15 +1256,27 @@ function renderWaThreadEmpty(){
   document.getElementById('waContactEmpty').style.display = 'block';
   document.getElementById('waContactBox').style.display = 'none';
 }
-function renderWaThread(conv){
+async function renderWaThread(conv){
   document.getElementById('waThreadEmpty').style.display = 'none';
   document.getElementById('waThreadBox').style.display = 'flex';
   document.getElementById('waThreadAvatar').innerHTML = waAvatarHTML(conv.nome_contato, conv.telefone);
   document.getElementById('waThreadNome').textContent = conv.nome_contato || conv.telefone;
   document.getElementById('waThreadTelefone').textContent = conv.telefone;
   const box = document.getElementById('waThreadMessages');
-  box.innerHTML = conv.mensagens.map(m=>`<div class="wa-msg ${m.direcao}">${(m.texto||'').replace(/</g,'&lt;')}<span class="hora">${new Date(m.created_at).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</span></div>`).join('');
+  box.innerHTML = conv.mensagens.map(m=>{
+    const hora = `<span class="hora">${new Date(m.created_at).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</span>`;
+    const legenda = (m.texto||'').replace(/</g,'&lt;');
+    if(m.media_path){
+      return `<div class="wa-msg ${m.direcao} wa-msg-media">
+        <div class="wa-media-slot" data-media-path="${esc(m.media_path)}" data-media-mime="${esc(m.media_mime||'')}" data-tipo="${esc(m.tipo||'')}"><span class="wa-media-loading">Carregando anexo...</span></div>
+        ${legenda?`<div class="wa-media-caption">${legenda}</div>`:''}
+        ${hora}
+      </div>`;
+    }
+    return `<div class="wa-msg ${m.direcao}">${legenda}${hora}</div>`;
+  }).join('');
   box.scrollTop = box.scrollHeight;
+  await waCarregarMidias(box);
   renderWaContact(conv);
 }
 async function renderWaContact(conv){
@@ -1280,6 +1337,25 @@ document.getElementById('waContactSalvarTelBtn').addEventListener('click', async
   waConvSelecionada = novoTelefone.replace(/\D/g,'');
   await renderWaConversations();
 });
+const WA_EMOJIS = ['😀','😁','😂','🤣','😊','😉','😍','😘','😎','🤔','😅','😴','😢','😭','😡','🙏','👍','👎','👏','🙌','💪','🤝','❤️','💙','💚','💛','🧡','💜','🖤','✨','🎉','🔥','⭐','✅','❌','⚠️','📅','⏰','📞','📌'];
+(function initWaEmojiPicker(){
+  const panel = document.getElementById('waEmojiPanel');
+  const btn = document.getElementById('waEmojiBtn');
+  panel.innerHTML = WA_EMOJIS.map(e=>`<button type="button" data-emoji="${e}">${e}</button>`).join('');
+  btn.addEventListener('click', (ev)=>{ ev.stopPropagation(); panel.classList.toggle('open'); });
+  panel.addEventListener('click', (ev)=>{
+    const emojiBtn = ev.target.closest('button[data-emoji]');
+    if(!emojiBtn) return;
+    const textarea = document.getElementById('waComposeText');
+    const start = textarea.selectionStart ?? textarea.value.length;
+    const end = textarea.selectionEnd ?? textarea.value.length;
+    textarea.value = textarea.value.slice(0, start) + emojiBtn.dataset.emoji + textarea.value.slice(end);
+    const cursor = start + emojiBtn.dataset.emoji.length;
+    textarea.focus();
+    textarea.setSelectionRange(cursor, cursor);
+  });
+  document.addEventListener('click', (ev)=>{ if(!panel.contains(ev.target) && ev.target!==btn) panel.classList.remove('open'); });
+})();
 document.getElementById('waComposeSendBtn').addEventListener('click', async ()=>{
   if(!waConvSelecionada) return;
   const textarea = document.getElementById('waComposeText');
@@ -1308,6 +1384,54 @@ document.getElementById('waComposeSendBtn').addEventListener('click', async ()=>
     waSendBusy = false;
     btn.disabled = false;
     btn.textContent = originalLabel;
+  }
+});
+document.getElementById('waAttachBtn').addEventListener('click', ()=>{
+  if(!waConvSelecionada){ showToast('Selecione uma conversa primeiro.'); return; }
+  document.getElementById('waAttachInput').click();
+});
+document.getElementById('waAttachInput').addEventListener('change', async (ev)=>{
+  const file = ev.target.files[0];
+  ev.target.value = '';
+  if(!file || !waConvSelecionada) return;
+  if(waSendBusy){ showToast('Aguarde, processando o envio anterior...'); return; }
+  const MAX_MB = 16;
+  if(file.size > MAX_MB * 1024 * 1024){ showToast(`Arquivo muito grande (máx. ${MAX_MB}MB).`); return; }
+  const mediatype = file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : 'document';
+  const conv = WA_CONVERSAS.find(c=>c.telefone===waConvSelecionada);
+  const textarea = document.getElementById('waComposeText');
+  const caption = textarea.value.trim();
+  const attachBtn = document.getElementById('waAttachBtn');
+  const sendBtn = document.getElementById('waComposeSendBtn');
+  const originalAttachLabel = attachBtn.textContent;
+  waSendBusy = true;
+  attachBtn.disabled = true;
+  sendBtn.disabled = true;
+  attachBtn.textContent = '...';
+  try {
+    const check = await waThrottleCheck();
+    if(!check.ok){ showToast(check.message); return; }
+    // Sobe primeiro pro Storage (sessão autenticada do próprio atendente) —
+    // o whatsapp-proxy só baixa de volta (com a service role) e repassa
+    // pra Evolution API, então nunca precisa receber o arquivo bruto direto.
+    const path = `${waConvSelecionada}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g,'_')}`;
+    const { error: uploadError } = await sb.storage.from('wa-media').upload(path, file, { contentType: file.type || undefined });
+    if(uploadError){ showToast('Erro ao enviar arquivo: ' + uploadError.message); return; }
+    const r = await waCall('send-media', {
+      number: waConvSelecionada, path, mediatype,
+      mimetype: file.type || undefined, fileName: file.name,
+      caption: caption || undefined, nome: conv?.nome_contato,
+    });
+    if(r.error){ showToast('Erro ao enviar: ' + r.error); return; }
+    textarea.value = '';
+    await renderWaConversations();
+    renderWaThrottleStatus();
+    showToast('Anexo enviado.');
+  } finally {
+    waSendBusy = false;
+    attachBtn.disabled = false;
+    sendBtn.disabled = false;
+    attachBtn.textContent = originalAttachLabel;
   }
 });
 // Botão secundário: continua abrindo o WhatsApp Web pra envio manual
