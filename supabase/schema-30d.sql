@@ -1,10 +1,11 @@
 -- Projeto Marcos 30D — schema do módulo pessoal (Supabase)
--- Aditivo e isolado: não altera nenhuma tabela do painel da clínica
--- (schema.sql). Roda no mesmo projeto Supabase, mesma auth — só cria
--- tabelas novas, todas prefixadas "p30_" e protegidas por RLS por
--- usuário (auth.uid()), diferente das tabelas da clínica que são
--- compartilhadas por toda a equipe. Ninguém além do próprio usuário
--- lê ou escreve nas linhas dele.
+-- Roda num projeto Supabase PRÓPRIO, separado do painel da clínica
+-- (schema.sql fica no projeto "CRM D'OR ODONTOLOGIA"; este arquivo roda
+-- no projeto pessoal "maison-dor-painel"). Cria as tabelas "p30_",
+-- protegidas por RLS por usuário (auth.uid()) — como o projeto já é
+-- outro, isso é isolamento em dobro: nem o banco é compartilhado, e
+-- ainda assim ninguém além do próprio usuário lê ou escreve nas
+-- linhas dele.
 --
 -- Este arquivo cobre só a fundação da Fase 2: ciclo de 30 dias, tarefas,
 -- captura progressiva, rotinas por dia da semana, hábitos, metas/etapas
