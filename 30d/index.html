@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0e0d0c">
+<title>Projeto Marcos 30D — Hoje</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+<div id="loadingScreen" class="loading-screen"><span class="spinner"></span> Carregando seu dia…</div>
+
+<!-- ============================================================
+     LOGIN — mesma auth do painel da clínica (mesmo projeto Supabase),
+     mas os dados daqui (tabelas p30_*) são privados por usuário.
+     ============================================================ -->
+<div id="authScreen" class="auth-screen" hidden>
+  <div class="auth-brand">
+    <span class="mark">Projeto Marcos</span>
+    <h1 class="serif">30 Dias<span class="accent">.</span></h1>
+    <p>Seu painel pessoal de foco, hábitos e evolução.</p>
+  </div>
+  <div class="auth-card">
+    <div class="auth-tabs">
+      <button id="authTabEntrar" class="active">Entrar</button>
+      <button id="authTabCriar">Criar conta</button>
+    </div>
+    <label>E-mail</label>
+    <input type="email" id="authEmail" placeholder="seuemail@exemplo.com" autocomplete="email">
+    <label>Senha</label>
+    <input type="password" id="authSenha" placeholder="Mínimo 6 caracteres" autocomplete="current-password">
+    <button class="btn primary" style="width:100%; margin-top:18px;" id="authSubmitBtn">Entrar</button>
+    <div style="display:flex; align-items:center; gap:10px; margin:16px 0; color:var(--sand-faint); font-size:12.5px;">
+      <div style="flex:1; height:1px; background:var(--line);"></div>ou<div style="flex:1; height:1px; background:var(--line);"></div>
+    </div>
+    <button class="btn ghost" style="width:100%;" id="authGoogleBtn">Entrar com Google</button>
+    <p class="auth-error" id="authError"></p>
+  </div>
+  <p class="auth-help">Mesmo login do painel da clínica — mas seus dados pessoais aqui só você vê.</p>
+</div>
+
+<!-- ============================================================
+     APP
+     ============================================================ -->
+<div id="appRoot" hidden>
+<div class="app">
+
+  <div class="error-banner" id="errorBanner" hidden>
+    <span id="errorBannerMsg">Não consegui carregar seus dados.</span>
+    <button id="errorRetryBtn">Tentar de novo</button>
+  </div>
+
+  <div class="head">
+    <div class="head-text">
+      <div class="eyebrow-row">
+        <span class="eyebrow" id="dateLabel">—</span>
+        <span class="cycle-chip" id="cycleChip">Dia — de 30</span>
+      </div>
+      <h1 id="greeting" class="serif">Carregando<span class="accent">.</span></h1>
+    </div>
+    <button class="icon-btn" id="settingsBtn" aria-label="Ajustes">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 13a7.6 7.6 0 0 0 0-2l1.9-1.5-1.9-3.3-2.3 1a7.7 7.7 0 0 0-1.7-1L15 3.5h-3.9l-.3 2.6a7.7 7.7 0 0 0-1.7 1l-2.3-1-2 3.3L6.7 11a7.6 7.6 0 0 0 0 2l-1.9 1.5 2 3.3 2.3-1a7.7 7.7 0 0 0 1.7 1l.3 2.6H15l.3-2.6a7.7 7.7 0 0 0 1.7-1l2.3 1 1.9-3.3z"/></svg>
+    </button>
+  </div>
+
+  <div class="energy">
+    <span class="lab">Energia</span>
+    <div class="energy-group" id="energyGroup">
+      <button data-e="baixa">Baixa</button>
+      <button data-e="estavel" class="active">Estável</button>
+      <button data-e="alta">Alta</button>
+    </div>
+  </div>
+
+  <div class="info-chips" id="infoChips" hidden></div>
+
+  <div class="weekly-goal" id="weeklyGoal" hidden>
+    <span class="ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v6l4 2"/><circle cx="12" cy="12" r="9"/></svg></span>
+    <span class="body"><span class="eyebrow">Meta da semana</span><span class="title">—</span></span>
+    <span class="chev"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></span>
+  </div>
+
+  <div class="hero">
+    <div class="ring-wrap">
+      <svg viewBox="0 0 172 172">
+        <defs>
+          <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#c3a35f"/>
+            <stop offset="100%" stop-color="#8bb593"/>
+          </linearGradient>
+        </defs>
+        <circle cx="86" cy="86" r="74" fill="none" stroke="rgba(239,231,218,.08)" stroke-width="12"/>
+        <circle id="ringFg" cx="86" cy="86" r="74" fill="none" stroke="url(#ringGrad)" stroke-width="12"
+                stroke-linecap="round" stroke-dasharray="465" stroke-dashoffset="465"
+                style="transition:stroke-dashoffset 1s cubic-bezier(.22,1,.36,1);"/>
+      </svg>
+      <div class="ring-center">
+        <span class="pts tabular serif" id="ptsNow">0</span>
+        <span class="cap tabular" id="ptsCap">de 150 pontos</span>
+      </div>
+    </div>
+    <div class="hero-stats">
+      <div class="hero-stat streak"><span class="n tabular" id="streakNum">0</span><span class="l">Sequência</span></div>
+      <div class="hero-stat"><span class="n tabular" id="missionsNum">0/0</span><span class="l">Missões</span></div>
+      <div class="hero-stat"><span class="n tabular" id="habitsNum">0/0</span><span class="l">Hábitos</span></div>
+    </div>
+  </div>
+
+  <div class="section-head">
+    <h2>Três missões de hoje</h2>
+    <span class="hint">o resto pode esperar</span>
+  </div>
+  <div class="missions" id="missionsList"></div>
+  <div class="empty-state" id="missionsEmpty" hidden>Nenhuma missão escolhida ainda. Toque em "Reorganizar meu dia" para escolher até três.</div>
+
+  <div class="rest-banner" id="restBanner">
+    <span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12.5A8.5 8.5 0 1 1 11.5 4a7 7 0 0 0 8.5 8.5z"/></svg></span>
+    <p><b>Missões essenciais concluídas.</b> Agora sua próxima tarefa é desacelerar.</p>
+  </div>
+
+  <div class="habits" id="habitsBox">
+    <button class="habits-toggle" id="habitsToggle">
+      <span class="left"><span class="lab">Hábitos essenciais</span><span class="count" id="habitsCount">0 de 0</span></span>
+      <svg class="chev" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+    </button>
+    <div class="habits-list"><div class="habits-list-inner" id="habitsList"></div></div>
+  </div>
+
+  <div class="habits" id="routinesBox" hidden>
+    <button class="habits-toggle" id="routinesToggle">
+      <span class="left"><span class="lab" id="routinesTitle">Rotinas de hoje</span><span class="count" id="routinesCount">0 de 0</span></span>
+      <svg class="chev" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+    </button>
+    <div class="habits-list"><div class="habits-list-inner" id="routinesList"></div></div>
+  </div>
+
+  <div class="next" id="nextBox" hidden>
+    <span class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg></span>
+    <div class="body"><div class="time">—</div><div class="title">—</div></div>
+  </div>
+
+  <div class="actions">
+    <div class="actions-row">
+      <button class="btn ghost" id="captureBtn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+        Capturar
+      </button>
+      <button class="btn primary" id="endDayBtn">Encerrar meu dia</button>
+    </div>
+    <div class="actions-row" style="gap:16px; justify-content:center;">
+      <button class="btn text" id="reorganizeBtn">Reorganizar meu dia</button>
+      <button class="btn text" id="braindumpBtn">Estou com a cabeça cheia</button>
+    </div>
+  </div>
+
+</div>
+
+<div class="tabbar">
+  <div class="tabbar-inner">
+    <button class="tab active" data-tab="hoje">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>
+      <span class="lab">Hoje</span>
+    </button>
+    <button class="tab" data-tab="semana">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="17" height="16" rx="3"/><path d="M3.5 9.5h17M8 3v3M16 3v3"/></svg>
+      <span class="lab">Semana</span>
+    </button>
+    <button class="tab-fab" id="fabBtn" aria-label="Capturar pendência">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+    </button>
+    <button class="tab" data-tab="30dias">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v6l4 2"/><circle cx="12" cy="12" r="9"/></svg>
+      <span class="lab">30 Dias</span>
+    </button>
+  </div>
+</div>
+
+<div class="scrim" id="scrim"></div>
+
+<!-- ---------- captura progressiva ---------- -->
+<div class="sheet" id="sheetCapture">
+  <div class="sheet-grip"></div>
+  <h3>Capturar pendência</h3>
+  <label>O que precisa fazer?</label>
+  <input type="text" id="captureInput" placeholder="Ex.: comprar luvas e fios">
+  <label>Área</label>
+  <div class="chip-row" id="areaChips">
+    <button type="button" class="chip" data-a="corpo">Corpo</button>
+    <button type="button" class="chip" data-a="mente">Mente</button>
+    <button type="button" class="chip" data-a="consultorio">Consultório</button>
+    <button type="button" class="chip" data-a="futuro">Futuro</button>
+    <button type="button" class="chip" data-a="organizacao">Organização</button>
+  </div>
+  <div class="actions-row" id="captureStage1Actions" style="margin-top:18px;">
+    <button class="btn ghost" id="organizeBtn" type="button">Organizar agora</button>
+    <button class="btn primary" id="saveCaptureBtn" type="button">Salvar por agora</button>
+  </div>
+
+  <div class="stage2" id="captureStage2" hidden>
+    <label>Tipo</label>
+    <div class="chip-row" id="tipoChips">
+      <button type="button" class="chip active" data-tipo="tarefa">Tarefa</button>
+      <button type="button" class="chip" data-tipo="meta">Meta</button>
+      <button type="button" class="chip" data-tipo="ideia">Ideia</button>
+      <button type="button" class="chip" data-tipo="pensamento">Pensamento</button>
+      <button type="button" class="chip" data-tipo="preocupacao">Preocupação</button>
+      <button type="button" class="chip" data-tipo="aguardando">Aguardando</button>
+    </div>
+    <div class="field-row2">
+      <div><label>Prazo</label><input type="date" id="capPrazo"></div>
+      <div><label>Horário</label><input type="time" id="capHorario"></div>
+    </div>
+    <div class="field-row2">
+      <div><label>Duração (min)</label><input type="number" id="capDuracao" min="0" step="5" placeholder="Ex.: 45"></div>
+      <div>
+        <label>Prioridade</label>
+        <div class="chip-row" id="prioridadeChips">
+          <button type="button" class="chip" data-p="baixa">Baixa</button>
+          <button type="button" class="chip" data-p="normal">Normal</button>
+          <button type="button" class="chip" data-p="alta">Alta</button>
+        </div>
+      </div>
+    </div>
+    <label>Responsável</label>
+    <input type="text" id="capResponsavel" placeholder="Ex.: eu, SDR, fornecedor">
+    <label>Próxima ação</label>
+    <input type="text" id="capProximaAcao" placeholder="Ex.: abrir o documento e revisar">
+    <label>Meta relacionada</label>
+    <select id="capMeta"><option value="">Nenhuma</option></select>
+    <label>Recorrência</label>
+    <select id="capRecorrencia">
+      <option value="nenhuma">Não se repete</option>
+      <option value="diaria">Diária</option>
+      <option value="semanal">Semanal</option>
+    </select>
+    <label>Observação</label>
+    <textarea id="capObs" placeholder="Opcional"></textarea>
+    <button class="btn primary" id="organizeSaveBtn" type="button">Salvar organizado</button>
+  </div>
+</div>
+
+<!-- ---------- reorganizar meu dia ---------- -->
+<div class="sheet" id="sheetReorganize">
+  <div class="sheet-grip"></div>
+  <h3>Reorganizar meu dia</h3>
+  <p class="sub">Escolha até três missões. O resto pode esperar.</p>
+  <div class="mini-list" id="reorganizeList"></div>
+  <div class="actions-row" style="margin-top:8px;">
+    <button class="btn ghost" id="reorganizeCancelBtn" type="button">Cancelar</button>
+    <button class="btn primary" id="reorganizeSaveBtn" type="button">Salvar</button>
+  </div>
+</div>
+
+<!-- ---------- estou com a cabeça cheia ---------- -->
+<div class="sheet" id="sheetBraindump">
+  <div class="sheet-grip"></div>
+  <h3>Estou com a cabeça cheia</h3>
+  <p class="sub">Escreva tudo, sem se preocupar com organização agora. Isso fica registrado como pensamento — não vira tarefa automaticamente.</p>
+  <textarea id="braindumpText" class="braindump-textarea" placeholder="Ex.: estou pensando na moto, nos boletos, no TCC..."></textarea>
+  <div class="actions-row" style="margin-top:14px;">
+    <button class="btn ghost" id="braindumpCancelBtn" type="button">Cancelar</button>
+    <button class="btn primary" id="braindumpSaveBtn" type="button">Registrar</button>
+  </div>
+</div>
+
+<!-- ---------- ajustes rápidos ---------- -->
+<div class="sheet" id="sheetSettings">
+  <div class="sheet-grip"></div>
+  <div style="display:flex; align-items:center; justify-content:space-between;">
+    <h3 style="margin:0;">Ajustes rápidos</h3>
+    <button class="icon-x" id="settingsCloseBtn" type="button"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+  </div>
+
+  <div class="sheet-section-title">Conta</div>
+  <div class="account-row">
+    <span class="email" id="accountEmail">—</span>
+    <button class="btn ghost small" id="signOutBtn" type="button">Sair</button>
+  </div>
+
+  <div class="sheet-section-title">Ciclo atual</div>
+  <p class="sub" id="cycleInfo" style="margin-top:0;">—</p>
+  <button class="btn full-secondary" id="newCycleBtn" type="button">Iniciar novo ciclo agora</button>
+
+  <div class="sheet-divider"></div>
+  <div class="sheet-section-title">Rotinas por dia da semana</div>
+  <div class="mini-list" id="routinesAdminList"></div>
+  <label>Título</label>
+  <input type="text" id="routineTitulo" placeholder="Ex.: Academia pela manhã">
+  <label>Área</label>
+  <select id="routineArea">
+    <option value="">Sem área</option>
+    <option value="corpo">Corpo</option>
+    <option value="mente">Mente</option>
+    <option value="consultorio">Consultório</option>
+    <option value="futuro">Futuro</option>
+    <option value="organizacao">Organização</option>
+  </select>
+  <label>Dias da semana</label>
+  <div class="chip-row" id="routineDayChips"></div>
+  <div class="field-row2">
+    <div><label>Horário (opcional)</label><input type="time" id="routineHorario"></div>
+    <div><label>Pontos</label><input type="number" id="routinePontos" min="0" step="1" placeholder="10"></div>
+  </div>
+  <button class="btn primary small secondary-line" id="addRoutineBtn" type="button">Adicionar rotina</button>
+
+  <div class="sheet-divider"></div>
+  <div class="sheet-section-title">Metas ativas</div>
+  <div class="mini-list" id="goalsAdminList"></div>
+  <label>Título da meta</label>
+  <input type="text" id="goalTitulo" placeholder="Ex.: Finalizar o TCC">
+  <label>Área</label>
+  <select id="goalArea">
+    <option value="">Sem área</option>
+    <option value="corpo">Corpo</option>
+    <option value="mente">Mente</option>
+    <option value="consultorio">Consultório</option>
+    <option value="futuro">Futuro</option>
+    <option value="organizacao">Organização</option>
+  </select>
+  <div class="field-row2">
+    <div><label>Prazo final</label><input type="date" id="goalPrazo"></div>
+    <div>
+      <label>Como medir</label>
+      <select id="goalMedidaTipo">
+        <option value="etapas">Etapas</option>
+        <option value="percentual">Percentual</option>
+        <option value="sessoes">Sessões</option>
+        <option value="quantidade">Quantidade</option>
+        <option value="frequencia">Frequência</option>
+        <option value="peso">Peso</option>
+        <option value="valor">Valor financeiro</option>
+      </select>
+    </div>
+  </div>
+  <label>Meta numérica (opcional)</label>
+  <input type="number" id="goalMetaValor" placeholder="Ex.: 10">
+  <label>Etapa desta semana (opcional)</label>
+  <input type="text" id="goalEtapaTitulo" placeholder="Ex.: terminar a introdução">
+  <label>Prazo da etapa (opcional)</label>
+  <input type="date" id="goalEtapaPrazo">
+  <button class="btn primary small secondary-line" id="addGoalBtn" type="button">Criar meta</button>
+</div>
+
+<div class="toast" id="toast"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="app.js"></script>
+</body>
+</html>
