@@ -703,6 +703,7 @@
   function initReorganize() {
     var selected = {};
     q('reorganizeBtn').addEventListener('click', openReorganize);
+    q('missionsEmptyReorganizeBtn').addEventListener('click', openReorganize);
 
     function openReorganize() {
       selected = {};
