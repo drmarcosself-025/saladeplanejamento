@@ -276,3 +276,69 @@ create policy "p30_habit_logs_owner" on public.p30_habit_logs for all to authent
   using (user_id = auth.uid()) with check (user_id = auth.uid());
 create policy "p30_daily_scores_owner" on public.p30_daily_scores for all to authenticated
   using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+-- ============================================================
+-- MIGRATION ADITIVA — carga inicial idempotente ("Configurar meu
+-- Projeto 30D"). Nada aqui altera ou apaga dado existente. Reversível:
+-- a coluna pode ser removida e a tabela pode ser dropada sem afetar o
+-- restante do schema, se um dia isso deixar de ser necessário.
+-- ============================================================
+
+-- p30_tasks.is_missao_hoje era um booleano global, sem data — uma
+-- tarefa marcada como missão continuava aparecendo como "missão de
+-- hoje" em qualquer dia futuro, para sempre, até alguém desmarcar
+-- manualmente. missao_data amarra a marcação a um dia específico;
+-- o app passa a filtrar is_missao_hoje=true AND missao_data=hoje.
+alter table public.p30_tasks add column if not exists missao_data date;
+create index if not exists p30_tasks_missao_data_idx on public.p30_tasks (user_id, missao_data);
+
+-- ============================================================
+-- SETUP_PROPOSALS — sugestões da carga inicial, separadas das
+-- tabelas reais. Nada aparece em p30_tasks/p30_habits/p30_routines/
+-- p30_goals até o usuário confirmar item a item na tela "Configurar
+-- meu Projeto 30D". "slug" é a chave estável de idempotência: rodar a
+-- semeadura de novo nunca duplica nem reseta uma decisão já tomada
+-- (upsert com "do nothing" em conflito). created_target_id guarda o id
+-- da linha real criada na confirmação, usado tanto pra não confirmar
+-- duas vezes quanto para o rollback (remover só o que essa carga criou).
+-- ============================================================
+create table if not exists public.p30_setup_proposals (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  slug text not null,
+  categoria text not null check (categoria in ('rotina','habito','meta','marco','etapa','tarefa')),
+  titulo text not null,
+  payload jsonb not null default '{}'::jsonb,
+  status text not null default 'sugerido' check (status in ('sugerido','confirmado','descartado')),
+  created_target_table text,
+  created_target_id uuid,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_id, slug)
+);
+create index if not exists p30_setup_proposals_user_idx on public.p30_setup_proposals (user_id, status);
+drop trigger if exists trg_p30_setup_proposals_updated_at on public.p30_setup_proposals;
+create trigger trg_p30_setup_proposals_updated_at before update on public.p30_setup_proposals
+  for each row execute function public.p30_set_updated_at();
+
+grant select, insert, update, delete on public.p30_setup_proposals to authenticated;
+alter table public.p30_setup_proposals enable row level security;
+drop policy if exists "p30_setup_proposals_owner" on public.p30_setup_proposals;
+create policy "p30_setup_proposals_owner" on public.p30_setup_proposals for all to authenticated
+  using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+-- ============================================================
+-- ROLLBACK desta migration (rodar manualmente, só se decidir reverter):
+--
+--   drop table if exists public.p30_setup_proposals;
+--   drop index if exists public.p30_tasks_missao_data_idx;
+--   alter table public.p30_tasks drop column if exists missao_data;
+--
+-- Isso não apaga nenhuma tarefa/hábito/rotina/meta real — só o
+-- mecanismo de proposta e a coluna de data da missão. Para desfazer
+-- especificamente os dados CRIADOS pela carga inicial (sem remover o
+-- mecanismo em si), use o botão "Desfazer carga inicial" nos Ajustes
+-- do app — ele apaga apenas as linhas cujo id está registrado em
+-- p30_setup_proposals.created_target_id, devolvendo cada proposta
+-- para o estado "sugerido".
+-- ============================================================

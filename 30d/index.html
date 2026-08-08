@@ -300,6 +300,8 @@
     <button class="icon-x" id="settingsCloseBtn" type="button"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
   </div>
 
+  <button class="btn full-secondary" id="openSetupBtn" type="button" style="margin-bottom:4px;">Configurar meu Projeto 30D</button>
+
   <div class="sheet-section-title">Conta</div>
   <div class="account-row">
     <span class="email" id="accountEmail">—</span>
@@ -368,6 +370,43 @@
   <label>Prazo da etapa (opcional)</label>
   <input type="date" id="goalEtapaPrazo">
   <button class="btn primary small secondary-line" id="addGoalBtn" type="button">Criar meta</button>
+
+  <div class="sheet-divider"></div>
+  <div class="sheet-section-title">Carga inicial</div>
+  <p class="sub" style="margin-top:0;">Remove só o que foi criado pela tela "Configurar meu Projeto 30D" — nada que você criou manualmente é afetado.</p>
+  <button class="btn full-secondary" id="undoSetupBtn" type="button">Desfazer carga inicial</button>
+</div>
+
+<!-- ---------- configurar meu projeto 30d ---------- -->
+<div class="sheet" id="sheetSetup">
+  <div class="sheet-grip"></div>
+  <div style="display:flex; align-items:center; justify-content:space-between;">
+    <h3 style="margin:0;">Configurar meu Projeto 30D</h3>
+    <button class="icon-x" id="setupCloseBtn" type="button"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+  </div>
+  <p class="sub">Revise em blocos pequenos. Nada vira dado real até você tocar em "Confirmar marcados" — pode fechar e voltar quando quiser, o que não for confirmado continua aqui.</p>
+  <p class="setup-progress" id="setupProgress">Carregando sugestões…</p>
+  <div id="setupGroups"></div>
+
+  <div class="sheet-divider"></div>
+  <div class="sheet-section-title">Academia</div>
+  <p class="sub" style="margin-top:0;">Sem dias/horário chutados — preencha o que for real pra você. Fica salvo como rotina assim que você confirmar.</p>
+  <label>Frequência semanal (dias)</label>
+  <div class="chip-row" id="academiaDayChips"></div>
+  <div class="field-row2">
+    <div><label>Horário preferencial</label><input type="time" id="academiaHorario"></div>
+    <div><label>Duração (min)</label><input type="number" id="academiaDuracao" min="0" step="5" placeholder="Ex.: 60"></div>
+  </div>
+  <label>Plano alternativo / dias que não devem ser sugeridos (opcional)</label>
+  <textarea id="academiaObs" placeholder="Ex.: se não der de manhã, treinar à noite; não sugerir treino nos dias de plantão"></textarea>
+  <p class="sub" style="margin:6px 0 0;">Duração e o texto acima ainda não têm onde ser salvos no banco (a tabela de rotinas não tem essas colunas hoje) — dias, horário e a rotina em si já ficam salvos ao confirmar.</p>
+  <button class="btn primary small secondary-line" id="academiaSaveBtn" type="button">Confirmar rotina da academia</button>
+
+  <div class="sheet-divider"></div>
+  <div class="sheet-section-title">Compras (casa e moto)</div>
+  <p class="sub" style="margin-top:0;">Ainda não criado nesta etapa: o schema atual não guarda preço, prioridade nem "necessidade vs. desejo" — forçar isso em tarefas comuns perderia essa informação. Fica proposto para uma PR futura (aparador, tomada, prateleiras, armário, luz ambiente, copos, jogo de cama, placa da moto, pneus).</p>
+
+  <button class="btn ghost" id="setupDoneBtn" type="button" style="width:100%; margin-top:18px;">Fechar por agora</button>
 </div>
 
 <div class="toast" id="toast"></div>
