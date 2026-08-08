@@ -381,6 +381,11 @@ a{ color:inherit; }
 .week-add-time{ flex:0 0 auto; width:82px; background:var(--ink); border:1px solid var(--line-strong); border-radius:10px; color:var(--sand); padding:8px 6px; font-size:12px; font-family:inherit; color-scheme:dark; }
 .week-add-btn{ flex:0 0 auto; width:34px; height:34px; border-radius:10px; background:var(--coffee); border:1px solid var(--gold-dim); color:var(--gold); font-size:17px; line-height:1; cursor:pointer; }
 .week-add-btn:hover{ background:var(--graphite-2); }
+.reorg-add-row{ display:flex; gap:6px; margin-bottom:9px; }
+.reorg-add-row .reorg-add-input{ flex:1; min-width:0; background:var(--ink); border:1px solid var(--line-strong); border-radius:10px; color:var(--sand); padding:8px 10px; font-size:12.5px; font-family:inherit; }
+.reorg-add-row .reorg-add-input:focus{ outline:none; border-color:var(--gold-dim); }
+.reorg-add-row .reorg-add-btn{ flex:0 0 auto; width:34px; height:34px; border-radius:10px; background:var(--coffee); border:1px solid var(--gold-dim); color:var(--gold); font-size:17px; line-height:1; cursor:pointer; }
+.reorg-add-row .reorg-add-btn:hover{ background:var(--graphite-2); }
 
 /* ---------- painel detalhado da meta ---------- */
 .gd-progress-wrap{ display:flex; align-items:center; gap:10px; margin:14px 0 4px; }
