@@ -40,7 +40,7 @@
      APP
      ============================================================ -->
 <div id="appRoot" hidden>
-<div class="app">
+<div class="app" id="viewHoje">
 
   <div class="error-banner" id="errorBanner" hidden>
     <span id="errorBannerMsg">Não consegui carregar seus dados.</span>
@@ -152,6 +152,18 @@
 
 </div>
 
+<!-- ---------- MINHA SEMANA ---------- -->
+<div class="app" id="viewSemana" hidden>
+  <div class="head">
+    <div class="head-text">
+      <span class="eyebrow">MINHA SEMANA</span>
+      <h1 class="serif" id="weekRangeLabel">—</h1>
+    </div>
+  </div>
+  <p class="page-sub-week">Toque no círculo pra concluir. Toque na seta pra mover de dia.</p>
+  <div id="weekDays"></div>
+</div>
+
 <div class="tabbar">
   <div class="tabbar-inner">
     <button class="tab active" data-tab="hoje">
@@ -187,6 +199,18 @@
     <button type="button" class="chip" data-a="consultorio">Consultório</button>
     <button type="button" class="chip" data-a="futuro">Futuro</button>
     <button type="button" class="chip" data-a="organizacao">Organização</button>
+  </div>
+  <label>Quando</label>
+  <div class="chip-row" id="whenChips">
+    <button type="button" class="chip active" data-when="hoje">Hoje</button>
+    <button type="button" class="chip" data-when="amanha">Amanhã</button>
+    <button type="button" class="chip" data-when="0">Dom</button>
+    <button type="button" class="chip" data-when="1">Seg</button>
+    <button type="button" class="chip" data-when="2">Ter</button>
+    <button type="button" class="chip" data-when="3">Qua</button>
+    <button type="button" class="chip" data-when="4">Qui</button>
+    <button type="button" class="chip" data-when="5">Sex</button>
+    <button type="button" class="chip" data-when="6">Sáb</button>
   </div>
   <div class="actions-row" id="captureStage1Actions" style="margin-top:18px;">
     <button class="btn ghost" id="organizeBtn" type="button">Organizar agora</button>
@@ -246,6 +270,14 @@
     <button class="btn ghost" id="reorganizeCancelBtn" type="button">Cancelar</button>
     <button class="btn primary" id="reorganizeSaveBtn" type="button">Salvar</button>
   </div>
+</div>
+
+<!-- ---------- mover tarefa de dia ---------- -->
+<div class="sheet" id="sheetMoveTask">
+  <div class="sheet-grip"></div>
+  <h3>Mover para</h3>
+  <div class="chip-row" id="moveDayChips"></div>
+  <button class="btn ghost" id="moveCancelBtn" type="button" style="width:100%; margin-top:16px;">Cancelar</button>
 </div>
 
 <!-- ---------- estou com a cabeça cheia ---------- -->

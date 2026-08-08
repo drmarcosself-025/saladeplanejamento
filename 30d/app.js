@@ -53,6 +53,24 @@
     var ua = Date.UTC(a.y, a.m - 1, a.d), ub = Date.UTC(b.y, b.m - 1, b.d);
     return Math.round((ub - ua) / 86400000);
   }
+  function weekdayIdxForDateStr(dateStr) {
+    var p = dateParts(dateStr);
+    return new Date(Date.UTC(p.y, p.m - 1, p.d)).getUTCDay();
+  }
+  function nextDateForWeekday(targetWd) {
+    var diff = (targetWd - state.weekday + 7) % 7;
+    return addDaysStr(state.today, diff);
+  }
+  function mondayOfWeek(dateStr) {
+    var wd = weekdayIdxForDateStr(dateStr);
+    var offsetFromMonday = (wd + 6) % 7;
+    return addDaysStr(dateStr, -offsetFromMonday);
+  }
+  function formatWeekRange(a, b) {
+    var pa = dateParts(a), pb = dateParts(b);
+    if (pa.m === pb.m) return pa.d + ' – ' + pb.d + ' de ' + MONTHS[pa.m - 1];
+    return pa.d + ' de ' + MONTHS[pa.m - 1] + ' – ' + pb.d + ' de ' + MONTHS[pb.m - 1];
+  }
   function formatFullDate(tz) {
     var now = new Date();
     var wd = DAY_FULL[weekdayIdx(tz)];
@@ -77,8 +95,12 @@
     weeklyMilestone: null, // {milestone, goal}
     deadlineGoal: null,
     nextCommitment: null,
-    score: { pontos: 0, cap: CAP, streak: 0 }
+    score: { pontos: 0, cap: CAP, streak: 0 },
+    weekDates: [],
+    weekTasks: [],
+    allRoutinesCache: null
   };
+  var moveTaskId = null;
 
   var el = {};
   function q(id) { return document.getElementById(id); }
@@ -554,13 +576,26 @@
     var selectedArea = null;
     var selectedTipo = 'tarefa';
     var selectedPrioridade = null;
+    var selectedWhen = 'hoje';
     var currentTaskId = null;
     var days2 = [0, 1, 2, 3, 4, 5, 6];
+
+    function resolveWhenToDate(when) {
+      if (when === 'hoje') return state.today;
+      if (when === 'amanha') return addDaysStr(state.today, 1);
+      return nextDateForWeekday(+when);
+    }
 
     q('areaChips').addEventListener('click', function (e) {
       var b = e.target.closest('.chip'); if (!b) return;
       Array.prototype.forEach.call(this.querySelectorAll('.chip'), function (x) { x.classList.toggle('active', x === b); });
       selectedArea = b.dataset.a;
+    });
+    q('whenChips').addEventListener('click', function (e) {
+      var b = e.target.closest('.chip'); if (!b) return;
+      Array.prototype.forEach.call(this.querySelectorAll('.chip'), function (x) { x.classList.toggle('active', x === b); });
+      selectedWhen = b.dataset.when;
+      if (stage2Open) q('capPrazo').value = resolveWhenToDate(selectedWhen);
     });
     q('tipoChips').addEventListener('click', function (e) {
       var b = e.target.closest('.chip'); if (!b) return;
@@ -578,8 +613,9 @@
       q('capPrazo').value = ''; q('capHorario').value = ''; q('capDuracao').value = '';
       q('capResponsavel').value = ''; q('capProximaAcao').value = ''; q('capObs').value = '';
       q('capMeta').value = '';
-      selectedArea = null; selectedTipo = 'tarefa'; selectedPrioridade = null; currentTaskId = null;
+      selectedArea = null; selectedTipo = 'tarefa'; selectedPrioridade = null; selectedWhen = 'hoje'; currentTaskId = null;
       Array.prototype.forEach.call(q('areaChips').querySelectorAll('.chip'), function (x) { x.classList.remove('active'); });
+      Array.prototype.forEach.call(q('whenChips').querySelectorAll('.chip'), function (x) { x.classList.toggle('active', x.dataset.when === 'hoje'); });
       Array.prototype.forEach.call(q('tipoChips').querySelectorAll('.chip'), function (x, i) { x.classList.toggle('active', i === 0); });
       Array.prototype.forEach.call(q('prioridadeChips').querySelectorAll('.chip'), function (x) { x.classList.remove('active'); });
       stage2Open = false;
@@ -612,6 +648,7 @@
       stage2Open = true;
       q('captureStage2').hidden = false;
       q('captureStage1Actions').hidden = true;
+      if (!q('capPrazo').value) q('capPrazo').value = resolveWhenToDate(selectedWhen);
     });
 
     q('saveCaptureBtn').addEventListener('click', function () {
@@ -619,7 +656,8 @@
       if (!titulo) { toast('Escreva algo antes de salvar.'); return; }
       var row = {
         user_id: state.user.id, titulo: titulo, texto_original: titulo,
-        area: selectedArea, tipo: 'tarefa', status: 'inbox', organizado: false, pontos: 10
+        area: selectedArea, tipo: 'tarefa', status: 'pendente', organizado: false, pontos: 10,
+        data: resolveWhenToDate(selectedWhen)
       };
       q('saveCaptureBtn').disabled = true;
       sb.from('p30_tasks').insert(row).select().single().then(function (res) {
@@ -721,6 +759,117 @@
         loadMissions().then(function () { renderMissions(); persistDailyScore(); computeNextCommitment(); renderNext(); });
       });
     });
+  }
+
+  // ============================================================
+  // MINHA SEMANA — visão de segunda a domingo. Mostra tarefas com
+  // "data" marcada dentro da semana + rotinas do dia da semana
+  // correspondente (rotinas aqui são só informativas; concluir uma
+  // rotina continua sendo feito na tela Hoje).
+  // ============================================================
+  function loadWeek() {
+    var monday = mondayOfWeek(state.today);
+    var sunday = addDaysStr(monday, 6);
+    state.weekDates = [];
+    for (var i = 0; i < 7; i++) state.weekDates.push(addDaysStr(monday, i));
+    var pTasks = sb.from('p30_tasks').select('*').eq('user_id', state.user.id)
+      .in('tipo', ['tarefa', 'aguardando']).not('status', 'in', '(concluida,arquivada)')
+      .gte('data', monday).lte('data', sunday);
+    var pRoutines = state.allRoutinesCache
+      ? Promise.resolve({ data: state.allRoutinesCache, error: null })
+      : sb.from('p30_routines').select('*').eq('user_id', state.user.id).eq('ativo', true);
+    return Promise.all([pTasks, pRoutines]).then(function (results) {
+      if (results[0].error) throw results[0].error;
+      if (results[1].error) throw results[1].error;
+      state.weekTasks = results[0].data || [];
+      state.allRoutinesCache = results[1].data || [];
+    });
+  }
+
+  function renderWeek() {
+    q('weekRangeLabel').textContent = formatWeekRange(state.weekDates[0], state.weekDates[6]);
+    var html = state.weekDates.map(function (d) {
+      var wd = weekdayIdxForDateStr(d);
+      var isToday = d === state.today;
+      var dayTasks = state.weekTasks.filter(function (t) { return t.data === d; });
+      var dayRoutines = state.allRoutinesCache.filter(function (r) { return r.dias_semana && r.dias_semana.indexOf(wd) !== -1; });
+      var body;
+      if (!dayTasks.length && !dayRoutines.length) {
+        body = '<div class="week-empty">Nada planejado</div>';
+      } else {
+        body = dayRoutines.map(function (r) {
+          return '<div class="week-task-row routine"><span class="dot"></span><span class="t">' + esc(r.titulo) + '</span></div>';
+        }).join('') + dayTasks.map(function (t) {
+          return '<div class="week-task-row' + (t.status === 'concluida' ? ' done' : '') + '" data-id="' + t.id + '">' +
+            '<span class="check" data-check="' + t.id + '">' + iconCheck() + '</span>' +
+            '<span class="t">' + esc(t.titulo) + '</span>' +
+            '<button class="week-move-btn" data-move="' + t.id + '" type="button">&#8594;</button></div>';
+        }).join('');
+      }
+      return '<div class="week-day' + (isToday ? ' today' : '') + '">' +
+        '<div class="week-day-head"><span class="week-day-name">' + DAY_FULL[wd].split('-')[0].toUpperCase() + '</span>' +
+        '<span class="week-day-date">' + (+d.split('-')[2]) + '</span></div>' + body + '</div>';
+    }).join('');
+    q('weekDays').innerHTML = html;
+    Array.prototype.forEach.call(q('weekDays').querySelectorAll('[data-check]'), function (chk) {
+      chk.addEventListener('click', function () { toggleWeekTask(chk.dataset.check); });
+    });
+    Array.prototype.forEach.call(q('weekDays').querySelectorAll('[data-move]'), function (btn) {
+      btn.addEventListener('click', function () { openMoveSheet(btn.dataset.move); });
+    });
+  }
+
+  function toggleWeekTask(id) {
+    var t = state.weekTasks.find(function (x) { return x.id === id; });
+    if (!t) return;
+    var newStatus = t.status === 'concluida' ? 'pendente' : 'concluida';
+    t.status = newStatus;
+    sb.from('p30_tasks').update({ status: newStatus, concluido_em: newStatus === 'concluida' ? new Date().toISOString() : null })
+      .eq('id', id).then(function (res) { if (res.error) console.error(res.error); });
+    renderWeek();
+  }
+
+  function openMoveSheet(taskId) {
+    moveTaskId = taskId;
+    q('moveDayChips').innerHTML = state.weekDates.map(function (d) {
+      var wd = weekdayIdxForDateStr(d);
+      var isToday = d === state.today;
+      return '<button type="button" class="chip' + (isToday ? ' active' : '') + '" data-date="' + d + '">' + DAY_ABBR[wd] + ' ' + (+d.split('-')[2]) + '</button>';
+    }).join('');
+    Array.prototype.forEach.call(q('moveDayChips').querySelectorAll('.chip'), function (b) {
+      b.addEventListener('click', function () { moveTaskTo(b.dataset.date); });
+    });
+    el.scrim.classList.add('show');
+    el.sheetMoveTask.classList.add('show');
+  }
+  function closeMoveSheet() {
+    el.scrim.classList.remove('show');
+    el.sheetMoveTask.classList.remove('show');
+  }
+  function moveTaskTo(dateStr) {
+    var t = state.weekTasks.find(function (x) { return x.id === moveTaskId; });
+    if (t) t.data = dateStr;
+    sb.from('p30_tasks').update({ data: dateStr }).eq('id', moveTaskId)
+      .then(function (res) { if (res.error) console.error(res.error); });
+    closeMoveSheet();
+    renderWeek();
+    toast('Tarefa movida.');
+  }
+  function initWeek() {
+    q('moveCancelBtn').addEventListener('click', closeMoveSheet);
+  }
+
+  function switchTab(tab) {
+    document.querySelectorAll('.tab').forEach(function (b) { b.classList.toggle('active', b.dataset.tab === tab); });
+    q('viewHoje').hidden = tab !== 'hoje';
+    q('viewSemana').hidden = tab !== 'semana';
+    if (tab === 'semana') {
+      q('weekRangeLabel').textContent = 'Carregando…';
+      loadWeek().then(renderWeek).catch(function (err) {
+        console.error('[30D] falha ao carregar semana', err);
+        toast('Não consegui carregar a semana.');
+      });
+    }
   }
 
   // ============================================================
@@ -918,7 +1067,8 @@
   function initNav() {
     document.querySelectorAll('.tab').forEach(function (t) {
       t.addEventListener('click', function () {
-        if (t.dataset.tab === 'hoje') return;
+        var tab = t.dataset.tab;
+        if (tab === 'hoje' || tab === 'semana') { switchTab(tab); return; }
         toast('Essa tela chega numa próxima fase.');
       });
     });
@@ -929,7 +1079,7 @@
     q('habitsToggle').addEventListener('click', function () { q('habitsBox').classList.toggle('open'); });
     q('routinesToggle').addEventListener('click', function () { q('routinesBox').classList.toggle('open'); });
     el.scrim.addEventListener('click', function () {
-      [el.sheetCapture, el.sheetSettings, el.sheetReorganize, el.sheetBraindump].forEach(function (s) { s.classList.remove('show'); });
+      [el.sheetCapture, el.sheetSettings, el.sheetReorganize, el.sheetBraindump, el.sheetMoveTask].forEach(function (s) { s.classList.remove('show'); });
       el.scrim.classList.remove('show');
     });
     q('errorRetryBtn').addEventListener('click', function () {
@@ -957,11 +1107,13 @@
     el.routinesAdminList = q('routinesAdminList');
     el.goalsAdminList = q('goalsAdminList');
     el.reorganizeList = q('reorganizeList');
+    el.sheetMoveTask = q('sheetMoveTask');
 
     initAuthScreen();
     initNav();
     initCapture();
     initReorganize();
+    initWeek();
     initBraindump();
     initEndDay();
     initSettings();
