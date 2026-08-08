@@ -102,6 +102,10 @@
     allRoutinesCache: null
   };
   var moveTaskId = null;
+  var openReorganizeRef = null;
+  var reorganizeRefreshRef = null;
+  var manageTask = null;
+  var manageIsMission = false;
 
   var el = {};
   function q(id) { return document.getElementById(id); }
@@ -457,30 +461,53 @@
       return;
     }
     el.missionsEmpty.hidden = true;
-    wrap.innerHTML = state.missions.map(function (m, i) {
+    var cardsHtml = state.missions.map(function (m, i) {
       return '<div class="mission' + (m.done ? ' done' : '') + '" data-i="' + i + '">' +
         '<span class="check">' + iconCheck() + '</span>' +
         '<span class="mission-body"><span class="mission-title">' + esc(m.task.titulo) + '</span>' +
         '<span class="mission-meta">' + (AREA_LABEL[m.task.area] || 'Sem área') + '</span></span>' +
         '<span class="mission-pts">' + (m.done ? 'Concluída' : '+' + m.task.pontos) + '</span>' +
+        '<button class="mission-more" data-more-i="' + i + '" type="button" aria-label="Opções">&#8942;</button>' +
         '</div>';
     }).join('');
+    var addRow = state.missions.length < 3 ? '<button class="add-mission-row" id="addMissionRow" type="button">+ Adicionar missão</button>' : '';
+    wrap.innerHTML = cardsHtml + addRow;
     Array.prototype.forEach.call(wrap.querySelectorAll('.mission'), function (node) {
-      node.addEventListener('click', function () { toggleMission(+node.dataset.i); });
+      node.addEventListener('click', function (e) {
+        if (e.target.closest('.mission-more')) return;
+        toggleMission(+node.dataset.i);
+      });
     });
+    Array.prototype.forEach.call(wrap.querySelectorAll('.mission-more'), function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        openTaskManage(state.missions[+btn.dataset.moreI].task, { isMission: true });
+      });
+    });
+    var addBtn = q('addMissionRow');
+    if (addBtn) addBtn.addEventListener('click', function () { openReorganizeRef && openReorganizeRef(); });
     var allDone = state.missions.every(function (m) { return m.done; });
     el.restBanner.classList.toggle('show', allDone);
   }
 
   function toggleMission(i) {
     var m = state.missions[i];
+    var prevDone = m.done, prevStatus = m.task.status;
     m.done = !m.done;
     var newStatus = m.done ? 'concluida' : 'pendente';
     m.task.status = newStatus;
-    sb.from('p30_tasks').update({ status: newStatus, concluido_em: m.done ? new Date().toISOString() : null })
-      .eq('id', m.task.id).then(function (res) { if (res.error) console.error(res.error); });
     renderMissions();
     persistDailyScore();
+    sb.from('p30_tasks').update({ status: newStatus, concluido_em: m.done ? new Date().toISOString() : null })
+      .eq('id', m.task.id).then(function (res) {
+        if (res.error) {
+          console.error(res.error);
+          m.done = prevDone; m.task.status = prevStatus;
+          renderMissions();
+          persistDailyScore();
+          toast('Não consegui salvar. Tente de novo.');
+        }
+      });
   }
 
   function renderHabits() {
@@ -702,8 +729,10 @@
   // ============================================================
   function initReorganize() {
     var selected = {};
+    var lastTasks = [];
     q('reorganizeBtn').addEventListener('click', openReorganize);
     q('missionsEmptyReorganizeBtn').addEventListener('click', openReorganize);
+    openReorganizeRef = openReorganize;
 
     function openReorganize() {
       selected = {};
@@ -715,11 +744,15 @@
         .order('created_at', { ascending: true }).limit(40)
         .then(function (res) {
           if (res.error) { toast('Não consegui carregar suas tarefas.'); console.error(res.error); return; }
-          renderReorganizeList(res.data || []);
+          lastTasks = res.data || [];
+          renderReorganizeList(lastTasks);
           el.scrim.classList.add('show');
           el.sheetReorganize.classList.add('show');
         });
     }
+    reorganizeRefreshRef = function () {
+      if (el.sheetReorganize.classList.contains('show')) openReorganize();
+    };
     function closeReorganize() {
       el.scrim.classList.remove('show');
       el.sheetReorganize.classList.remove('show');
@@ -728,16 +761,27 @@
 
     function renderReorganizeList(tasks) {
       el.reorganizeList.innerHTML = tasks.length ? tasks.map(function (t) {
-        return '<label class="mini-row" style="cursor:pointer;">' +
+        return '<div class="mini-row" data-row-id="' + t.id + '" style="cursor:pointer;">' +
           '<input type="checkbox" data-id="' + t.id + '"' + (selected[t.id] ? ' checked' : '') + ' style="width:18px;height:18px;accent-color:#c3a35f;flex:0 0 auto;">' +
           '<span class="mbody"><span class="mtitle">' + esc(t.titulo) + '</span>' +
-          '<span class="mmeta">' + (AREA_LABEL[t.area] || 'Sem área') + '</span></span></label>';
+          '<span class="mmeta">' + (AREA_LABEL[t.area] || 'Sem área') + '</span></span>' +
+          '<button class="reorg-more-btn" data-reorg-more="' + t.id + '" type="button" aria-label="Opções">&#8942;</button></div>';
       }).join('') : '<div class="empty-state">Nada pendente pra organizar agora. Use a captura pra adicionar algo.</div>';
-      Array.prototype.forEach.call(el.reorganizeList.querySelectorAll('input[type=checkbox]'), function (cb) {
-        cb.addEventListener('change', function () {
+      Array.prototype.forEach.call(el.reorganizeList.querySelectorAll('.mini-row'), function (row) {
+        row.addEventListener('click', function (e) {
+          if (e.target.closest('.reorg-more-btn')) return;
+          var cb = row.querySelector('input[type=checkbox]');
+          if (e.target !== cb) cb.checked = !cb.checked;
           var checkedCount = Object.keys(selected).filter(function (k) { return selected[k]; }).length;
-          if (cb.checked && checkedCount >= 3) { cb.checked = false; toast('No máximo 3 missões por vez.'); return; }
+          if (cb.checked && checkedCount >= 3 && !selected[cb.dataset.id]) { cb.checked = false; toast('No máximo 3 missões por vez.'); return; }
           selected[cb.dataset.id] = cb.checked;
+        });
+      });
+      Array.prototype.forEach.call(el.reorganizeList.querySelectorAll('[data-reorg-more]'), function (btn) {
+        btn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          var task = tasks.filter(function (t) { return t.id === btn.dataset.reorgMore; })[0];
+          if (task) openTaskManage(task, { isMission: !!selected[task.id] });
         });
       });
     }
@@ -760,6 +804,121 @@
         toast('Seu dia foi reorganizado.');
         loadMissions().then(function () { renderMissions(); persistDailyScore(); computeNextCommitment(); renderNext(); });
       });
+    });
+  }
+
+  // ============================================================
+  // GERENCIAR TAREFA/MISSÃO — sheet único reaproveitado a partir do
+  // card de missão (Hoje), da linha de tarefa (Semana) e da lista de
+  // "Reorganizar meu dia". Editar/adiar/remover-da-missão/excluir só
+  // atualizam a tela DEPOIS da confirmação do servidor — nunca otimista
+  // aqui, então uma falha nunca deixa a tela "mentindo" sobre algo que
+  // não foi salvo de verdade.
+  // ============================================================
+  function openTaskManage(task, opts) {
+    manageTask = task;
+    manageIsMission = !!(opts && opts.isMission);
+    q('tmTitleLabel').textContent = 'Gerenciar tarefa';
+    q('tmTitulo').value = task.titulo || '';
+    q('tmData').value = task.data || '';
+    q('tmHorario').value = task.horario ? task.horario.slice(0, 5) : '';
+    q('tmProximaAcao').value = task.proxima_acao || '';
+    q('tmPontos').value = task.pontos != null ? task.pontos : 10;
+    Array.prototype.forEach.call(q('tmAreaChips').querySelectorAll('.chip'), function (x) { x.classList.toggle('active', x.dataset.a === task.area); });
+    Array.prototype.forEach.call(q('tmPrioridadeChips').querySelectorAll('.chip'), function (x) { x.classList.toggle('active', x.dataset.p === task.prioridade); });
+    q('tmConcluirBtn').textContent = task.status === 'concluida' ? 'Desmarcar conclusão' : 'Concluir';
+    q('tmRemoverMissaoBtn').hidden = !manageIsMission;
+    el.scrim.classList.add('show');
+    el.sheetTaskManage.classList.add('show');
+  }
+  function closeTaskManage() {
+    el.scrim.classList.remove('show');
+    el.sheetTaskManage.classList.remove('show');
+    manageTask = null;
+  }
+  function refreshAfterTaskChange() {
+    loadMissions().then(function () {
+      renderMissions();
+      persistDailyScore();
+      computeNextCommitment();
+      renderNext();
+    });
+    if (!q('viewSemana').hidden) reloadWeek();
+    if (reorganizeRefreshRef) reorganizeRefreshRef();
+  }
+  function initTaskManage() {
+    q('tmCloseBtn').addEventListener('click', closeTaskManage);
+    q('tmAreaChips').addEventListener('click', function (e) {
+      var b = e.target.closest('.chip'); if (!b) return;
+      var already = b.classList.contains('active');
+      Array.prototype.forEach.call(this.querySelectorAll('.chip'), function (x) { x.classList.remove('active'); });
+      if (!already) b.classList.add('active');
+    });
+    q('tmPrioridadeChips').addEventListener('click', function (e) {
+      var b = e.target.closest('.chip'); if (!b) return;
+      var already = b.classList.contains('active');
+      Array.prototype.forEach.call(this.querySelectorAll('.chip'), function (x) { x.classList.remove('active'); });
+      if (!already) b.classList.add('active');
+    });
+
+    function runAction(btn, promiseFn, successMsg) {
+      if (btn.disabled) return;
+      btn.disabled = true;
+      promiseFn().then(function (res) {
+        btn.disabled = false;
+        if (res && res.error) {
+          console.error(res.error);
+          toast('Não consegui salvar. Tente de novo.');
+          return;
+        }
+        toast(successMsg);
+        closeTaskManage();
+        refreshAfterTaskChange();
+      });
+    }
+
+    q('tmSaveBtn').addEventListener('click', function () {
+      if (!manageTask) return;
+      var titulo = q('tmTitulo').value.trim();
+      if (!titulo) { toast('O título não pode ficar vazio.'); return; }
+      var areaChip = q('tmAreaChips').querySelector('.chip.active');
+      var prioChip = q('tmPrioridadeChips').querySelector('.chip.active');
+      var patch = {
+        titulo: titulo, area: areaChip ? areaChip.dataset.a : null,
+        data: q('tmData').value || null, horario: q('tmHorario').value || null,
+        prioridade: prioChip ? prioChip.dataset.p : null,
+        proxima_acao: q('tmProximaAcao').value.trim() || null,
+        pontos: q('tmPontos').value !== '' ? +q('tmPontos').value : 10
+      };
+      runAction(q('tmSaveBtn'), function () { return sb.from('p30_tasks').update(patch).eq('id', manageTask.id); }, 'Alterações salvas.');
+    });
+
+    q('tmConcluirBtn').addEventListener('click', function () {
+      if (!manageTask) return;
+      var novoStatus = manageTask.status === 'concluida' ? 'pendente' : 'concluida';
+      runAction(q('tmConcluirBtn'), function () {
+        return sb.from('p30_tasks').update({ status: novoStatus, concluido_em: novoStatus === 'concluida' ? new Date().toISOString() : null }).eq('id', manageTask.id);
+      }, novoStatus === 'concluida' ? 'Concluída.' : 'Conclusão desfeita.');
+    });
+
+    q('tmAdiarBtn').addEventListener('click', function () {
+      if (!manageTask) return;
+      runAction(q('tmAdiarBtn'), function () {
+        return sb.from('p30_tasks').update({ status: 'adiada', is_missao_hoje: false, missao_data: null, data: null }).eq('id', manageTask.id);
+      }, 'Adiada — sem data, fica no backlog até você decidir.');
+    });
+
+    q('tmRemoverMissaoBtn').addEventListener('click', function () {
+      if (!manageTask) return;
+      runAction(q('tmRemoverMissaoBtn'), function () {
+        return sb.from('p30_tasks').update({ is_missao_hoje: false, missao_data: null }).eq('id', manageTask.id);
+      }, 'Removida das missões de hoje — a tarefa continua existindo.');
+    });
+
+    q('tmDeleteBtn').addEventListener('click', function () {
+      if (!manageTask) return;
+      if (!window.confirm('Excluir esta tarefa definitivamente? Não tem como desfazer.')) return;
+      runAction(q('tmDeleteBtn'), function () { return sb.from('p30_tasks').delete().eq('id', manageTask.id); }, 'Tarefa excluída.');
     });
   }
 
@@ -805,7 +964,8 @@
           return '<div class="week-task-row' + (t.status === 'concluida' ? ' done' : '') + '" data-id="' + t.id + '">' +
             '<span class="check" data-check="' + t.id + '">' + iconCheck() + '</span>' +
             '<span class="t">' + esc(t.titulo) + (t.horario ? ' <span class=\'week-task-time\'>' + t.horario.slice(0, 5) + '</span>' : '') + '</span>' +
-            '<button class="week-move-btn" data-move="' + t.id + '" type="button">&#8594;</button></div>';
+            '<button class="week-move-btn" data-move="' + t.id + '" type="button">&#8594;</button>' +
+            '<button class="week-more-btn" data-week-more="' + t.id + '" type="button" aria-label="Opções">&#8942;</button></div>';
         }).join('');
       }
       return '<div class="week-day' + (isToday ? ' today' : '') + '">' +
@@ -826,6 +986,12 @@
     });
     Array.prototype.forEach.call(q('weekDays').querySelectorAll('.week-add-input'), function (input) {
       input.addEventListener('keydown', function (e) { if (e.key === 'Enter') submitWeekAdd(input.dataset.day); });
+    });
+    Array.prototype.forEach.call(q('weekDays').querySelectorAll('[data-week-more]'), function (btn) {
+      btn.addEventListener('click', function () {
+        var t = state.weekTasks.find(function (x) { return x.id === btn.dataset.weekMore; });
+        if (t) openTaskManage(t, { isMission: !!(t.is_missao_hoje && t.missao_data === state.today) });
+      });
     });
     Array.prototype.forEach.call(q('weekDays').querySelectorAll('[data-move]'), function (btn) {
       btn.addEventListener('click', function () { openMoveSheet(btn.dataset.move); });
@@ -1447,7 +1613,7 @@
     q('habitsToggle').addEventListener('click', function () { q('habitsBox').classList.toggle('open'); });
     q('routinesToggle').addEventListener('click', function () { q('routinesBox').classList.toggle('open'); });
     el.scrim.addEventListener('click', function () {
-      [el.sheetCapture, el.sheetSettings, el.sheetReorganize, el.sheetBraindump, el.sheetMoveTask, el.sheetSetup].forEach(function (s) { s.classList.remove('show'); });
+      [el.sheetCapture, el.sheetSettings, el.sheetReorganize, el.sheetBraindump, el.sheetMoveTask, el.sheetSetup, el.sheetTaskManage].forEach(function (s) { s.classList.remove('show'); });
       el.scrim.classList.remove('show');
     });
     q('errorRetryBtn').addEventListener('click', function () {
@@ -1477,11 +1643,13 @@
     el.reorganizeList = q('reorganizeList');
     el.sheetMoveTask = q('sheetMoveTask');
     el.sheetSetup = q('sheetSetup');
+    el.sheetTaskManage = q('sheetTaskManage');
 
     initAuthScreen();
     initNav();
     initCapture();
     initReorganize();
+    initTaskManage();
     initWeek();
     initBraindump();
     initEndDay();
