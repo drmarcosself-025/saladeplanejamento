@@ -53,6 +53,24 @@
     var ua = Date.UTC(a.y, a.m - 1, a.d), ub = Date.UTC(b.y, b.m - 1, b.d);
     return Math.round((ub - ua) / 86400000);
   }
+  function weekdayIdxForDateStr(dateStr) {
+    var p = dateParts(dateStr);
+    return new Date(Date.UTC(p.y, p.m - 1, p.d)).getUTCDay();
+  }
+  function nextDateForWeekday(targetWd) {
+    var diff = (targetWd - state.weekday + 7) % 7;
+    return addDaysStr(state.today, diff);
+  }
+  function mondayOfWeek(dateStr) {
+    var wd = weekdayIdxForDateStr(dateStr);
+    var offsetFromMonday = (wd + 6) % 7;
+    return addDaysStr(dateStr, -offsetFromMonday);
+  }
+  function formatWeekRange(a, b) {
+    var pa = dateParts(a), pb = dateParts(b);
+    if (pa.m === pb.m) return pa.d + ' – ' + pb.d + ' de ' + MONTHS[pa.m - 1];
+    return pa.d + ' de ' + MONTHS[pa.m - 1] + ' – ' + pb.d + ' de ' + MONTHS[pb.m - 1];
+  }
   function formatFullDate(tz) {
     var now = new Date();
     var wd = DAY_FULL[weekdayIdx(tz)];
@@ -77,8 +95,12 @@
     weeklyMilestone: null, // {milestone, goal}
     deadlineGoal: null,
     nextCommitment: null,
-    score: { pontos: 0, cap: CAP, streak: 0 }
+    score: { pontos: 0, cap: CAP, streak: 0 },
+    weekDates: [],
+    weekTasks: [],
+    allRoutinesCache: null
   };
+  var moveTaskId = null;
 
   var el = {};
   function q(id) { return document.getElementById(id); }
@@ -230,7 +252,7 @@
   }
 
   function loadMissions() {
-    return sb.from('p30_tasks').select('*').eq('user_id', state.user.id).eq('is_missao_hoje', true)
+    return sb.from('p30_tasks').select('*').eq('user_id', state.user.id).eq('is_missao_hoje', true).eq('missao_data', state.today)
       .in('status', ['pendente', 'em_andamento', 'concluida']).order('created_at', { ascending: true }).limit(3)
       .then(function (res) {
         if (res.error) throw res.error;
@@ -554,13 +576,26 @@
     var selectedArea = null;
     var selectedTipo = 'tarefa';
     var selectedPrioridade = null;
+    var selectedWhen = 'hoje';
     var currentTaskId = null;
     var days2 = [0, 1, 2, 3, 4, 5, 6];
+
+    function resolveWhenToDate(when) {
+      if (when === 'hoje') return state.today;
+      if (when === 'amanha') return addDaysStr(state.today, 1);
+      return nextDateForWeekday(+when);
+    }
 
     q('areaChips').addEventListener('click', function (e) {
       var b = e.target.closest('.chip'); if (!b) return;
       Array.prototype.forEach.call(this.querySelectorAll('.chip'), function (x) { x.classList.toggle('active', x === b); });
       selectedArea = b.dataset.a;
+    });
+    q('whenChips').addEventListener('click', function (e) {
+      var b = e.target.closest('.chip'); if (!b) return;
+      Array.prototype.forEach.call(this.querySelectorAll('.chip'), function (x) { x.classList.toggle('active', x === b); });
+      selectedWhen = b.dataset.when;
+      if (stage2Open) q('capPrazo').value = resolveWhenToDate(selectedWhen);
     });
     q('tipoChips').addEventListener('click', function (e) {
       var b = e.target.closest('.chip'); if (!b) return;
@@ -578,8 +613,9 @@
       q('capPrazo').value = ''; q('capHorario').value = ''; q('capDuracao').value = '';
       q('capResponsavel').value = ''; q('capProximaAcao').value = ''; q('capObs').value = '';
       q('capMeta').value = '';
-      selectedArea = null; selectedTipo = 'tarefa'; selectedPrioridade = null; currentTaskId = null;
+      selectedArea = null; selectedTipo = 'tarefa'; selectedPrioridade = null; selectedWhen = 'hoje'; currentTaskId = null;
       Array.prototype.forEach.call(q('areaChips').querySelectorAll('.chip'), function (x) { x.classList.remove('active'); });
+      Array.prototype.forEach.call(q('whenChips').querySelectorAll('.chip'), function (x) { x.classList.toggle('active', x.dataset.when === 'hoje'); });
       Array.prototype.forEach.call(q('tipoChips').querySelectorAll('.chip'), function (x, i) { x.classList.toggle('active', i === 0); });
       Array.prototype.forEach.call(q('prioridadeChips').querySelectorAll('.chip'), function (x) { x.classList.remove('active'); });
       stage2Open = false;
@@ -612,6 +648,7 @@
       stage2Open = true;
       q('captureStage2').hidden = false;
       q('captureStage1Actions').hidden = true;
+      if (!q('capPrazo').value) q('capPrazo').value = resolveWhenToDate(selectedWhen);
     });
 
     q('saveCaptureBtn').addEventListener('click', function () {
@@ -619,7 +656,8 @@
       if (!titulo) { toast('Escreva algo antes de salvar.'); return; }
       var row = {
         user_id: state.user.id, titulo: titulo, texto_original: titulo,
-        area: selectedArea, tipo: 'tarefa', status: 'inbox', organizado: false, pontos: 10
+        area: selectedArea, tipo: 'tarefa', status: 'pendente', organizado: false, pontos: 10,
+        data: resolveWhenToDate(selectedWhen)
       };
       q('saveCaptureBtn').disabled = true;
       sb.from('p30_tasks').insert(row).select().single().then(function (res) {
@@ -710,10 +748,10 @@
       q('reorganizeSaveBtn').disabled = true;
       var ops = [];
       chosenIds.forEach(function (id) {
-        ops.push(sb.from('p30_tasks').update({ is_missao_hoje: true, status: 'pendente' }).eq('id', id).eq('status', 'inbox'));
-        ops.push(sb.from('p30_tasks').update({ is_missao_hoje: true }).eq('id', id).neq('status', 'inbox'));
+        ops.push(sb.from('p30_tasks').update({ is_missao_hoje: true, missao_data: state.today, status: 'pendente' }).eq('id', id).eq('status', 'inbox'));
+        ops.push(sb.from('p30_tasks').update({ is_missao_hoje: true, missao_data: state.today }).eq('id', id).neq('status', 'inbox'));
       });
-      toUnset.forEach(function (id) { ops.push(sb.from('p30_tasks').update({ is_missao_hoje: false }).eq('id', id)); });
+      toUnset.forEach(function (id) { ops.push(sb.from('p30_tasks').update({ is_missao_hoje: false, missao_data: null }).eq('id', id)); });
       Promise.all(ops).then(function () {
         q('reorganizeSaveBtn').disabled = false;
         closeReorganize();
@@ -721,6 +759,117 @@
         loadMissions().then(function () { renderMissions(); persistDailyScore(); computeNextCommitment(); renderNext(); });
       });
     });
+  }
+
+  // ============================================================
+  // MINHA SEMANA — visão de segunda a domingo. Mostra tarefas com
+  // "data" marcada dentro da semana + rotinas do dia da semana
+  // correspondente (rotinas aqui são só informativas; concluir uma
+  // rotina continua sendo feito na tela Hoje).
+  // ============================================================
+  function loadWeek() {
+    var monday = mondayOfWeek(state.today);
+    var sunday = addDaysStr(monday, 6);
+    state.weekDates = [];
+    for (var i = 0; i < 7; i++) state.weekDates.push(addDaysStr(monday, i));
+    var pTasks = sb.from('p30_tasks').select('*').eq('user_id', state.user.id)
+      .in('tipo', ['tarefa', 'aguardando']).not('status', 'in', '(concluida,arquivada)')
+      .gte('data', monday).lte('data', sunday);
+    var pRoutines = state.allRoutinesCache
+      ? Promise.resolve({ data: state.allRoutinesCache, error: null })
+      : sb.from('p30_routines').select('*').eq('user_id', state.user.id).eq('ativo', true);
+    return Promise.all([pTasks, pRoutines]).then(function (results) {
+      if (results[0].error) throw results[0].error;
+      if (results[1].error) throw results[1].error;
+      state.weekTasks = results[0].data || [];
+      state.allRoutinesCache = results[1].data || [];
+    });
+  }
+
+  function renderWeek() {
+    q('weekRangeLabel').textContent = formatWeekRange(state.weekDates[0], state.weekDates[6]);
+    var html = state.weekDates.map(function (d) {
+      var wd = weekdayIdxForDateStr(d);
+      var isToday = d === state.today;
+      var dayTasks = state.weekTasks.filter(function (t) { return t.data === d; });
+      var dayRoutines = state.allRoutinesCache.filter(function (r) { return r.dias_semana && r.dias_semana.indexOf(wd) !== -1; });
+      var body;
+      if (!dayTasks.length && !dayRoutines.length) {
+        body = '<div class="week-empty">Nada planejado</div>';
+      } else {
+        body = dayRoutines.map(function (r) {
+          return '<div class="week-task-row routine"><span class="dot"></span><span class="t">' + esc(r.titulo) + '</span></div>';
+        }).join('') + dayTasks.map(function (t) {
+          return '<div class="week-task-row' + (t.status === 'concluida' ? ' done' : '') + '" data-id="' + t.id + '">' +
+            '<span class="check" data-check="' + t.id + '">' + iconCheck() + '</span>' +
+            '<span class="t">' + esc(t.titulo) + '</span>' +
+            '<button class="week-move-btn" data-move="' + t.id + '" type="button">&#8594;</button></div>';
+        }).join('');
+      }
+      return '<div class="week-day' + (isToday ? ' today' : '') + '">' +
+        '<div class="week-day-head"><span class="week-day-name">' + DAY_FULL[wd].split('-')[0].toUpperCase() + '</span>' +
+        '<span class="week-day-date">' + (+d.split('-')[2]) + '</span></div>' + body + '</div>';
+    }).join('');
+    q('weekDays').innerHTML = html;
+    Array.prototype.forEach.call(q('weekDays').querySelectorAll('[data-check]'), function (chk) {
+      chk.addEventListener('click', function () { toggleWeekTask(chk.dataset.check); });
+    });
+    Array.prototype.forEach.call(q('weekDays').querySelectorAll('[data-move]'), function (btn) {
+      btn.addEventListener('click', function () { openMoveSheet(btn.dataset.move); });
+    });
+  }
+
+  function toggleWeekTask(id) {
+    var t = state.weekTasks.find(function (x) { return x.id === id; });
+    if (!t) return;
+    var newStatus = t.status === 'concluida' ? 'pendente' : 'concluida';
+    t.status = newStatus;
+    sb.from('p30_tasks').update({ status: newStatus, concluido_em: newStatus === 'concluida' ? new Date().toISOString() : null })
+      .eq('id', id).then(function (res) { if (res.error) console.error(res.error); });
+    renderWeek();
+  }
+
+  function openMoveSheet(taskId) {
+    moveTaskId = taskId;
+    q('moveDayChips').innerHTML = state.weekDates.map(function (d) {
+      var wd = weekdayIdxForDateStr(d);
+      var isToday = d === state.today;
+      return '<button type="button" class="chip' + (isToday ? ' active' : '') + '" data-date="' + d + '">' + DAY_ABBR[wd] + ' ' + (+d.split('-')[2]) + '</button>';
+    }).join('');
+    Array.prototype.forEach.call(q('moveDayChips').querySelectorAll('.chip'), function (b) {
+      b.addEventListener('click', function () { moveTaskTo(b.dataset.date); });
+    });
+    el.scrim.classList.add('show');
+    el.sheetMoveTask.classList.add('show');
+  }
+  function closeMoveSheet() {
+    el.scrim.classList.remove('show');
+    el.sheetMoveTask.classList.remove('show');
+  }
+  function moveTaskTo(dateStr) {
+    var t = state.weekTasks.find(function (x) { return x.id === moveTaskId; });
+    if (t) t.data = dateStr;
+    sb.from('p30_tasks').update({ data: dateStr }).eq('id', moveTaskId)
+      .then(function (res) { if (res.error) console.error(res.error); });
+    closeMoveSheet();
+    renderWeek();
+    toast('Tarefa movida.');
+  }
+  function initWeek() {
+    q('moveCancelBtn').addEventListener('click', closeMoveSheet);
+  }
+
+  function switchTab(tab) {
+    document.querySelectorAll('.tab').forEach(function (b) { b.classList.toggle('active', b.dataset.tab === tab); });
+    q('viewHoje').hidden = tab !== 'hoje';
+    q('viewSemana').hidden = tab !== 'semana';
+    if (tab === 'semana') {
+      q('weekRangeLabel').textContent = 'Carregando…';
+      loadWeek().then(renderWeek).catch(function (err) {
+        console.error('[30D] falha ao carregar semana', err);
+        toast('Não consegui carregar a semana.');
+      });
+    }
   }
 
   // ============================================================
@@ -913,12 +1062,333 @@
   }
 
   // ============================================================
+  // CONFIGURAR MEU PROJETO 30D — carga inicial idempotente, em duas
+  // etapas: 1) semear sugestões em p30_setup_proposals (nunca toca nas
+  // tabelas reais); 2) o usuário confirma item a item, e só nesse
+  // momento a linha real é criada em p30_tasks/p30_habits/p30_routines/
+  // p30_goals. "categoria" controla a validação do banco; "grupo" é só
+  // como a lista é seccionada na tela.
+  // ============================================================
+  function taskDef(slug, grupo, titulo, opts) {
+    opts = opts || {};
+    return {
+      slug: slug, grupo: grupo, titulo: titulo, categoria: 'tarefa', dependsOn: opts.dependsOn || null,
+      buildRow: function (ctx) {
+        return {
+          table: 'p30_tasks', row: {
+            user_id: state.user.id, cycle_id: state.cycle.id, goal_id: opts.dependsOn ? ctx.goalId : null,
+            titulo: titulo, texto_original: titulo, tipo: 'tarefa', area: opts.area || null, status: 'pendente', organizado: true,
+            data: opts.data || null, duracao_min: opts.duracao || null,
+            is_missao_hoje: !!opts.missao, missao_data: opts.missao ? opts.data : null,
+            pontos: opts.missao ? 20 : 10
+          }
+        };
+      }
+    };
+  }
+  function routineDef(slug, titulo, dias, area) {
+    return {
+      slug: slug, grupo: 'Rotinas semanais', titulo: titulo, categoria: 'rotina', dependsOn: null,
+      buildRow: function () {
+        return { table: 'p30_routines', row: { user_id: state.user.id, titulo: titulo, area: area, dias_semana: dias, horario: null, pontos: 10, ativo: true } };
+      }
+    };
+  }
+  function habitDef(slug, titulo) {
+    return {
+      slug: slug, grupo: 'Hábitos essenciais', titulo: titulo, categoria: 'habito', dependsOn: null,
+      buildRow: function () {
+        return { table: 'p30_habits', row: { user_id: state.user.id, titulo: titulo, pontos: 8, dias_semana: null, ativo: true } };
+      }
+    };
+  }
+
+  var SETUP_DEFS = [
+    routineDef('rotina-segunda', 'Organização do consultório', [1], 'consultorio'),
+    routineDef('rotina-terca', 'Parceria clínica', [2], 'consultorio'),
+    routineDef('rotina-quarta', 'Consultório particular', [3], 'consultorio'),
+    routineDef('rotina-quinta', 'Parceria clínica (revisão de quarta)', [4], 'consultorio'),
+    routineDef('rotina-sexta', 'Fechamento semanal', [5], 'consultorio'),
+    routineDef('rotina-sabado', 'Organização pessoal', [6], 'organizacao'),
+    routineDef('rotina-domingo', 'Preparação da semana', [0], 'organizacao'),
+
+    habitDef('habito-agua', 'Beber água ao acordar'),
+    habitDef('habito-sem-redes', 'Evitar redes sociais antes da rotina principal'),
+    habitDef('habito-roupa-academia', 'Separar roupa da academia quando necessário'),
+    habitDef('habito-alimentacao-amanha', 'Conferir alimentação do dia seguinte'),
+    habitDef('habito-pausa', 'Fazer uma pausa de desaceleração (escrever, ler, orar ou respirar)'),
+    habitDef('habito-celular-noite', 'Reduzir o celular à noite'),
+    habitDef('habito-sem-criativos', 'Evitar tarefas criativas depois das 21h'),
+
+    {
+      slug: 'meta-tcc', grupo: 'Meta do TCC',
+      titulo: 'Finalizar TCC — Previsibilidade clínica em alinhadores invisíveis',
+      categoria: 'meta', dependsOn: null,
+      buildRow: function () {
+        return {
+          table: 'p30_goals', row: {
+            user_id: state.user.id, cycle_id: state.cycle.id,
+            titulo: 'Finalizar TCC — Previsibilidade clínica em alinhadores invisíveis',
+            area: 'futuro', prazo_final: '2026-11-30', medida_tipo: 'etapas', status: 'ativa'
+          }
+        };
+      }
+    }
+  ];
+  [
+    'Diagnóstico do material existente', 'Organização da estrutura', 'Introdução', 'Revisão de literatura',
+    'Desenvolvimento', 'Discussão', 'Conclusão', 'Referências', 'Revisão final', 'Preparação da apresentação'
+  ].forEach(function (titulo, i) {
+    SETUP_DEFS.push({
+      slug: 'marco-tcc-' + (i + 1), grupo: 'Meta do TCC', titulo: titulo, categoria: 'marco', dependsOn: 'meta-tcc',
+      buildRow: function (ctx) {
+        return { table: 'p30_goal_milestones', row: { goal_id: ctx.goalId, user_id: state.user.id, titulo: titulo, tipo: 'marco', ordem: i + 1 } };
+      }
+    });
+  });
+  SETUP_DEFS.push({
+    slug: 'etapa-tcc-semana1', grupo: 'Meta do TCC', titulo: 'Etapa da semana (8–16 ago): organizar o material e avançar na introdução',
+    categoria: 'etapa', dependsOn: 'meta-tcc',
+    buildRow: function (ctx) {
+      return { table: 'p30_goal_milestones', row: { goal_id: ctx.goalId, user_id: state.user.id, titulo: 'Organizar o material e avançar na introdução', tipo: 'etapa_semanal', prazo: '2026-08-16' } };
+    }
+  });
+  [
+    'Abrir a versão atual', 'Identificar a versão mais recente', 'Listar partes incompletas', 'Revisar a estrutura',
+    'Escrever a primeira parte da introdução', 'Registrar dúvidas', 'Preparar pontos para conversar com o professor'
+  ].forEach(function (titulo, i) {
+    SETUP_DEFS.push(taskDef('tcc-acao-' + (i + 1), 'Próximas ações do TCC', titulo, { area: 'futuro', dependsOn: 'meta-tcc' }));
+  });
+  SETUP_DEFS.push(taskDef('tcc-sessao-1', 'Sessões de trabalho do TCC', 'Sessão de trabalho — 45 min na introdução', { area: 'futuro', dependsOn: 'meta-tcc', duracao: 45 }));
+  SETUP_DEFS.push(taskDef('tcc-sessao-2', 'Sessões de trabalho do TCC', 'Sessão de trabalho — 60 min na introdução', { area: 'futuro', dependsOn: 'meta-tcc', duracao: 60 }));
+
+  SETUP_DEFS.push(taskDef('missao-08-08-mercado', 'Missões de hoje (8 de agosto)', 'Mercado e alimentação', { area: 'corpo', data: '2026-08-08', missao: true }));
+  SETUP_DEFS.push(taskDef('missao-08-08-financeiro', 'Missões de hoje (8 de agosto)', 'Levantar entradas, saídas e boletos', { area: 'consultorio', data: '2026-08-08', missao: true }));
+  SETUP_DEFS.push(taskDef('missao-08-08-tcc', 'Missões de hoje (8 de agosto)', 'Abrir e organizar o TCC', { area: 'futuro', data: '2026-08-08', missao: true, dependsOn: 'meta-tcc' }));
+
+  [
+    ['Comprar luvas', '2026-08-10'], ['Comprar contenções', '2026-08-10'], ['Comprar fios', '2026-08-10'], ['Comprar sacolas tipo chup-chup', '2026-08-10'],
+    ['Resolver os trabalhos protéticos', null], ['Verificar possibilidade de outro laboratório', null],
+    ['Avaliar agenda dos pacientes do dia 12 de agosto', '2026-08-12'], ['Avaliar eventual reagendamento para 19 de agosto', '2026-08-19'],
+    ['Organizar leads', null], ['Organizar ligações', null], ['Criar rotina diária da SDR', null], ['Preparar scripts', null]
+  ].forEach(function (pair, i) {
+    SETUP_DEFS.push(taskDef('consultorio-' + (i + 1), 'Tarefas do consultório', pair[0], { area: 'consultorio', data: pair[1] }));
+  });
+
+  [
+    'Calcular entradas da primeira semana de agosto', 'Calcular saídas da primeira semana',
+    'Separar tratamento vendido de valor recebido', 'Levantar contas a receber', 'Levantar boletos',
+    'Calcular saldo disponível', 'Levantar despesas previstas'
+  ].forEach(function (titulo, i) {
+    SETUP_DEFS.push(taskDef('financeiro-' + (i + 1), 'Financeiro', titulo, { area: 'consultorio' }));
+  });
+
+  function defBySlug(slug) { return SETUP_DEFS.filter(function (d) { return d.slug === slug; })[0]; }
+
+  function initSetup() {
+    var proposalState = {};
+
+    function seedProposals() {
+      var rows = SETUP_DEFS.map(function (d) { return { user_id: state.user.id, slug: d.slug, categoria: d.categoria, titulo: d.titulo, payload: { grupo: d.grupo } }; });
+      return sb.from('p30_setup_proposals').upsert(rows, { onConflict: 'user_id,slug', ignoreDuplicates: true });
+    }
+    function loadProposals() {
+      return sb.from('p30_setup_proposals').select('*').eq('user_id', state.user.id).then(function (res) {
+        if (res.error) throw res.error;
+        proposalState = {};
+        (res.data || []).forEach(function (p) { proposalState[p.slug] = p; });
+      });
+    }
+
+    function openSetup() {
+      q('setupProgress').textContent = 'Carregando sugestões…';
+      q('setupGroups').innerHTML = '';
+      el.sheetSettings.classList.remove('show');
+      el.scrim.classList.add('show');
+      el.sheetSetup.classList.add('show');
+      seedProposals().then(loadProposals).then(renderSetup).catch(function (err) {
+        console.error('[30D setup] falha ao carregar sugestões', err);
+        toast('Não consegui carregar as sugestões.');
+      });
+    }
+    function closeSetup() {
+      el.scrim.classList.remove('show');
+      el.sheetSetup.classList.remove('show');
+    }
+
+    function renderSetup() {
+      var groups = {};
+      var order = [];
+      SETUP_DEFS.forEach(function (d) {
+        if (!groups[d.grupo]) { groups[d.grupo] = []; order.push(d.grupo); }
+        groups[d.grupo].push(d);
+      });
+      var totalConfirmed = Object.keys(proposalState).filter(function (s) { return proposalState[s].status === 'confirmado'; }).length;
+      q('setupProgress').textContent = totalConfirmed + ' de ' + SETUP_DEFS.length + ' confirmadas';
+      q('setupGroups').innerHTML = order.map(function (grupo, gi) {
+        var defs = groups[grupo];
+        var confirmedInGroup = defs.filter(function (d) { return proposalState[d.slug] && proposalState[d.slug].status === 'confirmado'; }).length;
+        var itemsHtml = defs.map(function (d) {
+          var p = proposalState[d.slug] || { status: 'sugerido' };
+          if (p.status === 'confirmado') {
+            return '<div class="setup-item confirmado"><span class="status-tag">✓</span><span class="t">' + esc(d.titulo) + '</span></div>';
+          }
+          var checked = p.status !== 'descartado';
+          return '<div class="setup-item' + (p.status === 'descartado' ? ' descartado' : '') + '">' +
+            '<input type="checkbox" data-check="' + d.slug + '"' + (checked ? ' checked' : '') + (p.status === 'descartado' ? ' disabled' : '') + '>' +
+            '<span class="t">' + esc(d.titulo) + '</span>' +
+            '<button class="discard-btn" data-discard="' + d.slug + '" type="button">' + (p.status === 'descartado' ? 'restaurar' : 'descartar') + '</button>' +
+            '</div>';
+        }).join('');
+        return '<div class="setup-group' + (gi === 0 ? ' open' : '') + '">' +
+          '<div class="setup-group-head"><span><span class="lab">' + esc(grupo) + '</span><span class="count">' + confirmedInGroup + '/' + defs.length + '</span></span>' +
+          '<svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></div>' +
+          '<div class="setup-group-body"><div class="setup-group-body-inner">' + itemsHtml +
+          '<button class="btn primary small setup-group-confirm" data-confirm-group="' + esc(grupo) + '" type="button">Confirmar marcados</button>' +
+          '</div></div></div>';
+      }).join('');
+
+      Array.prototype.forEach.call(q('setupGroups').querySelectorAll('.setup-group-head'), function (head) {
+        head.addEventListener('click', function () { head.closest('.setup-group').classList.toggle('open'); });
+      });
+      Array.prototype.forEach.call(q('setupGroups').querySelectorAll('[data-discard]'), function (btn) {
+        btn.addEventListener('click', function (e) { e.stopPropagation(); toggleDiscard(btn.dataset.discard); });
+      });
+      Array.prototype.forEach.call(q('setupGroups').querySelectorAll('[data-confirm-group]'), function (btn) {
+        btn.addEventListener('click', function (e) { e.stopPropagation(); confirmGroup(btn.dataset.confirmGroup); });
+      });
+    }
+
+    function toggleDiscard(slug) {
+      var p = proposalState[slug];
+      var newStatus = (p && p.status === 'descartado') ? 'sugerido' : 'descartado';
+      sb.from('p30_setup_proposals').update({ status: newStatus }).eq('user_id', state.user.id).eq('slug', slug).then(function (res) {
+        if (res.error) { toast('Não consegui atualizar.'); console.error(res.error); return; }
+        loadProposals().then(renderSetup);
+      });
+    }
+
+    function confirmOne(slug) {
+      var def = defBySlug(slug);
+      var p = proposalState[slug];
+      if (!def || !p || p.status === 'confirmado') return Promise.resolve();
+      var ctx = {};
+      if (def.dependsOn) {
+        var dep = proposalState[def.dependsOn];
+        if (!dep || dep.status !== 'confirmado' || !dep.created_target_id) {
+          toast('Confirme "' + defBySlug(def.dependsOn).titulo + '" primeiro.');
+          return Promise.reject(new Error('dependency not confirmed: ' + def.dependsOn));
+        }
+        ctx.goalId = dep.created_target_id;
+      }
+      var built = def.buildRow(ctx);
+      return sb.from(built.table).insert(built.row).select().single().then(function (res) {
+        if (res.error) throw res.error;
+        return sb.from('p30_setup_proposals').update({
+          status: 'confirmado', created_target_table: built.table, created_target_id: res.data.id
+        }).eq('user_id', state.user.id).eq('slug', slug);
+      });
+    }
+
+    function confirmGroup(grupo) {
+      var defs = SETUP_DEFS.filter(function (d) { return d.grupo === grupo; });
+      var checkedSlugs = [];
+      defs.forEach(function (d) {
+        var p = proposalState[d.slug];
+        if (p && p.status === 'confirmado') return;
+        var cb = q('setupGroups').querySelector('[data-check="' + d.slug + '"]');
+        if (cb && cb.checked) checkedSlugs.push(d.slug);
+      });
+      if (!checkedSlugs.length) { toast('Nada marcado pra confirmar neste bloco.'); return; }
+      checkedSlugs.sort(function (a, b) {
+        var da = defBySlug(a).dependsOn ? 1 : 0, db = defBySlug(b).dependsOn ? 1 : 0;
+        return da - db;
+      });
+      var chain = Promise.resolve();
+      checkedSlugs.forEach(function (slug) {
+        chain = chain.then(function () { return confirmOne(slug); }).catch(function (err) { console.error('[30D setup]', slug, err); });
+      });
+      chain.then(function () {
+        toast('Confirmado.');
+        return loadProposals();
+      }).then(function () {
+        renderSetup();
+        loadMissions().then(renderMissions);
+        loadGoals().then(function () { computeWeeklyMilestone(); computeDeadlineChip(); renderWeeklyGoal(); renderInfoChips(); });
+        loadRoutinesToday().then(function () { renderRoutinesToday(); renderScore(); });
+        loadHabits().then(function () { renderHabits(); renderScore(); });
+      });
+    }
+
+    function undoSetup() {
+      if (!window.confirm('Remover tudo que foi criado pela carga inicial? Isso não afeta o que você criou manualmente.')) return;
+      sb.from('p30_setup_proposals').select('*').eq('user_id', state.user.id).eq('status', 'confirmado').then(function (res) {
+        if (res.error) { toast('Não consegui verificar a carga inicial.'); console.error(res.error); return; }
+        var rows = res.data || [];
+        if (!rows.length) { toast('Não há nada confirmado pra desfazer.'); return; }
+        rows.sort(function (a, b) {
+          var da = defBySlug(a.slug), db = defBySlug(b.slug);
+          var ra = (da && da.dependsOn) ? 0 : 1, rb = (db && db.dependsOn) ? 0 : 1;
+          return ra - rb;
+        });
+        var chain = Promise.resolve();
+        rows.forEach(function (p) {
+          chain = chain.then(function () {
+            return sb.from(p.created_target_table).delete().eq('id', p.created_target_id).then(function () {
+              return sb.from('p30_setup_proposals').update({ status: 'sugerido', created_target_id: null, created_target_table: null }).eq('id', p.id);
+            });
+          }).catch(function (err) { console.error('[30D setup undo]', p.slug, err); });
+        });
+        chain.then(function () {
+          toast('Carga inicial desfeita.');
+          loadEverything();
+        });
+      });
+    }
+
+    q('openSetupBtn').addEventListener('click', openSetup);
+    q('setupCloseBtn').addEventListener('click', closeSetup);
+    q('setupDoneBtn').addEventListener('click', closeSetup);
+    q('undoSetupBtn').addEventListener('click', undoSetup);
+
+    // ---------- academia: formulário direto, sem staging (o próprio
+    // preenchimento já é a confirmação) ----------
+    var academiaDays = [];
+    q('academiaDayChips').innerHTML = DAY_ABBR.map(function (d, i) {
+      return '<button type="button" class="chip day-chip" data-d="' + i + '" title="' + DAY_FULL[i] + '">' + d + '</button>';
+    }).join('');
+    q('academiaDayChips').addEventListener('click', function (e) {
+      var b = e.target.closest('.chip'); if (!b) return;
+      b.classList.toggle('active');
+      academiaDays = Array.prototype.slice.call(q('academiaDayChips').querySelectorAll('.chip.active')).map(function (x) { return +x.dataset.d; });
+    });
+    q('academiaSaveBtn').addEventListener('click', function () {
+      if (!academiaDays.length) { toast('Escolha ao menos um dia.'); return; }
+      var row = {
+        user_id: state.user.id, titulo: 'Academia', area: 'corpo', dias_semana: academiaDays.slice(),
+        horario: q('academiaHorario').value || null, pontos: 20, ativo: true
+      };
+      q('academiaSaveBtn').disabled = true;
+      sb.from('p30_routines').insert(row).then(function (res) {
+        q('academiaSaveBtn').disabled = false;
+        if (res.error) { toast('Não consegui salvar a rotina da academia.'); console.error(res.error); return; }
+        toast('Rotina da academia confirmada.');
+        Array.prototype.forEach.call(q('academiaDayChips').querySelectorAll('.chip'), function (c) { c.classList.remove('active'); });
+        academiaDays = [];
+        q('academiaHorario').value = ''; q('academiaDuracao').value = ''; q('academiaObs').value = '';
+        loadRoutinesToday().then(function () { renderRoutinesToday(); renderScore(); });
+      });
+    });
+  }
+
+  // ============================================================
   // navegação inferior (só "Hoje" existe nesta fase)
   // ============================================================
   function initNav() {
     document.querySelectorAll('.tab').forEach(function (t) {
       t.addEventListener('click', function () {
-        if (t.dataset.tab === 'hoje') return;
+        var tab = t.dataset.tab;
+        if (tab === 'hoje' || tab === 'semana') { switchTab(tab); return; }
         toast('Essa tela chega numa próxima fase.');
       });
     });
@@ -929,7 +1399,7 @@
     q('habitsToggle').addEventListener('click', function () { q('habitsBox').classList.toggle('open'); });
     q('routinesToggle').addEventListener('click', function () { q('routinesBox').classList.toggle('open'); });
     el.scrim.addEventListener('click', function () {
-      [el.sheetCapture, el.sheetSettings, el.sheetReorganize, el.sheetBraindump].forEach(function (s) { s.classList.remove('show'); });
+      [el.sheetCapture, el.sheetSettings, el.sheetReorganize, el.sheetBraindump, el.sheetMoveTask, el.sheetSetup].forEach(function (s) { s.classList.remove('show'); });
       el.scrim.classList.remove('show');
     });
     q('errorRetryBtn').addEventListener('click', function () {
@@ -957,14 +1427,18 @@
     el.routinesAdminList = q('routinesAdminList');
     el.goalsAdminList = q('goalsAdminList');
     el.reorganizeList = q('reorganizeList');
+    el.sheetMoveTask = q('sheetMoveTask');
+    el.sheetSetup = q('sheetSetup');
 
     initAuthScreen();
     initNav();
     initCapture();
     initReorganize();
+    initWeek();
     initBraindump();
     initEndDay();
     initSettings();
+    initSetup();
     boot();
   });
 })();
