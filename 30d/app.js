@@ -126,9 +126,6 @@
         onAuthed(res.data.session.user);
       });
     });
-    q('authGoogleBtn').addEventListener('click', function () {
-      sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.href.split('#')[0] } });
-    });
     function showAuthError(msg) {
       q('authError').textContent = msg;
       q('authError').classList.add('show');

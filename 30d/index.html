@@ -12,8 +12,8 @@
 <div id="loadingScreen" class="loading-screen"><span class="spinner"></span> Carregando seu dia…</div>
 
 <!-- ============================================================
-     LOGIN — mesma auth do painel da clínica (mesmo projeto Supabase),
-     mas os dados daqui (tabelas p30_*) são privados por usuário.
+     LOGIN — projeto Supabase próprio, separado do painel da clínica.
+     Cadastro e dados 100% independentes.
      ============================================================ -->
 <div id="authScreen" class="auth-screen" hidden>
   <div class="auth-brand">
@@ -31,10 +31,6 @@
     <label>Senha</label>
     <input type="password" id="authSenha" placeholder="Mínimo 6 caracteres" autocomplete="current-password">
     <button class="btn primary" style="width:100%; margin-top:18px;" id="authSubmitBtn">Entrar</button>
-    <div style="display:flex; align-items:center; gap:10px; margin:16px 0; color:var(--sand-faint); font-size:12.5px;">
-      <div style="flex:1; height:1px; background:var(--line);"></div>ou<div style="flex:1; height:1px; background:var(--line);"></div>
-    </div>
-    <button class="btn ghost" style="width:100%;" id="authGoogleBtn">Entrar com Google</button>
     <p class="auth-error" id="authError"></p>
   </div>
   <p class="auth-help">Este é um cadastro novo, separado do painel da clínica — seu login pessoal só existe aqui.</p>
