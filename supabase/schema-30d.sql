@@ -328,6 +328,44 @@ create policy "p30_setup_proposals_owner" on public.p30_setup_proposals for all 
   using (user_id = auth.uid()) with check (user_id = auth.uid());
 
 -- ============================================================
+-- PAINEL DO TCC — colunas novas em p30_goal_milestones (peso da etapa,
+-- descrição, datas, observação, próxima ação) + histórico de
+-- progresso. Tudo aditivo, nada apaga ou altera dado existente —
+-- etapas já criadas continuam do jeito que estavam, só ganham campos
+-- novos vazios até o usuário preencher.
+-- ============================================================
+alter table public.p30_goal_milestones add column if not exists peso numeric;
+alter table public.p30_goal_milestones add column if not exists descricao text;
+alter table public.p30_goal_milestones add column if not exists data_inicio date;
+alter table public.p30_goal_milestones add column if not exists data_conclusao date;
+alter table public.p30_goal_milestones add column if not exists observacao text;
+alter table public.p30_goal_milestones add column if not exists proxima_acao text;
+
+create table if not exists public.p30_goal_progress_log (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  goal_id uuid not null references public.p30_goals(id) on delete cascade,
+  milestone_id uuid references public.p30_goal_milestones(id) on delete set null,
+  data date not null default current_date,
+  percentual_anterior numeric,
+  percentual_novo numeric,
+  observacao text,
+  created_at timestamptz not null default now()
+);
+create index if not exists p30_goal_progress_log_goal_idx on public.p30_goal_progress_log (goal_id, created_at desc);
+
+grant select, insert, update, delete on public.p30_goal_progress_log to authenticated;
+alter table public.p30_goal_progress_log enable row level security;
+drop policy if exists "p30_goal_progress_log_owner" on public.p30_goal_progress_log;
+create policy "p30_goal_progress_log_owner" on public.p30_goal_progress_log for all to authenticated
+  using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+-- Rollback: drop table p30_goal_progress_log;
+--           alter table p30_goal_milestones drop column peso, drop column descricao,
+--             drop column data_inicio, drop column data_conclusao, drop column observacao,
+--             drop column proxima_acao;
+
+-- ============================================================
 -- ROLLBACK desta migration (rodar manualmente, só se decidir reverter):
 --
 --   drop table if exists public.p30_setup_proposals;
