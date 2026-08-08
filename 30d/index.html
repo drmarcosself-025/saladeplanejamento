@@ -288,6 +288,49 @@
   <button class="btn ghost" id="moveCancelBtn" type="button" style="width:100%; margin-top:16px;">Cancelar</button>
 </div>
 
+<!-- ---------- gerenciar tarefa/missão (editar, concluir, adiar, remover, excluir) ---------- -->
+<div class="sheet" id="sheetTaskManage">
+  <div class="sheet-grip"></div>
+  <div style="display:flex; align-items:center; justify-content:space-between;">
+    <h3 style="margin:0;" id="tmTitleLabel">Gerenciar</h3>
+    <button class="icon-x" id="tmCloseBtn" type="button"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+  </div>
+
+  <div class="tm-actions">
+    <button class="btn ghost small" id="tmConcluirBtn" type="button">Concluir</button>
+    <button class="btn ghost small" id="tmAdiarBtn" type="button">Adiar</button>
+    <button class="btn ghost small" id="tmRemoverMissaoBtn" type="button" hidden>Remover da missão</button>
+  </div>
+
+  <label>Título</label>
+  <input type="text" id="tmTitulo">
+  <label>Área</label>
+  <div class="chip-row" id="tmAreaChips">
+    <button type="button" class="chip" data-a="corpo">Corpo</button>
+    <button type="button" class="chip" data-a="mente">Mente</button>
+    <button type="button" class="chip" data-a="consultorio">Consultório</button>
+    <button type="button" class="chip" data-a="futuro">Futuro</button>
+    <button type="button" class="chip" data-a="organizacao">Organização</button>
+  </div>
+  <div class="field-row2">
+    <div><label>Data</label><input type="date" id="tmData"></div>
+    <div><label>Horário</label><input type="time" id="tmHorario"></div>
+  </div>
+  <label>Prioridade</label>
+  <div class="chip-row" id="tmPrioridadeChips">
+    <button type="button" class="chip" data-p="baixa">Baixa</button>
+    <button type="button" class="chip" data-p="normal">Normal</button>
+    <button type="button" class="chip" data-p="alta">Alta</button>
+  </div>
+  <label>Próxima ação</label>
+  <input type="text" id="tmProximaAcao" placeholder="Opcional">
+  <label>Pontos</label>
+  <input type="number" id="tmPontos" min="0" step="1">
+
+  <button class="btn primary" id="tmSaveBtn" type="button">Salvar alterações</button>
+  <button class="btn full-secondary" id="tmDeleteBtn" type="button" style="border-color:rgba(178,59,59,.4); color:#e0a06e; margin-top:10px;">Excluir definitivamente</button>
+</div>
+
 <!-- ---------- estou com a cabeça cheia ---------- -->
 <div class="sheet" id="sheetBraindump">
   <div class="sheet-grip"></div>

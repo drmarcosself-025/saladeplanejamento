@@ -108,8 +108,8 @@ a{ color:inherit; }
 .weekly-goal{ display:flex; align-items:center; gap:13px; background:var(--graphite); border:1px solid var(--line); border-radius:18px; padding:14px 16px; margin-bottom:18px; cursor:pointer; }
 .weekly-goal .ic{ flex:0 0 auto; width:36px; height:36px; border-radius:11px; background:var(--coffee); display:flex; align-items:center; justify-content:center; color:var(--gold); }
 .weekly-goal .body{ min-width:0; flex:1; }
-.weekly-goal .eyebrow{ font-size:10.5px; color:var(--sand-faint); text-transform:uppercase; letter-spacing:.8px; font-weight:700; }
-.weekly-goal .title{ font-size:14px; margin-top:2px; color:var(--sand); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.weekly-goal .eyebrow{ display:block; font-size:10.5px; color:var(--sand-faint); text-transform:uppercase; letter-spacing:.8px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.weekly-goal .title{ display:block; font-size:14px; margin-top:2px; color:var(--sand); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .weekly-goal .chev{ flex:0 0 auto; color:var(--sand-faint); }
 
 /* ---------- section label ---------- */
@@ -138,6 +138,10 @@ a{ color:inherit; }
 .mission-meta{ font-size:12px; color:var(--sand-faint); margin-top:3px; display:flex; align-items:center; gap:6px; }
 .mission-pts{ flex:0 0 auto; font-size:13px; font-weight:700; color:var(--gold); }
 .mission.done .mission-pts{ color:var(--green); font-weight:600; }
+.mission-more{ flex:0 0 auto; width:26px; height:26px; border-radius:8px; background:none; border:none; color:var(--sand-faint); display:flex; align-items:center; justify-content:center; cursor:pointer; font-size:16px; }
+.mission-more:hover{ color:var(--gold); background:rgba(239,231,218,.06); }
+.add-mission-row{ display:flex; align-items:center; justify-content:center; gap:8px; border:1px dashed var(--line-strong); border-radius:20px; padding:12px; margin-bottom:10px; color:var(--sand-dim); font-size:13.5px; font-weight:600; cursor:pointer; background:none; width:100%; }
+.add-mission-row:hover{ color:var(--gold); border-color:var(--gold-dim); }
 
 .rest-banner{
   display:none; align-items:center; gap:12px; background:var(--green-bg); border:1px solid rgba(139,181,147,.28);
@@ -361,7 +365,15 @@ a{ color:inherit; }
 .week-task-row .dot{ flex:0 0 auto; width:6px; height:6px; border-radius:50%; background:var(--gold-dim); margin:0 7px 0 2px; }
 .week-move-btn{ flex:0 0 auto; background:none; border:none; color:var(--sand-faint); cursor:pointer; padding:4px 6px; font-size:15px; line-height:1; }
 .week-move-btn:hover{ color:var(--gold); }
+.week-more-btn{ flex:0 0 auto; width:24px; height:24px; border-radius:7px; background:none; border:none; color:var(--sand-faint); cursor:pointer; font-size:15px; line-height:1; }
+.week-more-btn:hover{ color:var(--gold); background:rgba(239,231,218,.06); }
 .week-empty{ font-size:12px; color:var(--sand-faint); font-style:italic; padding:3px 0; }
+.reorg-more-btn{ flex:0 0 auto; width:24px; height:24px; border-radius:7px; background:none; border:none; color:var(--sand-faint); cursor:pointer; font-size:15px; line-height:1; }
+.reorg-more-btn:hover{ color:var(--gold); }
+
+/* ---------- gerenciar tarefa/missão ---------- */
+.tm-actions{ display:flex; flex-wrap:wrap; gap:8px; margin:14px 0 4px; }
+.tm-actions .btn{ flex:none; margin:0; }
 .week-task-time{ font-size:11px; color:var(--gold); font-weight:600; margin-left:6px; }
 .week-add-row{ display:flex; gap:6px; margin-top:9px; padding-top:9px; border-top:1px solid var(--line); }
 .week-add-input{ flex:1; min-width:0; background:var(--ink); border:1px solid var(--line-strong); border-radius:10px; color:var(--sand); padding:8px 10px; font-size:12.5px; font-family:inherit; }
