@@ -804,20 +804,50 @@
         }).join('') + dayTasks.map(function (t) {
           return '<div class="week-task-row' + (t.status === 'concluida' ? ' done' : '') + '" data-id="' + t.id + '">' +
             '<span class="check" data-check="' + t.id + '">' + iconCheck() + '</span>' +
-            '<span class="t">' + esc(t.titulo) + '</span>' +
+            '<span class="t">' + esc(t.titulo) + (t.horario ? ' <span class=\'week-task-time\'>' + t.horario.slice(0, 5) + '</span>' : '') + '</span>' +
             '<button class="week-move-btn" data-move="' + t.id + '" type="button">&#8594;</button></div>';
         }).join('');
       }
       return '<div class="week-day' + (isToday ? ' today' : '') + '">' +
         '<div class="week-day-head"><span class="week-day-name">' + DAY_FULL[wd].split('-')[0].toUpperCase() + '</span>' +
-        '<span class="week-day-date">' + (+d.split('-')[2]) + '</span></div>' + body + '</div>';
+        '<span class="week-day-date">' + (+d.split('-')[2]) + '</span></div>' + body +
+        '<div class="week-add-row">' +
+        '<input type="text" class="week-add-input" data-day="' + d + '" placeholder="Escrever tarefa...">' +
+        '<input type="time" class="week-add-time" data-day="' + d + '">' +
+        '<button class="week-add-btn" data-day="' + d + '" type="button" aria-label="Adicionar">+</button>' +
+        '</div></div>';
     }).join('');
     q('weekDays').innerHTML = html;
     Array.prototype.forEach.call(q('weekDays').querySelectorAll('[data-check]'), function (chk) {
       chk.addEventListener('click', function () { toggleWeekTask(chk.dataset.check); });
     });
+    Array.prototype.forEach.call(q('weekDays').querySelectorAll('.week-add-btn'), function (btn) {
+      btn.addEventListener('click', function () { submitWeekAdd(btn.dataset.day); });
+    });
+    Array.prototype.forEach.call(q('weekDays').querySelectorAll('.week-add-input'), function (input) {
+      input.addEventListener('keydown', function (e) { if (e.key === 'Enter') submitWeekAdd(input.dataset.day); });
+    });
     Array.prototype.forEach.call(q('weekDays').querySelectorAll('[data-move]'), function (btn) {
       btn.addEventListener('click', function () { openMoveSheet(btn.dataset.move); });
+    });
+  }
+
+  function submitWeekAdd(dateStr) {
+    var input = q('weekDays').querySelector('.week-add-input[data-day="' + dateStr + '"]');
+    var timeInput = q('weekDays').querySelector('.week-add-time[data-day="' + dateStr + '"]');
+    var titulo = input.value.trim();
+    if (!titulo) { toast('Escreva algo antes de adicionar.'); return; }
+    var row = {
+      user_id: state.user.id, cycle_id: state.cycle.id, titulo: titulo, texto_original: titulo,
+      tipo: 'tarefa', status: 'pendente', organizado: true, data: dateStr, horario: timeInput.value || null, pontos: 10
+    };
+    input.disabled = true;
+    sb.from('p30_tasks').insert(row).then(function (res) {
+      input.disabled = false;
+      if (res.error) { toast('Não consegui salvar.'); console.error(res.error); return; }
+      toast('Adicionada.');
+      loadWeek().then(renderWeek);
+      if (dateStr === state.today) { loadMissions().then(renderMissions); computeNextCommitment(); renderNext(); }
     });
   }
 

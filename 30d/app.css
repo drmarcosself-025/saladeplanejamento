@@ -362,6 +362,13 @@ a{ color:inherit; }
 .week-move-btn{ flex:0 0 auto; background:none; border:none; color:var(--sand-faint); cursor:pointer; padding:4px 6px; font-size:15px; line-height:1; }
 .week-move-btn:hover{ color:var(--gold); }
 .week-empty{ font-size:12px; color:var(--sand-faint); font-style:italic; padding:3px 0; }
+.week-task-time{ font-size:11px; color:var(--gold); font-weight:600; margin-left:6px; }
+.week-add-row{ display:flex; gap:6px; margin-top:9px; padding-top:9px; border-top:1px solid var(--line); }
+.week-add-input{ flex:1; min-width:0; background:var(--ink); border:1px solid var(--line-strong); border-radius:10px; color:var(--sand); padding:8px 10px; font-size:12.5px; font-family:inherit; }
+.week-add-input:focus{ outline:none; border-color:var(--gold-dim); }
+.week-add-time{ flex:0 0 auto; width:82px; background:var(--ink); border:1px solid var(--line-strong); border-radius:10px; color:var(--sand); padding:8px 6px; font-size:12px; font-family:inherit; color-scheme:dark; }
+.week-add-btn{ flex:0 0 auto; width:34px; height:34px; border-radius:10px; background:var(--coffee); border:1px solid var(--gold-dim); color:var(--gold); font-size:17px; line-height:1; cursor:pointer; }
+.week-add-btn:hover{ background:var(--graphite-2); }
 
 @media (max-width:360px){
   .head h1{ font-size:23px; }
