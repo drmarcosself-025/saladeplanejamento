@@ -1087,6 +1087,275 @@
   }
 
   // ============================================================
+  // PAINEL DETALHADO DA META (PR 2 — TCC e futuras metas). Progresso
+  // calculado pelo PESO das etapas concluídas, não pela contagem.
+  // Cada mudança de conclusão grava uma linha em p30_goal_progress_log
+  // (percentual antes/depois) — é isso que alimenta o histórico e o
+  // "gráfico" simples (barras, sem biblioteca).
+  // ============================================================
+  var gdState = { goal: null, milestones: [], sessionsCount: 0, history: [] };
+
+  function formatDatePt(dateStr) {
+    var p = dateParts(dateStr);
+    return (p.d < 10 ? '0' : '') + p.d + '/' + (p.m < 10 ? '0' : '') + p.m;
+  }
+
+  function computeWeightedProgress(milestones) {
+    var marcos = milestones.filter(function (m) { return m.tipo === 'marco'; });
+    var withWeight = marcos.filter(function (m) { return m.peso != null; });
+    if (withWeight.length) {
+      var totalWeight = withWeight.reduce(function (s, m) { return s + Number(m.peso); }, 0);
+      var doneWeight = withWeight.filter(function (m) { return m.concluido; }).reduce(function (s, m) { return s + Number(m.peso); }, 0);
+      return totalWeight > 0 ? Math.round((doneWeight / totalWeight) * 100) : 0;
+    }
+    if (!marcos.length) return 0;
+    var done = marcos.filter(function (m) { return m.concluido; }).length;
+    return Math.round((done / marcos.length) * 100);
+  }
+
+  function loadGoalDetail(goalId) {
+    var pGoal = sb.from('p30_goals').select('*').eq('id', goalId).single();
+    var pMilestones = sb.from('p30_goal_milestones').select('*').eq('goal_id', goalId).order('ordem', { ascending: true });
+    var pSessions = sb.from('p30_tasks').select('id,duracao_min').eq('goal_id', goalId).eq('status', 'concluida');
+    var pHistory = sb.from('p30_goal_progress_log').select('*').eq('goal_id', goalId).order('created_at', { ascending: false }).limit(10);
+    return Promise.all([pGoal, pMilestones, pSessions, pHistory]).then(function (r) {
+      if (r[0].error) throw r[0].error;
+      if (r[1].error) throw r[1].error;
+      if (r[2].error) throw r[2].error;
+      if (r[3].error) throw r[3].error;
+      gdState.goal = r[0].data;
+      gdState.milestones = r[1].data || [];
+      gdState.sessionsCount = (r[2].data || []).filter(function (t) { return t.duracao_min != null; }).length;
+      gdState.history = r[3].data || [];
+    });
+  }
+
+  function openGoalDetail(goalId) {
+    loadGoalDetail(goalId).then(function () {
+      renderGoalDetail();
+      el.scrim.classList.add('show');
+      el.sheetGoalDetail.classList.add('show');
+    }).catch(function (err) {
+      console.error('[30D] falha ao carregar painel da meta', err);
+      toast('Não consegui carregar a meta.');
+    });
+  }
+  function closeGoalDetail() {
+    el.scrim.classList.remove('show');
+    el.sheetGoalDetail.classList.remove('show');
+  }
+
+  function renderGoalDetail() {
+    var g = gdState.goal;
+    q('gdTitulo').textContent = g.titulo;
+    if (g.prazo_final) {
+      var dias = diffDaysStr(state.today, g.prazo_final);
+      q('gdSubinfo').textContent = 'Prazo: ' + formatDatePt(g.prazo_final) + (dias >= 0 ? ' · faltam ' + dias + ' dias' : ' · atrasada há ' + (-dias) + ' dias');
+    } else {
+      q('gdSubinfo').textContent = 'Sem prazo definido';
+    }
+    var pct = computeWeightedProgress(gdState.milestones);
+    q('gdProgressFill').style.width = pct + '%';
+    q('gdProgressLabel').textContent = pct + '%';
+
+    var marcos = gdState.milestones.filter(function (m) { return m.tipo === 'marco'; });
+    var withWeight = marcos.filter(function (m) { return m.peso != null; });
+    var totalWeight = withWeight.reduce(function (s, m) { return s + Number(m.peso); }, 0);
+    if (withWeight.length && withWeight.length < marcos.length) {
+      q('gdWeightWarn').hidden = false;
+      q('gdWeightWarn').textContent = (marcos.length - withWeight.length) + ' etapa(s) ainda sem peso — o progresso considera só as que já têm peso definido.';
+    } else if (withWeight.length && Math.round(totalWeight) !== 100) {
+      q('gdWeightWarn').hidden = false;
+      q('gdWeightWarn').textContent = 'Soma dos pesos: ' + Math.round(totalWeight) + '% (o ideal é fechar 100%).';
+    } else {
+      q('gdWeightWarn').hidden = true;
+    }
+
+    var marcosOrdenados = marcos.slice().sort(function (a, b) { return (a.ordem || 0) - (b.ordem || 0); });
+    var etapaAtual = marcosOrdenados.filter(function (m) { return !m.concluido; })[0];
+    q('gdEtapaAtual').textContent = etapaAtual ? etapaAtual.titulo : (marcosOrdenados.length ? 'Todas as etapas concluídas' : 'Nenhuma etapa cadastrada ainda');
+
+    var etapaSemana = gdState.milestones.filter(function (m) { return m.tipo === 'etapa_semanal' && !m.concluido; })
+      .sort(function (a, b) { return (a.prazo || '9999') < (b.prazo || '9999') ? -1 : 1; })[0];
+    q('gdMetaSemana').textContent = etapaSemana ? etapaSemana.titulo : 'Nenhuma meta da semana definida ainda';
+    q('gdProximaAcaoSemana').textContent = etapaSemana && etapaSemana.proxima_acao ? ('Próxima ação: ' + etapaSemana.proxima_acao) : '';
+
+    q('gdSessoesCount').textContent = gdState.sessionsCount + (gdState.sessionsCount === 1 ? ' sessão registrada' : ' sessões registradas');
+
+    q('gdHistory').innerHTML = gdState.history.length ? gdState.history.map(function (h) {
+      var v = Math.round(h.percentual_novo || 0);
+      return '<div class="gd-history-row"><span>' + formatDatePt(h.data) + '</span>' +
+        '<span class="bar"><i style="width:' + v + '%"></i></span>' +
+        '<span class="pct">' + v + '%</span></div>';
+    }).join('') : '<p class="sub" style="margin:0;">Ainda sem histórico — aparece aqui a cada etapa concluída.</p>';
+
+    renderGoalMilestonesList(marcosOrdenados);
+  }
+
+  function renderGoalMilestonesList(marcosOrdenados) {
+    q('gdMilestones').innerHTML = marcosOrdenados.length ? marcosOrdenados.map(function (m, i) {
+      return '<div class="gd-milestone' + (m.concluido ? ' done' : '') + '">' +
+        '<div class="gd-milestone-row">' +
+        '<button class="gd-check" data-check-m="' + m.id + '" type="button">' + iconCheck() + '</button>' +
+        '<span class="gd-mtitle">' + esc(m.titulo) + (m.peso != null ? '<span class="gd-mpeso">' + m.peso + '%</span>' : '') + '</span>' +
+        '<button class="gd-reorder" data-up="' + m.id + '" type="button"' + (i === 0 ? ' disabled' : '') + '>&#9650;</button>' +
+        '<button class="gd-reorder" data-down="' + m.id + '" type="button"' + (i === marcosOrdenados.length - 1 ? ' disabled' : '') + '>&#9660;</button>' +
+        '<button class="gd-edit-toggle" data-editm="' + m.id + '" type="button">&#9998;</button>' +
+        '</div>' +
+        '<div class="gd-milestone-edit" id="gdEditRow-' + m.id + '" hidden>' +
+        '<label>Título</label><input type="text" class="gd-e-titulo" value="' + esc(m.titulo).replace(/"/g, '&quot;') + '">' +
+        '<div class="field-row2">' +
+        '<div><label>Peso (%)</label><input type="number" class="gd-e-peso" min="0" max="100" value="' + (m.peso != null ? m.peso : '') + '"></div>' +
+        '<div><label>Prazo</label><input type="date" class="gd-e-prazo" value="' + (m.prazo || '') + '"></div>' +
+        '</div>' +
+        '<label>Próxima ação</label><input type="text" class="gd-e-proxima" value="' + esc(m.proxima_acao || '').replace(/"/g, '&quot;') + '">' +
+        '<label>Observação</label><textarea class="gd-e-obs">' + esc(m.observacao || '') + '</textarea>' +
+        '<div class="actions-row">' +
+        '<button class="btn ghost small" data-remove-m="' + m.id + '" type="button">Remover etapa</button>' +
+        '<button class="btn primary small" data-save-m="' + m.id + '" type="button">Salvar</button>' +
+        '</div></div></div>';
+    }).join('') : '<p class="sub" style="margin:0;">Nenhuma etapa cadastrada ainda.</p>';
+
+    Array.prototype.forEach.call(q('gdMilestones').querySelectorAll('[data-check-m]'), function (btn) {
+      btn.addEventListener('click', function () { toggleMilestoneDone(btn.dataset.checkM); });
+    });
+    Array.prototype.forEach.call(q('gdMilestones').querySelectorAll('[data-editm]'), function (btn) {
+      btn.addEventListener('click', function () {
+        var row = document.getElementById('gdEditRow-' + btn.dataset.editm);
+        if (row) row.hidden = !row.hidden;
+      });
+    });
+    Array.prototype.forEach.call(q('gdMilestones').querySelectorAll('[data-up]'), function (btn) {
+      btn.addEventListener('click', function () { if (!btn.disabled) reorderMilestone(btn.dataset.up, -1); });
+    });
+    Array.prototype.forEach.call(q('gdMilestones').querySelectorAll('[data-down]'), function (btn) {
+      btn.addEventListener('click', function () { if (!btn.disabled) reorderMilestone(btn.dataset.down, 1); });
+    });
+    Array.prototype.forEach.call(q('gdMilestones').querySelectorAll('[data-save-m]'), function (btn) {
+      btn.addEventListener('click', function () { saveMilestoneEdit(btn.dataset.saveM); });
+    });
+    Array.prototype.forEach.call(q('gdMilestones').querySelectorAll('[data-remove-m]'), function (btn) {
+      btn.addEventListener('click', function () { removeMilestone(btn.dataset.removeM); });
+    });
+  }
+
+  function syncWeeklyWidgetsAfterGoalChange() {
+    loadGoals().then(function () { computeWeeklyMilestone(); computeDeadlineChip(); renderWeeklyGoal(); renderInfoChips(); });
+  }
+
+  function toggleMilestoneDone(id) {
+    var m = gdState.milestones.filter(function (x) { return x.id === id; })[0];
+    if (!m) return;
+    var prevPct = computeWeightedProgress(gdState.milestones);
+    var novoConcluido = !m.concluido;
+    var simulated = gdState.milestones.map(function (x) { return x.id === id ? Object.assign({}, x, { concluido: novoConcluido }) : x; });
+    var newPct = computeWeightedProgress(simulated);
+    var patch = { concluido: novoConcluido, data_conclusao: novoConcluido ? state.today : null };
+    sb.from('p30_goal_milestones').update(patch).eq('id', id).then(function (res) {
+      if (res.error) throw res.error;
+      return sb.from('p30_goal_progress_log').insert({
+        user_id: state.user.id, goal_id: gdState.goal.id, milestone_id: id, data: state.today,
+        percentual_anterior: prevPct, percentual_novo: newPct
+      });
+    }).then(function (res2) {
+      if (res2 && res2.error) throw res2.error;
+      loadGoalDetail(gdState.goal.id).then(renderGoalDetail);
+      syncWeeklyWidgetsAfterGoalChange();
+    }).catch(function (err) {
+      console.error(err);
+      toast('Não consegui salvar. Tente de novo.');
+    });
+  }
+
+  function reorderMilestone(id, dir) {
+    var marcos = gdState.milestones.filter(function (m) { return m.tipo === 'marco'; }).sort(function (a, b) { return (a.ordem || 0) - (b.ordem || 0); });
+    var idx = marcos.findIndex(function (m) { return m.id === id; });
+    var swapIdx = idx + dir;
+    if (idx < 0 || swapIdx < 0 || swapIdx >= marcos.length) return;
+    var a = marcos[idx], b = marcos[swapIdx];
+    var ordemA = a.ordem, ordemB = b.ordem;
+    Promise.all([
+      sb.from('p30_goal_milestones').update({ ordem: ordemB }).eq('id', a.id),
+      sb.from('p30_goal_milestones').update({ ordem: ordemA }).eq('id', b.id)
+    ]).then(function (results) {
+      if (results.some(function (r) { return r.error; })) { toast('Não consegui reordenar.'); return; }
+      loadGoalDetail(gdState.goal.id).then(renderGoalDetail);
+    });
+  }
+
+  function saveMilestoneEdit(id) {
+    var row = document.getElementById('gdEditRow-' + id);
+    if (!row) return;
+    var titulo = row.querySelector('.gd-e-titulo').value.trim();
+    if (!titulo) { toast('O título não pode ficar vazio.'); return; }
+    var pesoVal = row.querySelector('.gd-e-peso').value;
+    var patch = {
+      titulo: titulo, peso: pesoVal !== '' ? +pesoVal : null,
+      prazo: row.querySelector('.gd-e-prazo').value || null,
+      proxima_acao: row.querySelector('.gd-e-proxima').value.trim() || null,
+      observacao: row.querySelector('.gd-e-obs').value.trim() || null
+    };
+    sb.from('p30_goal_milestones').update(patch).eq('id', id).then(function (res) {
+      if (res.error) { toast('Não consegui salvar.'); console.error(res.error); return; }
+      toast('Etapa atualizada.');
+      loadGoalDetail(gdState.goal.id).then(renderGoalDetail);
+    });
+  }
+
+  function removeMilestone(id) {
+    if (!window.confirm('Remover esta etapa? O progresso é recalculado sem ela.')) return;
+    sb.from('p30_goal_milestones').delete().eq('id', id).then(function (res) {
+      if (res.error) { toast('Não consegui remover.'); console.error(res.error); return; }
+      toast('Etapa removida.');
+      loadGoalDetail(gdState.goal.id).then(renderGoalDetail);
+      syncWeeklyWidgetsAfterGoalChange();
+    });
+  }
+
+  function initGoalDetail() {
+    q('gdCloseBtn').addEventListener('click', closeGoalDetail);
+    el.weeklyGoal.addEventListener('click', function () {
+      if (state.weeklyMilestone) openGoalDetail(state.weeklyMilestone.goal.id);
+    });
+    q('gdAddMilestoneBtn').addEventListener('click', function () {
+      if (!gdState.goal) return;
+      var titulo = q('gdNewTitulo').value.trim();
+      if (!titulo) { toast('Dê um título pra etapa.'); return; }
+      var marcos = gdState.milestones.filter(function (m) { return m.tipo === 'marco'; });
+      var maxOrdem = marcos.reduce(function (mx, m) { return Math.max(mx, m.ordem || 0); }, 0);
+      var row = {
+        goal_id: gdState.goal.id, user_id: state.user.id, titulo: titulo, tipo: 'marco',
+        peso: q('gdNewPeso').value !== '' ? +q('gdNewPeso').value : null,
+        prazo: q('gdNewPrazo').value || null, ordem: maxOrdem + 1
+      };
+      sb.from('p30_goal_milestones').insert(row).then(function (res) {
+        if (res.error) { toast('Não consegui adicionar.'); console.error(res.error); return; }
+        q('gdNewTitulo').value = ''; q('gdNewPeso').value = ''; q('gdNewPrazo').value = '';
+        toast('Etapa adicionada.');
+        loadGoalDetail(gdState.goal.id).then(renderGoalDetail);
+      });
+    });
+    q('gdSessaoSaveBtn').addEventListener('click', function () {
+      if (!gdState.goal) return;
+      var dur = q('gdSessaoDuracao').value;
+      var obs = q('gdSessaoObs').value.trim();
+      var titulo = 'Sessão de trabalho' + (obs ? ' — ' + obs : '');
+      var row = {
+        user_id: state.user.id, goal_id: gdState.goal.id, cycle_id: state.cycle.id,
+        titulo: titulo, texto_original: titulo, tipo: 'tarefa', area: gdState.goal.area,
+        status: 'concluida', organizado: true, data: state.today,
+        duracao_min: dur !== '' ? +dur : null, concluido_em: new Date().toISOString(), pontos: 10
+      };
+      sb.from('p30_tasks').insert(row).then(function (res) {
+        if (res.error) { toast('Não consegui registrar.'); console.error(res.error); return; }
+        q('gdSessaoDuracao').value = ''; q('gdSessaoObs').value = '';
+        toast('Sessão registrada.');
+        loadGoalDetail(gdState.goal.id).then(renderGoalDetail);
+      });
+    });
+  }
+
+  // ============================================================
   // "ESTOU COM A CABEÇA CHEIA" — versão inicial: preserva o texto
   // integral como um pensamento registrado. A separação guiada em
   // itens específicos (ação, meta, ideia, preocupação...) é da Fase 3.
@@ -1243,10 +1512,13 @@
       el.goalsAdminList.innerHTML = state.goals.length ? state.goals.map(function (g) {
         var prazo = g.prazo_final ? ('faltam ' + Math.max(diffDaysStr(state.today, g.prazo_final), 0) + 'd') : 'sem prazo';
         var pct = g.meta_valor ? Math.min(100, Math.round((g.progresso_atual / g.meta_valor) * 100)) : null;
-        return '<div class="mini-row"><span class="mbody"><span class="mtitle">' + esc(g.titulo) + '</span>' +
+        return '<div class="mini-row" data-goal-row="' + g.id + '" style="cursor:pointer;"><span class="mbody"><span class="mtitle">' + esc(g.titulo) + '</span>' +
           '<span class="mmeta">' + (AREA_LABEL[g.area] || 'Sem área') + ' · ' + prazo +
           (pct !== null ? '<span class="bar"><i style="width:' + pct + '%"></i></span>' : '') + '</span></span></div>';
       }).join('') : '<div class="empty-state">Nenhuma meta ativa ainda.</div>';
+      Array.prototype.forEach.call(el.goalsAdminList.querySelectorAll('[data-goal-row]'), function (row) {
+        row.addEventListener('click', function () { closeSettings(); openGoalDetail(row.dataset.goalRow); });
+      });
     }
     q('addGoalBtn').addEventListener('click', function () {
       var titulo = q('goalTitulo').value.trim();
@@ -1613,7 +1885,7 @@
     q('habitsToggle').addEventListener('click', function () { q('habitsBox').classList.toggle('open'); });
     q('routinesToggle').addEventListener('click', function () { q('routinesBox').classList.toggle('open'); });
     el.scrim.addEventListener('click', function () {
-      [el.sheetCapture, el.sheetSettings, el.sheetReorganize, el.sheetBraindump, el.sheetMoveTask, el.sheetSetup, el.sheetTaskManage].forEach(function (s) { s.classList.remove('show'); });
+      [el.sheetCapture, el.sheetSettings, el.sheetReorganize, el.sheetBraindump, el.sheetMoveTask, el.sheetSetup, el.sheetTaskManage, el.sheetGoalDetail].forEach(function (s) { s.classList.remove('show'); });
       el.scrim.classList.remove('show');
     });
     q('errorRetryBtn').addEventListener('click', function () {
@@ -1644,12 +1916,14 @@
     el.sheetMoveTask = q('sheetMoveTask');
     el.sheetSetup = q('sheetSetup');
     el.sheetTaskManage = q('sheetTaskManage');
+    el.sheetGoalDetail = q('sheetGoalDetail');
 
     initAuthScreen();
     initNav();
     initCapture();
     initReorganize();
     initTaskManage();
+    initGoalDetail();
     initWeek();
     initBraindump();
     initEndDay();

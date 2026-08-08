@@ -331,6 +331,52 @@
   <button class="btn full-secondary" id="tmDeleteBtn" type="button" style="border-color:rgba(178,59,59,.4); color:#e0a06e; margin-top:10px;">Excluir definitivamente</button>
 </div>
 
+<!-- ---------- painel detalhado da meta (TCC e futuras metas) ---------- -->
+<div class="sheet" id="sheetGoalDetail">
+  <div class="sheet-grip"></div>
+  <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:10px;">
+    <h3 id="gdTitulo" style="margin:0;">—</h3>
+    <button class="icon-x" id="gdCloseBtn" type="button"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+  </div>
+  <p class="sub" id="gdSubinfo">—</p>
+
+  <div class="gd-progress-wrap">
+    <div class="gd-progress-bar"><div class="gd-progress-fill" id="gdProgressFill" style="width:0%"></div></div>
+    <span class="gd-progress-label" id="gdProgressLabel">0%</span>
+  </div>
+  <p class="gd-weight-warn" id="gdWeightWarn" hidden></p>
+
+  <div class="sheet-section-title">Etapa atual</div>
+  <p class="gd-current" id="gdEtapaAtual">—</p>
+
+  <div class="sheet-section-title">Meta da semana</div>
+  <p class="gd-current" id="gdMetaSemana">—</p>
+  <p class="sub" id="gdProximaAcaoSemana" style="margin-top:-6px;">—</p>
+
+  <div class="sheet-section-title">Sessões de trabalho</div>
+  <p class="sub" id="gdSessoesCount" style="margin-top:0;">0 sessões registradas</p>
+  <div class="field-row2">
+    <div><label>Duração (min)</label><input type="number" id="gdSessaoDuracao" min="0" step="5" placeholder="Ex.: 45"></div>
+    <div><label>Observação (opcional)</label><input type="text" id="gdSessaoObs" placeholder="Ex.: introdução"></div>
+  </div>
+  <button class="btn primary small secondary-line" id="gdSessaoSaveBtn" type="button">Registrar sessão concluída</button>
+
+  <div class="sheet-divider"></div>
+  <div class="sheet-section-title">Histórico de evolução</div>
+  <div id="gdHistory"></div>
+
+  <div class="sheet-divider"></div>
+  <div class="sheet-section-title">Estrutura completa</div>
+  <div id="gdMilestones"></div>
+  <label>Nova etapa</label>
+  <input type="text" id="gdNewTitulo" placeholder="Título da etapa">
+  <div class="field-row2">
+    <div><label>Peso (%)</label><input type="number" id="gdNewPeso" min="0" max="100" step="1"></div>
+    <div><label>Prazo (opcional)</label><input type="date" id="gdNewPrazo"></div>
+  </div>
+  <button class="btn primary small secondary-line" id="gdAddMilestoneBtn" type="button">Adicionar etapa</button>
+</div>
+
 <!-- ---------- estou com a cabeça cheia ---------- -->
 <div class="sheet" id="sheetBraindump">
   <div class="sheet-grip"></div>
