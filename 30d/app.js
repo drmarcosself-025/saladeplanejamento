@@ -1,15 +1,16 @@
 // ============================================================
 // Projeto Marcos 30D — app.js
-// Mesma infraestrutura Supabase do painel da clínica (mesmo projeto,
-// mesma auth), mas tabelas próprias (p30_*), isoladas por usuário via
-// RLS. Nenhuma chave privada aqui — a anon key é pública por design do
-// Supabase; a proteção de verdade é o RLS (ver supabase/schema-30d.sql).
+// Projeto Supabase PRÓPRIO, separado do painel da clínica (produto
+// pessoal, não o CRM de equipe) — auth e dados isolados de ponta a
+// ponta, não só por RLS. Nenhuma chave privada aqui — a anon/publishable
+// key é pública por design do Supabase; a proteção de verdade é o RLS
+// (ver supabase/schema-30d.sql).
 // ============================================================
 (function () {
   'use strict';
 
-  var SUPABASE_URL = 'https://ftywkcxlyxaeihflfalv.supabase.co';
-  var SUPABASE_ANON_KEY = 'sb_publishable_o6IdrtNDtEmjCDw8TrSpWw_U1yOMF5M';
+  var SUPABASE_URL = 'https://nqumpsmxtqvvxvssdhai.supabase.co';
+  var SUPABASE_ANON_KEY = 'sb_publishable_7n5RIgoUqgyuP6u37x3kcA_Nt8hMFlA';
   var DEFAULT_TZ = 'America/Sao_Paulo';
   var CAP = 150;
   var CYCLE_LENGTH_DAYS = 30;
