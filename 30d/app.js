@@ -539,7 +539,8 @@
     var box = el.routinesBox;
     if (!state.routinesToday.length) { box.hidden = true; return; }
     box.hidden = false;
-    q('routinesTitle').textContent = 'Rotinas de ' + DAY_FULL[state.weekday].replace('-feira', '');
+    box.classList.add('open');
+    q('routinesTitle').textContent = 'Rotina de hoje';
     var doneCount = state.routinesToday.filter(function (r) { return r.occurrence.status === 'concluida'; }).length;
     q('routinesCount').textContent = doneCount + ' de ' + state.routinesToday.length;
     el.routinesList.innerHTML = state.routinesToday.map(function (r, i) {
@@ -785,6 +786,28 @@
         });
       });
     }
+
+    function submitReorganizeAdd() {
+      var input = q('reorganizeAddInput');
+      var titulo = input.value.trim();
+      if (!titulo) { toast('Escreva algo antes de adicionar.'); return; }
+      input.disabled = true;
+      sb.from('p30_tasks').insert({
+        user_id: state.user.id, cycle_id: state.cycle.id, titulo: titulo, texto_original: titulo,
+        tipo: 'tarefa', status: 'pendente', organizado: true, pontos: 10
+      }).select().single().then(function (res) {
+        input.disabled = false;
+        if (res.error) { toast('Não consegui salvar.'); console.error(res.error); return; }
+        input.value = '';
+        lastTasks = [res.data].concat(lastTasks);
+        var checkedCount = Object.keys(selected).filter(function (k) { return selected[k]; }).length;
+        if (checkedCount < 3) selected[res.data.id] = true;
+        renderReorganizeList(lastTasks);
+        toast('Adicionada.');
+      });
+    }
+    q('reorganizeAddBtn').addEventListener('click', submitReorganizeAdd);
+    q('reorganizeAddInput').addEventListener('keydown', function (e) { if (e.key === 'Enter') submitReorganizeAdd(); });
 
     q('reorganizeSaveBtn').addEventListener('click', function () {
       var chosenIds = Object.keys(selected).filter(function (k) { return selected[k]; });
