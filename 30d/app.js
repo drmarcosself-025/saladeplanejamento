@@ -165,6 +165,15 @@
     state.today = todayStr(state.tz);
     state.weekday = weekdayIdx(state.tz);
 
+    var loadToken = ++loadEverything._token;
+    var timedOut = false;
+    var timeoutId = setTimeout(function () {
+      timedOut = true;
+      if (loadToken !== loadEverything._token) return;
+      console.error('[30D] carregamento demorou demais (timeout de 15s)');
+      showLoadError('Isso está demorando mais do que deveria. Verifique sua internet e tente de novo.');
+    }, 15000);
+
     ensureCycle()
       .then(function () {
         return Promise.all([
@@ -176,6 +185,8 @@
         ]);
       })
       .then(function () {
+        clearTimeout(timeoutId);
+        if (timedOut || loadToken !== loadEverything._token) return;
         computeNextCommitment();
         computeWeeklyMilestone();
         computeDeadlineChip();
@@ -185,12 +196,20 @@
         q('errorBanner').hidden = true;
       })
       .catch(function (err) {
+        clearTimeout(timeoutId);
         console.error('[30D] falha ao carregar', err);
-        q('loadingScreen').hidden = true;
-        q('appRoot').hidden = false;
-        q('errorBanner').hidden = false;
-        q('errorBannerMsg').textContent = 'Não consegui carregar seus dados agora.';
+        if (timedOut || loadToken !== loadEverything._token) return;
+        var msg = (err && err.message) ? err.message : 'Não consegui carregar seus dados agora.';
+        showLoadError(msg);
       });
+  }
+  loadEverything._token = 0;
+
+  function showLoadError(msg) {
+    q('loadingScreen').hidden = true;
+    q('appRoot').hidden = false;
+    q('errorBanner').hidden = false;
+    q('errorBannerMsg').textContent = msg;
   }
 
   function ensureCycle() {
