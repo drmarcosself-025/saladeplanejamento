@@ -98,6 +98,7 @@
     score: { pontos: 0, cap: CAP, streak: 0 },
     weekDates: [],
     weekTasks: [],
+    weekAnchor: null,
     allRoutinesCache: null
   };
   var moveTaskId = null;
@@ -768,7 +769,7 @@
   // rotina continua sendo feito na tela Hoje).
   // ============================================================
   function loadWeek() {
-    var monday = mondayOfWeek(state.today);
+    var monday = mondayOfWeek(state.weekAnchor || state.today);
     var sunday = addDaysStr(monday, 6);
     state.weekDates = [];
     for (var i = 0; i < 7; i++) state.weekDates.push(addDaysStr(monday, i));
@@ -855,8 +856,27 @@
     renderWeek();
     toast('Tarefa movida.');
   }
+  function reloadWeek() {
+    q('weekRangeLabel').textContent = 'Carregando…';
+    loadWeek().then(renderWeek).catch(function (err) {
+      console.error('[30D] falha ao carregar semana', err);
+      toast('Não consegui carregar a semana.');
+    });
+  }
   function initWeek() {
     q('moveCancelBtn').addEventListener('click', closeMoveSheet);
+    q('weekPrevBtn').addEventListener('click', function () {
+      state.weekAnchor = addDaysStr(mondayOfWeek(state.weekAnchor || state.today), -7);
+      reloadWeek();
+    });
+    q('weekNextBtn').addEventListener('click', function () {
+      state.weekAnchor = addDaysStr(mondayOfWeek(state.weekAnchor || state.today), 7);
+      reloadWeek();
+    });
+    q('weekTodayBtn').addEventListener('click', function () {
+      state.weekAnchor = state.today;
+      reloadWeek();
+    });
   }
 
   function switchTab(tab) {
@@ -864,11 +884,8 @@
     q('viewHoje').hidden = tab !== 'hoje';
     q('viewSemana').hidden = tab !== 'semana';
     if (tab === 'semana') {
-      q('weekRangeLabel').textContent = 'Carregando…';
-      loadWeek().then(renderWeek).catch(function (err) {
-        console.error('[30D] falha ao carregar semana', err);
-        toast('Não consegui carregar a semana.');
-      });
+      if (!state.weekAnchor) state.weekAnchor = state.today;
+      reloadWeek();
     }
   }
 

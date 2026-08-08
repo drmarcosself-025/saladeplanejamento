@@ -340,6 +340,8 @@ a{ color:inherit; }
 @keyframes shimmer{ 0%{background-position:100% 0;} 100%{background-position:0 0;} }
 
 /* ---------- minha semana ---------- */
+.week-nav{ display:flex; gap:8px; margin:2px 0 12px; }
+.week-nav .btn{ flex:1; padding:9px 6px; font-size:12.5px; }
 .page-sub-week{ font-size:12.5px; color:var(--sand-faint); margin:2px 0 18px; }
 .week-day{ background:var(--graphite); border:1px solid var(--line); border-radius:18px; padding:13px 16px; margin-bottom:10px; }
 .week-day.today{ border-color:var(--gold-dim); box-shadow:0 0 0 1px rgba(195,163,95,.15); }
