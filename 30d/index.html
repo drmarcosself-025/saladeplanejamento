@@ -5,245 +5,63 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0e0d0c">
 <title>Projeto Marcos 30D — Hoje</title>
-<style>
-  :root{
-    --ink:#0e0d0c;
-    --graphite:#1a1815;
-    --graphite-2:#242019;
-    --coffee:#3c2f24;
-    --sand:#efe7da;
-    --sand-dim:#a89d8c;
-    --sand-faint:#6f6759;
-    --gold:#c3a35f;
-    --gold-dim:#8d7743;
-    --green:#8bb593;
-    --green-bg:rgba(139,181,147,.14);
-    --line:rgba(239,231,218,.09);
-    --line-strong:rgba(239,231,218,.16);
-    --shadow:0 18px 40px -20px rgba(0,0,0,.6);
-    --ease:cubic-bezier(.22,1,.36,1);
-    --safe-top:env(safe-area-inset-top,0px);
-    --safe-bottom:env(safe-area-inset-bottom,0px);
-  }
-  *{box-sizing:border-box;}
-  html,body{margin:0;padding:0;}
-  body{
-    background:var(--ink);
-    color:var(--sand);
-    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-    -webkit-font-smoothing:antialiased;
-    min-height:100vh;
-  }
-  .serif{ font-family:ui-serif,"New York","Iowan Old Style","Palatino Linotype",Georgia,serif; }
-  ::selection{ background:var(--gold-dim); color:var(--ink); }
-  button{ font-family:inherit; }
-  a{ color:inherit; }
-  .tabular{ font-variant-numeric:tabular-nums; }
-
-  .app{
-    max-width:460px;
-    margin:0 auto;
-    min-height:100vh;
-    display:flex;
-    flex-direction:column;
-    padding:calc(22px + var(--safe-top)) 20px calc(96px + var(--safe-bottom));
-    position:relative;
-  }
-
-  /* ---------- header ---------- */
-  .head{ display:flex; flex-direction:column; gap:3px; margin-bottom:22px; }
-  .head .eyebrow{ font-size:11.5px; letter-spacing:1.6px; text-transform:uppercase; color:var(--sand-faint); font-weight:600; }
-  .head h1{ margin:2px 0 0; font-size:27px; line-height:1.2; font-weight:600; letter-spacing:.1px; text-wrap:balance; }
-  .head h1 .accent{ color:var(--gold); }
-
-  /* ---------- energy segmented control ---------- */
-  .energy{ display:flex; align-items:center; gap:10px; margin-bottom:26px; }
-  .energy .lab{ font-size:12.5px; color:var(--sand-faint); white-space:nowrap; }
-  .energy-group{ display:flex; flex:1; background:var(--graphite); border:1px solid var(--line); border-radius:12px; padding:3px; gap:2px; }
-  .energy-group button{
-    flex:1; border:none; background:transparent; color:var(--sand-dim);
-    font-size:12.8px; font-weight:600; padding:8px 6px; border-radius:9px; cursor:pointer;
-    transition:background .18s var(--ease), color .18s var(--ease);
-  }
-  .energy-group button.active{ background:var(--coffee); color:var(--gold); }
-
-  /* ---------- hero progress ---------- */
-  .hero{
-    position:relative;
-    background:radial-gradient(120% 140% at 50% -10%, #211d17 0%, var(--graphite) 55%, var(--graphite) 100%);
-    border:1px solid var(--line);
-    border-radius:28px;
-    padding:26px 22px 22px;
-    margin-bottom:22px;
-    box-shadow:var(--shadow);
-    display:flex;
-    flex-direction:column;
-    align-items:center;
-    gap:16px;
-  }
-  .ring-wrap{ position:relative; width:172px; height:172px; }
-  .ring-wrap svg{ width:100%; height:100%; transform:rotate(-90deg); }
-  .ring-center{
-    position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px;
-  }
-  .ring-center .pts{ font-size:40px; font-weight:600; line-height:1; }
-  .ring-center .cap{ font-size:13px; color:var(--sand-faint); margin-top:5px; }
-  .hero-stats{ display:flex; width:100%; gap:10px; }
-  .hero-stat{ flex:1; text-align:center; padding:10px 6px; border-radius:14px; background:rgba(239,231,218,.04); }
-  .hero-stat .n{ font-size:19px; font-weight:600; display:block; }
-  .hero-stat .l{ font-size:10.8px; color:var(--sand-faint); text-transform:uppercase; letter-spacing:.9px; margin-top:2px; display:block; }
-  .hero-stat.streak .n{ color:var(--gold); }
-
-  /* ---------- section label ---------- */
-  .section-head{ display:flex; align-items:baseline; justify-content:space-between; margin:6px 0 12px; }
-  .section-head h2{ font-size:13px; text-transform:uppercase; letter-spacing:1.3px; color:var(--sand-dim); font-weight:700; margin:0; }
-  .section-head .hint{ font-size:12px; color:var(--sand-faint); }
-
-  /* ---------- missions ---------- */
-  .missions{ display:flex; flex-direction:column; gap:10px; margin-bottom:26px; }
-  .mission{
-    display:flex; align-items:center; gap:14px;
-    background:var(--graphite); border:1px solid var(--line); border-radius:20px;
-    padding:15px 16px; cursor:pointer; transition:border-color .18s var(--ease), background .18s var(--ease);
-  }
-  .mission:active{ transform:scale(.99); }
-  .mission.done{ background:var(--graphite); border-color:var(--line); }
-  .check{
-    flex:0 0 auto; width:27px; height:27px; border-radius:50%; border:1.6px solid var(--line-strong);
-    display:flex; align-items:center; justify-content:center; transition:background .2s var(--ease), border-color .2s var(--ease);
-  }
-  .check svg{ width:13px; height:13px; opacity:0; transform:scale(.5); transition:opacity .18s var(--ease), transform .18s var(--ease); }
-  .mission.done .check{ background:var(--green); border-color:var(--green); }
-  .mission.done .check svg{ opacity:1; transform:scale(1); }
-  .mission-body{ flex:1; min-width:0; }
-  .mission-title{ font-size:15.5px; font-weight:600; line-height:1.35; }
-  .mission.done .mission-title{ color:var(--sand-dim); text-decoration:line-through; text-decoration-color:var(--sand-faint); text-decoration-thickness:1px; }
-  .mission-meta{ font-size:12px; color:var(--sand-faint); margin-top:3px; display:flex; align-items:center; gap:6px; }
-  .mission-pts{ flex:0 0 auto; font-size:13px; font-weight:700; color:var(--gold); }
-  .mission.done .mission-pts{ color:var(--green); font-weight:600; }
-
-  .rest-banner{
-    display:none; align-items:center; gap:12px; background:var(--green-bg); border:1px solid rgba(139,181,147,.28);
-    border-radius:18px; padding:14px 16px; margin-top:2px; margin-bottom:26px;
-  }
-  .rest-banner.show{ display:flex; }
-  .rest-banner .ic{ flex:0 0 auto; color:var(--green); }
-  .rest-banner p{ margin:0; font-size:13.6px; line-height:1.4; color:var(--sand); }
-  .rest-banner p b{ color:var(--green); }
-
-  /* ---------- habits accordion ---------- */
-  .habits{ background:var(--graphite); border:1px solid var(--line); border-radius:20px; margin-bottom:22px; overflow:hidden; }
-  .habits-toggle{
-    width:100%; display:flex; align-items:center; justify-content:space-between; gap:10px;
-    background:none; border:none; color:var(--sand); padding:15px 16px; cursor:pointer;
-  }
-  .habits-toggle .left{ display:flex; align-items:center; gap:10px; }
-  .habits-toggle .lab{ font-size:14.5px; font-weight:600; }
-  .habits-toggle .count{ font-size:12px; color:var(--sand-faint); }
-  .habits-toggle .chev{ transition:transform .22s var(--ease); color:var(--sand-faint); }
-  .habits.open .chev{ transform:rotate(180deg); }
-  .habits-list{ max-height:0; overflow:hidden; transition:max-height .28s var(--ease); }
-  .habits.open .habits-list{ max-height:280px; }
-  .habits-list-inner{ padding:0 14px 14px; display:flex; flex-direction:column; gap:2px; }
-  .habit-row{ display:flex; align-items:center; gap:12px; padding:9px 4px; border-top:1px solid var(--line); cursor:pointer; }
-  .habit-row:first-child{ border-top:none; }
-  .habit-check{ flex:0 0 auto; width:19px; height:19px; border-radius:6px; border:1.4px solid var(--line-strong); display:flex; align-items:center; justify-content:center; }
-  .habit-check svg{ width:10px; height:10px; opacity:0; }
-  .habit-row.done .habit-check{ background:var(--green); border-color:var(--green); }
-  .habit-row.done .habit-check svg{ opacity:1; }
-  .habit-row span.t{ flex:1; font-size:13.8px; color:var(--sand-dim); }
-  .habit-row.done span.t{ color:var(--sand-faint); text-decoration:line-through; }
-  .habit-row .p{ font-size:11.5px; color:var(--sand-faint); }
-
-  /* ---------- next commitment ---------- */
-  .next{ display:flex; align-items:center; gap:13px; background:var(--graphite); border:1px solid var(--line); border-radius:18px; padding:14px 16px; margin-bottom:28px; }
-  .next .ic{ flex:0 0 auto; width:38px; height:38px; border-radius:12px; background:var(--coffee); display:flex; align-items:center; justify-content:center; color:var(--gold); }
-  .next .body{ min-width:0; }
-  .next .time{ font-size:11.5px; color:var(--gold); font-weight:700; letter-spacing:.4px; }
-  .next .title{ font-size:14px; margin-top:1px; color:var(--sand); }
-
-  /* ---------- footer actions ---------- */
-  .actions{ display:flex; gap:10px; margin-top:auto; }
-  .btn{
-    flex:1; border:none; border-radius:16px; padding:15px 14px; font-size:14.5px; font-weight:700;
-    cursor:pointer; transition:filter .15s var(--ease), transform .05s var(--ease);
-    display:flex; align-items:center; justify-content:center; gap:8px;
-  }
-  .btn:active{ transform:scale(.97); }
-  .btn.ghost{ background:var(--graphite); border:1px solid var(--line-strong); color:var(--sand); }
-  .btn.ghost:hover{ background:var(--graphite-2); }
-  .btn.primary{ background:linear-gradient(180deg,#d4b571,var(--gold)); color:#241c0d; }
-  .btn.primary:hover{ filter:brightness(1.05); }
-
-  /* ---------- tab bar ---------- */
-  .tabbar{
-    position:fixed; left:0; right:0; bottom:0; z-index:40;
-    display:flex; justify-content:center;
-  }
-  .tabbar-inner{
-    width:100%; max-width:460px; margin:0 16px; margin-bottom:calc(14px + var(--safe-bottom));
-    background:rgba(26,24,21,.86); backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px);
-    border:1px solid var(--line-strong); border-radius:22px; box-shadow:var(--shadow);
-    display:flex; align-items:center; justify-content:space-around; padding:9px 8px;
-  }
-  .tab{ background:none; border:none; color:var(--sand-faint); display:flex; flex-direction:column; align-items:center; gap:4px; padding:6px 10px; border-radius:12px; cursor:pointer; }
-  .tab.active{ color:var(--gold); }
-  .tab .lab{ font-size:10.3px; font-weight:600; letter-spacing:.2px; }
-  .tab-fab{
-    flex:0 0 auto; width:46px; height:46px; margin-top:-22px; border-radius:50%;
-    background:linear-gradient(180deg,#d4b571,var(--gold)); color:#241c0d; border:4px solid var(--ink);
-    display:flex; align-items:center; justify-content:center; cursor:pointer; box-shadow:0 8px 18px -6px rgba(195,163,95,.6);
-  }
-  .tab-fab:active{ transform:scale(.94); }
-
-  /* ---------- capture sheet ---------- */
-  .scrim{ position:fixed; inset:0; background:rgba(6,5,4,.6); backdrop-filter:blur(2px); opacity:0; pointer-events:none; transition:opacity .22s var(--ease); z-index:60; }
-  .scrim.show{ opacity:1; pointer-events:auto; }
-  .sheet{
-    position:fixed; left:0; right:0; bottom:0; z-index:61; max-width:460px; margin:0 auto;
-    background:var(--graphite-2); border:1px solid var(--line-strong); border-bottom:none;
-    border-radius:26px 26px 0 0; padding:10px 20px calc(24px + var(--safe-bottom));
-    transform:translateY(100%); transition:transform .3s var(--ease); box-shadow:0 -20px 50px -20px rgba(0,0,0,.7);
-  }
-  .sheet.show{ transform:translateY(0); }
-  .sheet-grip{ width:36px; height:4px; background:var(--line-strong); border-radius:99px; margin:6px auto 16px; }
-  .sheet h3{ font-size:17px; margin:0 0 16px; font-weight:600; }
-  .sheet label{ display:block; font-size:12px; color:var(--sand-faint); text-transform:uppercase; letter-spacing:.8px; font-weight:700; margin:14px 0 7px; }
-  .sheet input[type=text]{
-    width:100%; background:var(--ink); border:1px solid var(--line-strong); border-radius:12px; color:var(--sand);
-    padding:12px 13px; font-size:15px; font-family:inherit;
-  }
-  .sheet input:focus{ outline:none; border-color:var(--gold-dim); }
-  .chip-row{ display:flex; flex-wrap:wrap; gap:8px; }
-  .chip{ background:var(--ink); border:1px solid var(--line-strong); color:var(--sand-dim); font-size:12.5px; font-weight:600; padding:8px 13px; border-radius:99px; cursor:pointer; }
-  .chip.active{ background:var(--coffee); border-color:var(--gold-dim); color:var(--gold); }
-  .sheet .btn{ margin-top:22px; width:100%; }
-
-  /* ---------- toast ---------- */
-  .toast{
-    position:fixed; left:50%; bottom:calc(96px + var(--safe-bottom)); transform:translate(-50%,10px); z-index:80;
-    background:var(--sand); color:var(--ink); font-size:13.5px; font-weight:600; padding:11px 18px; border-radius:99px;
-    opacity:0; pointer-events:none; transition:opacity .2s var(--ease), transform .2s var(--ease); box-shadow:var(--shadow);
-    white-space:nowrap;
-  }
-  .toast.show{ opacity:1; transform:translate(-50%,0); }
-
-  @media (max-width:360px){
-    .head h1{ font-size:24px; }
-    .ring-wrap{ width:152px; height:152px; }
-  }
-  @media (prefers-reduced-motion:reduce){
-    *{ transition-duration:.001ms !important; animation-duration:.001ms !important; }
-  }
-</style>
+<link rel="stylesheet" href="app.css">
 </head>
 <body>
 
+<div id="loadingScreen" class="loading-screen"><span class="spinner"></span> Carregando seu dia…</div>
+
+<!-- ============================================================
+     LOGIN — mesma auth do painel da clínica (mesmo projeto Supabase),
+     mas os dados daqui (tabelas p30_*) são privados por usuário.
+     ============================================================ -->
+<div id="authScreen" class="auth-screen" hidden>
+  <div class="auth-brand">
+    <span class="mark">Projeto Marcos</span>
+    <h1 class="serif">30 Dias<span class="accent">.</span></h1>
+    <p>Seu painel pessoal de foco, hábitos e evolução.</p>
+  </div>
+  <div class="auth-card">
+    <div class="auth-tabs">
+      <button id="authTabEntrar" class="active">Entrar</button>
+      <button id="authTabCriar">Criar conta</button>
+    </div>
+    <label>E-mail</label>
+    <input type="email" id="authEmail" placeholder="seuemail@exemplo.com" autocomplete="email">
+    <label>Senha</label>
+    <input type="password" id="authSenha" placeholder="Mínimo 6 caracteres" autocomplete="current-password">
+    <button class="btn primary" style="width:100%; margin-top:18px;" id="authSubmitBtn">Entrar</button>
+    <div style="display:flex; align-items:center; gap:10px; margin:16px 0; color:var(--sand-faint); font-size:12.5px;">
+      <div style="flex:1; height:1px; background:var(--line);"></div>ou<div style="flex:1; height:1px; background:var(--line);"></div>
+    </div>
+    <button class="btn ghost" style="width:100%;" id="authGoogleBtn">Entrar com Google</button>
+    <p class="auth-error" id="authError"></p>
+  </div>
+  <p class="auth-help">Mesmo login do painel da clínica — mas seus dados pessoais aqui só você vê.</p>
+</div>
+
+<!-- ============================================================
+     APP
+     ============================================================ -->
+<div id="appRoot" hidden>
 <div class="app">
 
+  <div class="error-banner" id="errorBanner" hidden>
+    <span id="errorBannerMsg">Não consegui carregar seus dados.</span>
+    <button id="errorRetryBtn">Tentar de novo</button>
+  </div>
+
   <div class="head">
-    <span class="eyebrow" id="dateLabel">—</span>
-    <h1 id="greeting" class="serif">Carregando<span class="accent">.</span></h1>
+    <div class="head-text">
+      <div class="eyebrow-row">
+        <span class="eyebrow" id="dateLabel">—</span>
+        <span class="cycle-chip" id="cycleChip">Dia — de 30</span>
+      </div>
+      <h1 id="greeting" class="serif">Carregando<span class="accent">.</span></h1>
+    </div>
+    <button class="icon-btn" id="settingsBtn" aria-label="Ajustes">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 13a7.6 7.6 0 0 0 0-2l1.9-1.5-1.9-3.3-2.3 1a7.7 7.7 0 0 0-1.7-1L15 3.5h-3.9l-.3 2.6a7.7 7.7 0 0 0-1.7 1l-2.3-1-2 3.3L6.7 11a7.6 7.6 0 0 0 0 2l-1.9 1.5 2 3.3 2.3-1a7.7 7.7 0 0 0 1.7 1l.3 2.6H15l.3-2.6a7.7 7.7 0 0 0 1.7-1l2.3 1 1.9-3.3z"/></svg>
+    </button>
   </div>
 
   <div class="energy">
@@ -253,6 +71,14 @@
       <button data-e="estavel" class="active">Estável</button>
       <button data-e="alta">Alta</button>
     </div>
+  </div>
+
+  <div class="info-chips" id="infoChips" hidden></div>
+
+  <div class="weekly-goal" id="weeklyGoal" hidden>
+    <span class="ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v6l4 2"/><circle cx="12" cy="12" r="9"/></svg></span>
+    <span class="body"><span class="eyebrow">Meta da semana</span><span class="title">—</span></span>
+    <span class="chev"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></span>
   </div>
 
   <div class="hero">
@@ -275,18 +101,9 @@
       </div>
     </div>
     <div class="hero-stats">
-      <div class="hero-stat streak">
-        <span class="n tabular" id="streakNum">6</span>
-        <span class="l">Sequência</span>
-      </div>
-      <div class="hero-stat">
-        <span class="n tabular" id="missionsNum">2/3</span>
-        <span class="l">Missões</span>
-      </div>
-      <div class="hero-stat">
-        <span class="n tabular" id="habitsNum">3/5</span>
-        <span class="l">Hábitos</span>
-      </div>
+      <div class="hero-stat streak"><span class="n tabular" id="streakNum">0</span><span class="l">Sequência</span></div>
+      <div class="hero-stat"><span class="n tabular" id="missionsNum">0/0</span><span class="l">Missões</span></div>
+      <div class="hero-stat"><span class="n tabular" id="habitsNum">0/0</span><span class="l">Hábitos</span></div>
     </div>
   </div>
 
@@ -295,6 +112,7 @@
     <span class="hint">o resto pode esperar</span>
   </div>
   <div class="missions" id="missionsList"></div>
+  <div class="empty-state" id="missionsEmpty" hidden>Nenhuma missão escolhida ainda. Toque em "Reorganizar meu dia" para escolher até três.</div>
 
   <div class="rest-banner" id="restBanner">
     <span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12.5A8.5 8.5 0 1 1 11.5 4a7 7 0 0 0 8.5 8.5z"/></svg></span>
@@ -303,31 +121,37 @@
 
   <div class="habits" id="habitsBox">
     <button class="habits-toggle" id="habitsToggle">
-      <span class="left">
-        <span class="lab">Hábitos essenciais</span>
-        <span class="count" id="habitsCount">3 de 5</span>
-      </span>
+      <span class="left"><span class="lab">Hábitos essenciais</span><span class="count" id="habitsCount">0 de 0</span></span>
       <svg class="chev" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
     </button>
-    <div class="habits-list">
-      <div class="habits-list-inner" id="habitsList"></div>
-    </div>
+    <div class="habits-list"><div class="habits-list-inner" id="habitsList"></div></div>
   </div>
 
-  <div class="next">
+  <div class="habits" id="routinesBox" hidden>
+    <button class="habits-toggle" id="routinesToggle">
+      <span class="left"><span class="lab" id="routinesTitle">Rotinas de hoje</span><span class="count" id="routinesCount">0 de 0</span></span>
+      <svg class="chev" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+    </button>
+    <div class="habits-list"><div class="habits-list-inner" id="routinesList"></div></div>
+  </div>
+
+  <div class="next" id="nextBox" hidden>
     <span class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg></span>
-    <div class="body">
-      <div class="time">16H00</div>
-      <div class="title">Fornecedor — confirmar entrega de contenções</div>
-    </div>
+    <div class="body"><div class="time">—</div><div class="title">—</div></div>
   </div>
 
   <div class="actions">
-    <button class="btn ghost" id="captureBtn">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-      Capturar
-    </button>
-    <button class="btn primary" id="endDayBtn">Encerrar meu dia</button>
+    <div class="actions-row">
+      <button class="btn ghost" id="captureBtn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+        Capturar
+      </button>
+      <button class="btn primary" id="endDayBtn">Encerrar meu dia</button>
+    </div>
+    <div class="actions-row" style="gap:16px; justify-content:center;">
+      <button class="btn text" id="reorganizeBtn">Reorganizar meu dia</button>
+      <button class="btn text" id="braindumpBtn">Estou com a cabeça cheia</button>
+    </div>
   </div>
 
 </div>
@@ -353,183 +177,175 @@
 </div>
 
 <div class="scrim" id="scrim"></div>
-<div class="sheet" id="sheet">
+
+<!-- ---------- captura progressiva ---------- -->
+<div class="sheet" id="sheetCapture">
   <div class="sheet-grip"></div>
   <h3>Capturar pendência</h3>
   <label>O que precisa fazer?</label>
   <input type="text" id="captureInput" placeholder="Ex.: comprar luvas e fios">
   <label>Área</label>
   <div class="chip-row" id="areaChips">
-    <button class="chip active" data-a="corpo">Corpo</button>
-    <button class="chip" data-a="mente">Mente</button>
-    <button class="chip" data-a="consultorio">Consultório</button>
-    <button class="chip" data-a="futuro">Futuro</button>
-    <button class="chip" data-a="organizacao">Organização</button>
+    <button type="button" class="chip" data-a="corpo">Corpo</button>
+    <button type="button" class="chip" data-a="mente">Mente</button>
+    <button type="button" class="chip" data-a="consultorio">Consultório</button>
+    <button type="button" class="chip" data-a="futuro">Futuro</button>
+    <button type="button" class="chip" data-a="organizacao">Organização</button>
   </div>
-  <button class="btn primary" id="saveCapture">Salvar por agora</button>
+  <div class="actions-row" id="captureStage1Actions" style="margin-top:18px;">
+    <button class="btn ghost" id="organizeBtn" type="button">Organizar agora</button>
+    <button class="btn primary" id="saveCaptureBtn" type="button">Salvar por agora</button>
+  </div>
+
+  <div class="stage2" id="captureStage2" hidden>
+    <label>Tipo</label>
+    <div class="chip-row" id="tipoChips">
+      <button type="button" class="chip active" data-tipo="tarefa">Tarefa</button>
+      <button type="button" class="chip" data-tipo="meta">Meta</button>
+      <button type="button" class="chip" data-tipo="ideia">Ideia</button>
+      <button type="button" class="chip" data-tipo="pensamento">Pensamento</button>
+      <button type="button" class="chip" data-tipo="preocupacao">Preocupação</button>
+      <button type="button" class="chip" data-tipo="aguardando">Aguardando</button>
+    </div>
+    <div class="field-row2">
+      <div><label>Prazo</label><input type="date" id="capPrazo"></div>
+      <div><label>Horário</label><input type="time" id="capHorario"></div>
+    </div>
+    <div class="field-row2">
+      <div><label>Duração (min)</label><input type="number" id="capDuracao" min="0" step="5" placeholder="Ex.: 45"></div>
+      <div>
+        <label>Prioridade</label>
+        <div class="chip-row" id="prioridadeChips">
+          <button type="button" class="chip" data-p="baixa">Baixa</button>
+          <button type="button" class="chip" data-p="normal">Normal</button>
+          <button type="button" class="chip" data-p="alta">Alta</button>
+        </div>
+      </div>
+    </div>
+    <label>Responsável</label>
+    <input type="text" id="capResponsavel" placeholder="Ex.: eu, SDR, fornecedor">
+    <label>Próxima ação</label>
+    <input type="text" id="capProximaAcao" placeholder="Ex.: abrir o documento e revisar">
+    <label>Meta relacionada</label>
+    <select id="capMeta"><option value="">Nenhuma</option></select>
+    <label>Recorrência</label>
+    <select id="capRecorrencia">
+      <option value="nenhuma">Não se repete</option>
+      <option value="diaria">Diária</option>
+      <option value="semanal">Semanal</option>
+    </select>
+    <label>Observação</label>
+    <textarea id="capObs" placeholder="Opcional"></textarea>
+    <button class="btn primary" id="organizeSaveBtn" type="button">Salvar organizado</button>
+  </div>
+</div>
+
+<!-- ---------- reorganizar meu dia ---------- -->
+<div class="sheet" id="sheetReorganize">
+  <div class="sheet-grip"></div>
+  <h3>Reorganizar meu dia</h3>
+  <p class="sub">Escolha até três missões. O resto pode esperar.</p>
+  <div class="mini-list" id="reorganizeList"></div>
+  <div class="actions-row" style="margin-top:8px;">
+    <button class="btn ghost" id="reorganizeCancelBtn" type="button">Cancelar</button>
+    <button class="btn primary" id="reorganizeSaveBtn" type="button">Salvar</button>
+  </div>
+</div>
+
+<!-- ---------- estou com a cabeça cheia ---------- -->
+<div class="sheet" id="sheetBraindump">
+  <div class="sheet-grip"></div>
+  <h3>Estou com a cabeça cheia</h3>
+  <p class="sub">Escreva tudo, sem se preocupar com organização agora. Isso fica registrado como pensamento — não vira tarefa automaticamente.</p>
+  <textarea id="braindumpText" class="braindump-textarea" placeholder="Ex.: estou pensando na moto, nos boletos, no TCC..."></textarea>
+  <div class="actions-row" style="margin-top:14px;">
+    <button class="btn ghost" id="braindumpCancelBtn" type="button">Cancelar</button>
+    <button class="btn primary" id="braindumpSaveBtn" type="button">Registrar</button>
+  </div>
+</div>
+
+<!-- ---------- ajustes rápidos ---------- -->
+<div class="sheet" id="sheetSettings">
+  <div class="sheet-grip"></div>
+  <div style="display:flex; align-items:center; justify-content:space-between;">
+    <h3 style="margin:0;">Ajustes rápidos</h3>
+    <button class="icon-x" id="settingsCloseBtn" type="button"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+  </div>
+
+  <div class="sheet-section-title">Conta</div>
+  <div class="account-row">
+    <span class="email" id="accountEmail">—</span>
+    <button class="btn ghost small" id="signOutBtn" type="button">Sair</button>
+  </div>
+
+  <div class="sheet-section-title">Ciclo atual</div>
+  <p class="sub" id="cycleInfo" style="margin-top:0;">—</p>
+  <button class="btn full-secondary" id="newCycleBtn" type="button">Iniciar novo ciclo agora</button>
+
+  <div class="sheet-divider"></div>
+  <div class="sheet-section-title">Rotinas por dia da semana</div>
+  <div class="mini-list" id="routinesAdminList"></div>
+  <label>Título</label>
+  <input type="text" id="routineTitulo" placeholder="Ex.: Academia pela manhã">
+  <label>Área</label>
+  <select id="routineArea">
+    <option value="">Sem área</option>
+    <option value="corpo">Corpo</option>
+    <option value="mente">Mente</option>
+    <option value="consultorio">Consultório</option>
+    <option value="futuro">Futuro</option>
+    <option value="organizacao">Organização</option>
+  </select>
+  <label>Dias da semana</label>
+  <div class="chip-row" id="routineDayChips"></div>
+  <div class="field-row2">
+    <div><label>Horário (opcional)</label><input type="time" id="routineHorario"></div>
+    <div><label>Pontos</label><input type="number" id="routinePontos" min="0" step="1" placeholder="10"></div>
+  </div>
+  <button class="btn primary small secondary-line" id="addRoutineBtn" type="button">Adicionar rotina</button>
+
+  <div class="sheet-divider"></div>
+  <div class="sheet-section-title">Metas ativas</div>
+  <div class="mini-list" id="goalsAdminList"></div>
+  <label>Título da meta</label>
+  <input type="text" id="goalTitulo" placeholder="Ex.: Finalizar o TCC">
+  <label>Área</label>
+  <select id="goalArea">
+    <option value="">Sem área</option>
+    <option value="corpo">Corpo</option>
+    <option value="mente">Mente</option>
+    <option value="consultorio">Consultório</option>
+    <option value="futuro">Futuro</option>
+    <option value="organizacao">Organização</option>
+  </select>
+  <div class="field-row2">
+    <div><label>Prazo final</label><input type="date" id="goalPrazo"></div>
+    <div>
+      <label>Como medir</label>
+      <select id="goalMedidaTipo">
+        <option value="etapas">Etapas</option>
+        <option value="percentual">Percentual</option>
+        <option value="sessoes">Sessões</option>
+        <option value="quantidade">Quantidade</option>
+        <option value="frequencia">Frequência</option>
+        <option value="peso">Peso</option>
+        <option value="valor">Valor financeiro</option>
+      </select>
+    </div>
+  </div>
+  <label>Meta numérica (opcional)</label>
+  <input type="number" id="goalMetaValor" placeholder="Ex.: 10">
+  <label>Etapa desta semana (opcional)</label>
+  <input type="text" id="goalEtapaTitulo" placeholder="Ex.: terminar a introdução">
+  <label>Prazo da etapa (opcional)</label>
+  <input type="date" id="goalEtapaPrazo">
+  <button class="btn primary small secondary-line" id="addGoalBtn" type="button">Criar meta</button>
 </div>
 
 <div class="toast" id="toast"></div>
+</div>
 
-<script>
-(function(){
-  var CAP = 150;
-
-  var missions = [
-    { title:'Academia — treino de pernas', area:'Corpo', pts:20, done:true },
-    { title:'TCC — revisar capítulo 3', area:'Futuro', pts:15, done:true },
-    { title:'Consultório — separar pedido de luvas e fios', area:'Consultório', pts:15, done:false }
-  ];
-  var habits = [
-    { title:'Água ao acordar', pts:8, done:true },
-    { title:'Sono até 23h', pts:8, done:true },
-    { title:'Celular longe às 22h30', pts:8, done:false },
-    { title:'Alongar 5 minutos', pts:8, done:true },
-    { title:'Pausa ou oração à tarde', pts:8, done:false }
-  ];
-
-  var missionsList = document.getElementById('missionsList');
-  var habitsList = document.getElementById('habitsList');
-  var ringFg = document.getElementById('ringFg');
-  var RING_LEN = 465;
-
-  function iconCheck(){
-    return '<svg viewBox="0 0 24 24" fill="none" stroke="#0e0d0c" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
-  }
-
-  function renderMissions(){
-    missionsList.innerHTML = missions.map(function(m,i){
-      return '<div class="mission'+(m.done?' done':'')+'" data-i="'+i+'">'+
-        '<span class="check">'+iconCheck()+'</span>'+
-        '<span class="mission-body"><span class="mission-title">'+m.title+'</span>'+
-        '<span class="mission-meta">'+m.area+'</span></span>'+
-        '<span class="mission-pts">'+(m.done?'Concluída':'+'+m.pts)+'</span>'+
-      '</div>';
-    }).join('');
-    Array.prototype.forEach.call(missionsList.querySelectorAll('.mission'), function(el){
-      el.addEventListener('click', function(){
-        var i = +el.dataset.i;
-        missions[i].done = !missions[i].done;
-        renderMissions();
-        renderStats();
-      });
-    });
-  }
-
-  function renderHabits(){
-    habitsList.innerHTML = habits.map(function(h,i){
-      return '<div class="habit-row'+(h.done?' done':'')+'" data-i="'+i+'">'+
-        '<span class="habit-check">'+iconCheck()+'</span>'+
-        '<span class="t">'+h.title+'</span>'+
-        '<span class="p">+'+h.pts+'</span>'+
-      '</div>';
-    }).join('');
-    Array.prototype.forEach.call(habitsList.querySelectorAll('.habit-row'), function(el){
-      el.addEventListener('click', function(){
-        var i = +el.dataset.i;
-        habits[i].done = !habits[i].done;
-        renderHabits();
-        renderStats();
-      });
-    });
-  }
-
-  function renderStats(){
-    var mDone = missions.filter(function(m){return m.done;});
-    var hDone = habits.filter(function(h){return h.done;});
-    var pts = mDone.reduce(function(s,m){return s+m.pts;},0) + hDone.reduce(function(s,h){return s+h.pts;},0);
-    pts = Math.min(pts, CAP);
-
-    document.getElementById('ptsNow').textContent = pts;
-    document.getElementById('ptsCap').textContent = 'de ' + CAP + ' pontos';
-    document.getElementById('missionsNum').textContent = mDone.length + '/' + missions.length;
-    document.getElementById('habitsNum').textContent = hDone.length + '/' + habits.length;
-    document.getElementById('habitsCount').textContent = hDone.length + ' de ' + habits.length;
-
-    var frac = pts / CAP;
-    ringFg.setAttribute('stroke-dashoffset', String(RING_LEN * (1 - frac)));
-
-    var allMissionsDone = mDone.length === missions.length;
-    document.getElementById('restBanner').classList.toggle('show', allMissionsDone);
-  }
-
-  renderMissions();
-  renderHabits();
-  renderStats();
-
-  // energy selector
-  document.getElementById('energyGroup').addEventListener('click', function(e){
-    var b = e.target.closest('button');
-    if(!b) return;
-    this.querySelectorAll('button').forEach(function(x){ x.classList.toggle('active', x===b); });
-  });
-
-  // habits accordion
-  document.getElementById('habitsToggle').addEventListener('click', function(){
-    document.getElementById('habitsBox').classList.toggle('open');
-  });
-
-  // greeting + date
-  var dias = ['domingo','segunda-feira','terça-feira','quarta-feira','quinta-feira','sexta-feira','sábado'];
-  var meses = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
-  var now = new Date();
-  var h = now.getHours();
-  var saud = h < 5 ? 'Boa madrugada' : h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite';
-  document.getElementById('greeting').innerHTML = saud + ', Marcos<span class="accent">.</span>';
-  document.getElementById('dateLabel').textContent = (dias[now.getDay()] + ', ' + now.getDate() + ' de ' + meses[now.getMonth()]).toUpperCase();
-
-  // toast
-  var toastEl = document.getElementById('toast');
-  var toastTimer = null;
-  function toast(msg){
-    toastEl.textContent = msg;
-    toastEl.classList.add('show');
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(function(){ toastEl.classList.remove('show'); }, 2200);
-  }
-
-  // capture sheet
-  var scrim = document.getElementById('scrim');
-  var sheet = document.getElementById('sheet');
-  function openSheet(){
-    scrim.classList.add('show');
-    sheet.classList.add('show');
-    setTimeout(function(){ document.getElementById('captureInput').focus(); }, 260);
-  }
-  function closeSheet(){
-    scrim.classList.remove('show');
-    sheet.classList.remove('show');
-  }
-  document.getElementById('captureBtn').addEventListener('click', openSheet);
-  document.getElementById('fabBtn').addEventListener('click', openSheet);
-  scrim.addEventListener('click', closeSheet);
-
-  document.getElementById('areaChips').addEventListener('click', function(e){
-    var b = e.target.closest('button');
-    if(!b) return;
-    this.querySelectorAll('button').forEach(function(x){ x.classList.toggle('active', x===b); });
-  });
-
-  document.getElementById('saveCapture').addEventListener('click', function(){
-    var val = document.getElementById('captureInput').value.trim();
-    closeSheet();
-    document.getElementById('captureInput').value = '';
-    toast(val ? 'Pendência capturada.' : 'Sheet fechado.');
-  });
-
-  // nav tabs — só "Hoje" existe nesta fase
-  document.querySelectorAll('.tab').forEach(function(t){
-    t.addEventListener('click', function(){
-      if(t.dataset.tab === 'hoje') return;
-      toast('Essa tela chega na próxima fase.');
-    });
-  });
-
-  document.getElementById('endDayBtn').addEventListener('click', function(){
-    toast('O encerramento do dia chega na Fase 3.');
-  });
-})();
-</script>
-
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="app.js"></script>
 </body>
 </html>
