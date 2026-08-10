@@ -45,8 +45,43 @@ a{ color:inherit; }
   position:relative;
 }
 
+/* ---------- tela Hoje: grid com áreas nomeadas — 1 coluna no mobile,
+   na ordem cabeçalho/meta/resumo/missões/tarefas/hábitos/corpo/foco/
+   atalhos/ações; 2 colunas só a partir de desktop largo (ver media
+   query mais abaixo). Nada muda de ID, só de posição. ---------- */
+.hoje-grid{
+  display:grid;
+  gap:20px;
+  grid-template-columns:minmax(0,1fr);
+  min-width:0;
+  grid-template-areas:
+    "header"
+    "weeklygoal"
+    "resumo"
+    "missions"
+    "today"
+    "habits"
+    "body"
+    "perf"
+    "shortcuts"
+    "actions";
+}
+.hoje-area-header, .hoje-area-weeklygoal, .hoje-area-resumo, .hoje-area-missions,
+.hoje-area-today, .hoje-area-habits, .hoje-area-body, .hoje-area-perf,
+.hoje-area-shortcuts, .hoje-area-actions{ min-width:0; }
+.hoje-area-header{ grid-area:header; }
+.hoje-area-weeklygoal{ grid-area:weeklygoal; }
+.hoje-area-resumo{ grid-area:resumo; }
+.hoje-area-missions{ grid-area:missions; }
+.hoje-area-today{ grid-area:today; }
+.hoje-area-habits{ grid-area:habits; }
+.hoje-area-body{ grid-area:body; }
+.hoje-area-perf{ grid-area:perf; }
+.hoje-area-shortcuts{ grid-area:shortcuts; }
+.hoje-area-actions{ grid-area:actions; }
+
 /* ---------- header ---------- */
-.head{ display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:20px; }
+.head{ display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:14px; }
 .head-text{ display:flex; flex-direction:column; gap:3px; min-width:0; }
 .head .eyebrow-row{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .head .eyebrow{ font-size:11.5px; letter-spacing:1.6px; text-transform:uppercase; color:var(--sand-faint); font-weight:600; }
@@ -62,7 +97,7 @@ a{ color:inherit; }
 .icon-btn:active{ transform:scale(.94); }
 
 /* ---------- energy segmented control ---------- */
-.energy{ display:flex; align-items:center; gap:10px; margin-bottom:18px; }
+.energy{ display:flex; align-items:center; gap:10px; margin-bottom:6px; }
 .energy .lab{ font-size:12.5px; color:var(--sand-faint); white-space:nowrap; }
 .energy-group{ display:flex; flex:1; background:var(--graphite); border:1px solid var(--line); border-radius:12px; padding:3px; gap:2px; }
 .energy-group button{
@@ -86,31 +121,75 @@ a{ color:inherit; }
   border:1px solid var(--line);
   border-radius:28px;
   padding:26px 22px 22px;
-  margin-bottom:20px;
   box-shadow:var(--shadow);
   display:flex;
   flex-direction:column;
   align-items:center;
   gap:16px;
 }
+.hero.compact{ padding:20px 18px 18px; gap:14px; }
 .ring-wrap{ position:relative; width:172px; height:172px; }
+.hero.compact .ring-wrap{ width:128px; height:128px; }
 .ring-wrap svg{ width:100%; height:100%; transform:rotate(-90deg); }
 .ring-center{ position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px; }
 .ring-center .pts{ font-size:40px; font-weight:600; line-height:1; }
+.hero.compact .ring-center .pts{ font-size:30px; }
 .ring-center .cap{ font-size:13px; color:var(--sand-faint); margin-top:5px; }
-.hero-stats{ display:flex; width:100%; gap:10px; }
-.hero-stat{ flex:1; text-align:center; padding:10px 6px; border-radius:14px; background:rgba(239,231,218,.04); }
-.hero-stat .n{ font-size:19px; font-weight:600; display:block; }
-.hero-stat .l{ font-size:10.8px; color:var(--sand-faint); text-transform:uppercase; letter-spacing:.9px; margin-top:2px; display:block; }
+.hero.compact .ring-center .cap{ font-size:10.5px; margin-top:2px; }
+.hero-stats{ display:flex; flex-wrap:wrap; width:100%; gap:8px; }
+.hero-stat{ flex:1 1 27%; min-width:78px; text-align:center; padding:10px 6px; border-radius:14px; background:rgba(239,231,218,.04); }
+.hero-stat .n{ font-size:17px; font-weight:600; display:block; }
+.hero-stat .l{ font-size:10.2px; color:var(--sand-faint); text-transform:uppercase; letter-spacing:.7px; margin-top:2px; display:block; }
 .hero-stat.streak .n{ color:var(--gold); }
 
 /* ---------- weekly goal card ---------- */
-.weekly-goal{ display:flex; align-items:center; gap:13px; background:var(--graphite); border:1px solid var(--line); border-radius:18px; padding:14px 16px; margin-bottom:18px; cursor:pointer; }
+.weekly-goal{ display:flex; align-items:center; gap:13px; background:var(--graphite); border:1px solid var(--line); border-radius:18px; padding:14px 16px; cursor:pointer; }
 .weekly-goal .ic{ flex:0 0 auto; width:36px; height:36px; border-radius:11px; background:var(--coffee); display:flex; align-items:center; justify-content:center; color:var(--gold); }
 .weekly-goal .body{ min-width:0; flex:1; }
-.weekly-goal .eyebrow{ display:block; font-size:10.5px; color:var(--sand-faint); text-transform:uppercase; letter-spacing:.8px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.weekly-goal .title{ display:block; font-size:14px; margin-top:2px; color:var(--sand); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.weekly-goal .eyebrow{ display:block; font-size:10.5px; color:var(--sand-faint); text-transform:uppercase; letter-spacing:.8px; font-weight:700; }
+.weekly-goal .goal-title{ display:block; font-size:15px; font-weight:600; margin-top:3px; color:var(--sand); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.weekly-goal .title{ display:block; font-size:12.5px; margin-top:2px; color:var(--sand-dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.weekly-goal .wg-meta{ display:block; font-size:11px; margin-top:2px; color:var(--sand-faint); }
+.weekly-goal .wg-meta:empty{ display:none; }
+.weekly-goal .wg-pct{ flex:0 0 auto; font-size:12.5px; font-weight:700; color:var(--gold); background:var(--coffee); padding:4px 10px; border-radius:99px; }
 .weekly-goal .chev{ flex:0 0 auto; color:var(--sand-faint); }
+
+/* ---------- meu corpo hoje / performance e foco (cards laterais,
+   estado vazio real — sem tabela ainda, sem controle nenhum) ---------- */
+.body-card, .perf-card{ background:var(--graphite); border:1px solid var(--line); border-radius:20px; padding:16px; }
+.side-card-head h2{ font-size:12.5px; text-transform:uppercase; letter-spacing:1.1px; color:var(--sand-dim); font-weight:700; margin:0 0 12px; }
+.body-rows{ display:flex; flex-direction:column; gap:9px; }
+.body-row{ display:flex; align-items:center; justify-content:space-between; gap:10px; font-size:13px; }
+.body-row .l{ color:var(--sand-dim); }
+.body-row .v{ color:var(--sand-faint); font-weight:600; text-align:right; }
+
+/* ---------- atalhos ---------- */
+.shortcuts-row{ display:grid; grid-template-columns:repeat(2,1fr); gap:10px; }
+.shortcut-btn{
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px;
+  background:var(--graphite); border:1px solid var(--line); border-radius:16px; padding:14px 10px;
+  color:var(--sand); font-size:12.5px; font-weight:600; text-align:center; font-family:inherit;
+}
+.shortcut-btn .ic{ color:var(--gold); display:flex; }
+button.shortcut-btn{ cursor:pointer; transition:background .15s var(--ease), border-color .15s var(--ease); }
+button.shortcut-btn:hover{ background:var(--graphite-2); border-color:var(--gold-dim); }
+button.shortcut-btn:active{ transform:scale(.96); }
+button.shortcut-btn:focus-visible{ outline:2px solid var(--gold); outline-offset:2px; }
+.shortcut-btn.disabled{ color:var(--sand-faint); opacity:.5; }
+.shortcut-btn.disabled .ic{ color:var(--sand-faint); }
+.shortcut-btn .soon{ font-size:9px; text-transform:uppercase; letter-spacing:.5px; color:var(--sand-faint); }
+
+/* ---------- ajustes de espaçamento dentro do grid da tela Hoje — o
+   gap entre áreas já separa os blocos, então zera a margem que cada
+   componente carregava de quando eram irmãos soltos em coluna ---------- */
+.hoje-area-weeklygoal .weekly-goal,
+.hoje-area-resumo .hero,
+.hoje-area-today .habits{ margin-bottom:0; }
+.hoje-area-missions .empty-state,
+.hoje-area-missions .rest-banner{ margin-bottom:0; }
+.hoje-area-habits .habits{ margin-bottom:14px; }
+.hoje-area-habits .next{ margin-bottom:0; }
+.hoje-area-actions .actions{ margin-top:0; }
 
 /* ---------- section label ---------- */
 .section-head{ display:flex; align-items:baseline; justify-content:space-between; margin:6px 0 12px; }
@@ -435,8 +514,25 @@ a{ color:inherit; }
 
 @media (max-width:360px){
   .head h1{ font-size:23px; }
-  .ring-wrap{ width:152px; height:152px; }
 }
 @media (prefers-reduced-motion:reduce){
   *{ transition-duration:.001ms !important; animation-duration:.001ms !important; }
+}
+
+/* ---------- tela Hoje no desktop largo — duas colunas. Em larguras
+   intermediárias (inclusive 1280px) continua em 1 coluna, porque duas
+   colunas nessa faixa prejudicam a leitura. ---------- */
+@media (min-width:1440px){
+  #viewHoje.app{ max-width:1180px; padding-left:32px; padding-right:32px; }
+  .hoje-grid{
+    grid-template-columns:minmax(0,1fr) minmax(340px,400px);
+    grid-template-areas:
+      "header    header"
+      "missions  weeklygoal"
+      "today     resumo"
+      "habits    body"
+      ".         perf"
+      ".         shortcuts"
+      "actions   actions";
+  }
 }

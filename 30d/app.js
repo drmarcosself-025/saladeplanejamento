@@ -425,18 +425,25 @@
   // ============================================================
   // RENDER
   // ============================================================
+  // Erro num card não pode travar a tela inteira — cada render roda
+  // isolado, e uma falha só aparece no console em vez de derrubar o
+  // resto do dashboard.
+  function safeRender(fn) {
+    try { fn(); } catch (e) { console.error('[30D] erro ao renderizar', fn && fn.name, e); }
+  }
+
   function renderAll() {
-    renderHeader();
-    renderInfoChips();
-    renderWeeklyGoal();
-    renderMissions();
-    renderTodayTasks();
-    renderHabits();
-    renderRoutinesToday();
-    renderNext();
+    safeRender(renderHeader);
+    safeRender(renderInfoChips);
+    safeRender(renderWeeklyGoal);
+    safeRender(renderMissions);
+    safeRender(renderTodayTasks);
+    safeRender(renderHabits);
+    safeRender(renderPerf);
+    safeRender(renderNext);
     state.score.pontos = currentPoints();
     state.score.streak = computeStreak(state.score.pontos);
-    renderScore();
+    safeRender(renderScore);
   }
 
   function renderHeader() {
@@ -467,8 +474,23 @@
     var box = el.weeklyGoal;
     if (!state.weeklyMilestone) { box.hidden = true; return; }
     box.hidden = false;
-    box.querySelector('.title').textContent = state.weeklyMilestone.milestone.titulo;
-    box.querySelector('.eyebrow').textContent = 'Meta da semana · ' + state.weeklyMilestone.goal.titulo;
+    var goal = state.weeklyMilestone.goal;
+    q('weeklyGoalTitle').textContent = goal.titulo;
+    q('weeklyGoalStep').textContent = 'Próxima etapa: ' + state.weeklyMilestone.milestone.titulo;
+    q('weeklyGoalMeta').textContent = goal.prazo_final ? formatPrazoMeta(goal.prazo_final) : '';
+    var milestones = goal.p30_goal_milestones || [];
+    var hasMarcos = milestones.some(function (m) { return m.tipo === 'marco'; });
+    if (hasMarcos) {
+      q('weeklyGoalPct').hidden = false;
+      q('weeklyGoalPct').textContent = computeWeightedProgress(milestones) + '%';
+    } else {
+      q('weeklyGoalPct').hidden = true;
+    }
+  }
+
+  function formatPrazoMeta(prazoFinal) {
+    var dias = diffDaysStr(state.today, prazoFinal);
+    return dias >= 0 ? 'faltam ' + dias + (dias === 1 ? ' dia' : ' dias') : 'atrasada há ' + (-dias) + (dias === -1 ? ' dia' : ' dias');
   }
 
   function renderMissions() {
@@ -516,6 +538,7 @@
     var newStatus = m.done ? 'concluida' : 'pendente';
     m.task.status = newStatus;
     renderMissions();
+    renderPerf();
     persistDailyScore();
     sb.from('p30_tasks').update({ status: newStatus, concluido_em: m.done ? new Date().toISOString() : null })
       .eq('id', m.task.id).then(function (res) {
@@ -523,6 +546,7 @@
           console.error(res.error);
           m.done = prevDone; m.task.status = prevStatus;
           renderMissions();
+          renderPerf();
           persistDailyScore();
           toast('Não consegui salvar. Tente de novo.');
         }
@@ -560,6 +584,7 @@
     var newStatus = t.status === 'concluida' ? 'pendente' : 'concluida';
     t.status = newStatus;
     renderTodayTasks();
+    renderPerf();
     persistDailyScore();
     sb.from('p30_tasks').update({ status: newStatus, concluido_em: newStatus === 'concluida' ? new Date().toISOString() : null })
       .eq('id', id).then(function (res) {
@@ -567,6 +592,7 @@
           console.error(res.error);
           t.status = prevStatus;
           renderTodayTasks();
+          renderPerf();
           persistDailyScore();
           toast('Não consegui salvar. Tente de novo.');
           return;
@@ -667,15 +693,36 @@
     el.nextBox.querySelector('.title').textContent = state.nextCommitment.titulo;
   }
 
+  // "Performance e foco" — só métricas calculáveis com o que já existe.
+  // Minutos de foco soma duracao_min só de tarefas/missões concluídas
+  // hoje com esse campo realmente preenchido — nunca conta como "0min"
+  // uma tarefa que simplesmente não tem duração registrada.
+  function renderPerf() {
+    q('perfPlanejadas').textContent = state.todayTasks.length;
+    var tDone = state.todayTasks.filter(function (t) { return t.status === 'concluida'; }).length;
+    q('perfConcluidas').textContent = tDone;
+    var mDone = state.missions.filter(function (m) { return m.done; }).length;
+    q('perfMissoes').textContent = mDone + '/' + state.missions.length;
+    var focoSource = state.todayTasks.concat(state.missions.map(function (m) { return m.task; }));
+    var focoTasks = focoSource.filter(function (t) { return t.status === 'concluida' && t.duracao_min != null; });
+    q('perfFoco').textContent = focoTasks.length
+      ? focoTasks.reduce(function (s, t) { return s + t.duracao_min; }, 0) + ' min'
+      : 'Ainda sem registro';
+  }
+
   function renderScore() {
     q('ptsNow').textContent = state.score.pontos;
     q('ptsCap').textContent = 'de ' + CAP + ' pontos';
     q('streakNum').textContent = state.score.streak;
     var mDone = state.missions.filter(function (m) { return m.done; }).length;
     q('missionsNum').textContent = mDone + '/' + state.missions.length;
+    var tDone = state.todayTasks.filter(function (t) { return t.status === 'concluida'; }).length;
+    q('todayTasksNum').textContent = tDone + '/' + state.todayTasks.length;
     var hDone = state.habits.filter(function (h) { return h.done; }).length + state.routinesToday.filter(function (r) { return r.occurrence.status === 'concluida'; }).length;
     var hTotal = state.habits.length + state.routinesToday.length;
     q('habitsNum').textContent = hDone + '/' + hTotal;
+    var dayNum = Math.min(Math.max(diffDaysStr(state.cycle.data_inicio, state.today) + 1, 1), CYCLE_LENGTH_DAYS);
+    q('cycleNum').textContent = dayNum + '/' + CYCLE_LENGTH_DAYS;
     var frac = state.score.pontos / CAP;
     var RING_LEN = 465;
     el.ringFg.setAttribute('stroke-dashoffset', String(RING_LEN * (1 - frac)));
@@ -964,6 +1011,7 @@
     return loadMissions().then(loadTodayTasks).then(function () {
       renderMissions();
       renderTodayTasks();
+      renderPerf();
       persistDailyScore();
       computeNextCommitment();
       renderNext();
@@ -1275,7 +1323,8 @@
       el.sheetGoalDetail.classList.add('show');
     }).catch(function (err) {
       console.error('[30D] falha ao carregar painel da meta', err);
-      toast('Não consegui carregar a meta.');
+      var msg = (err && err.message) ? err.message : 'motivo desconhecido';
+      toast('Não consegui carregar a meta (' + msg + ').');
     });
   }
   function closeGoalDetail() {
@@ -1437,6 +1486,7 @@
       if (res.error) { toast('Não consegui salvar.'); console.error(res.error); return; }
       toast('Etapa atualizada.');
       loadGoalDetail(gdState.goal.id).then(renderGoalDetail);
+      syncWeeklyWidgetsAfterGoalChange();
     });
   }
 
@@ -1450,10 +1500,23 @@
     });
   }
 
+  // Não existe uma coluna "é o TCC" no banco — ele é só mais uma meta.
+  // Encontra pelo título (como foi semeado pelo assistente de carga
+  // inicial); se não achar por título, cai pra meta da semana atual
+  // como aproximação razoável antes de desistir de vez.
+  function findTccGoal() {
+    return state.goals.filter(function (g) { return /tcc/i.test(g.titulo); })[0];
+  }
+
   function initGoalDetail() {
     q('gdCloseBtn').addEventListener('click', closeGoalDetail);
     el.weeklyGoal.addEventListener('click', function () {
       if (state.weeklyMilestone) openGoalDetail(state.weeklyMilestone.goal.id);
+    });
+    q('shortcutTcc').addEventListener('click', function () {
+      var g = findTccGoal() || (state.weeklyMilestone && state.weeklyMilestone.goal);
+      if (g) { openGoalDetail(g.id); return; }
+      toast('Nenhuma meta do TCC encontrada ainda.');
     });
     q('gdAddMilestoneBtn').addEventListener('click', function () {
       if (!gdState.goal) return;
@@ -1471,6 +1534,7 @@
         q('gdNewTitulo').value = ''; q('gdNewPeso').value = ''; q('gdNewPrazo').value = '';
         toast('Etapa adicionada.');
         loadGoalDetail(gdState.goal.id).then(renderGoalDetail);
+        syncWeeklyWidgetsAfterGoalChange();
       });
     });
     q('gdSessaoSaveBtn').addEventListener('click', function () {
@@ -1489,6 +1553,7 @@
         q('gdSessaoDuracao').value = ''; q('gdSessaoObs').value = '';
         toast('Sessão registrada.');
         loadGoalDetail(gdState.goal.id).then(renderGoalDetail);
+        refreshDailyViews();
       });
     });
   }
