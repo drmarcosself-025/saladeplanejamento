@@ -510,18 +510,36 @@
       });
   }
 
+  // Hábitos e rotina do dia moram na mesma caixa "Hábitos essenciais" —
+  // eram duas seções separadas antes, o que dava a impressão de que a
+  // rotina do dia era algo à parte (ou nem aparecia, já que a caixa dela
+  // vinha fechada por padrão).
   function renderHabits() {
     var wrap = el.habitsList;
-    wrap.innerHTML = state.habits.map(function (h, i) {
-      return '<div class="habit-row' + (h.done ? ' done' : '') + '" data-i="' + i + '">' +
+    var habitRows = state.habits.map(function (h, i) {
+      return '<div class="habit-row' + (h.done ? ' done' : '') + '" data-kind="habit" data-i="' + i + '">' +
         '<span class="habit-check">' + iconCheck() + '</span>' +
         '<span class="t">' + esc(h.habit.titulo) + '</span>' +
         '<span class="p">+' + h.habit.pontos + '</span></div>';
-    }).join('');
-    Array.prototype.forEach.call(wrap.querySelectorAll('.habit-row'), function (node) {
-      node.addEventListener('click', function () { toggleHabit(+node.dataset.i); });
     });
-    q('habitsCount').textContent = state.habits.filter(function (h) { return h.done; }).length + ' de ' + state.habits.length;
+    var routineRows = state.routinesToday.map(function (r, i) {
+      var done = r.occurrence.status === 'concluida';
+      return '<div class="habit-row' + (done ? ' done' : '') + '" data-kind="routine" data-i="' + i + '">' +
+        '<span class="habit-check">' + iconCheck() + '</span>' +
+        '<span class="t">' + esc(r.routine.titulo) + (r.routine.horario ? ' · ' + r.routine.horario.slice(0, 5) : '') + '</span>' +
+        '<span class="p">+' + r.routine.pontos + '</span></div>';
+    });
+    wrap.innerHTML = habitRows.concat(routineRows).join('');
+    Array.prototype.forEach.call(wrap.querySelectorAll('.habit-row'), function (node) {
+      node.addEventListener('click', function () {
+        if (node.dataset.kind === 'routine') toggleRoutine(+node.dataset.i);
+        else toggleHabit(+node.dataset.i);
+      });
+    });
+    var doneCount = state.habits.filter(function (h) { return h.done; }).length +
+      state.routinesToday.filter(function (r) { return r.occurrence.status === 'concluida'; }).length;
+    var totalCount = state.habits.length + state.routinesToday.length;
+    q('habitsCount').textContent = doneCount + ' de ' + totalCount;
   }
 
   function toggleHabit(i) {
@@ -536,23 +554,7 @@
   }
 
   function renderRoutinesToday() {
-    var box = el.routinesBox;
-    if (!state.routinesToday.length) { box.hidden = true; return; }
-    box.hidden = false;
-    box.classList.add('open');
-    q('routinesTitle').textContent = 'Rotina de hoje';
-    var doneCount = state.routinesToday.filter(function (r) { return r.occurrence.status === 'concluida'; }).length;
-    q('routinesCount').textContent = doneCount + ' de ' + state.routinesToday.length;
-    el.routinesList.innerHTML = state.routinesToday.map(function (r, i) {
-      var done = r.occurrence.status === 'concluida';
-      return '<div class="habit-row' + (done ? ' done' : '') + '" data-i="' + i + '">' +
-        '<span class="habit-check">' + iconCheck() + '</span>' +
-        '<span class="t">' + esc(r.routine.titulo) + (r.routine.horario ? ' · ' + r.routine.horario.slice(0, 5) : '') + '</span>' +
-        '<span class="p">+' + r.routine.pontos + '</span></div>';
-    }).join('');
-    Array.prototype.forEach.call(el.routinesList.querySelectorAll('.habit-row'), function (node) {
-      node.addEventListener('click', function () { toggleRoutine(+node.dataset.i); });
-    });
+    renderHabits();
   }
 
   function toggleRoutine(i) {
@@ -561,7 +563,7 @@
     r.occurrence.status = newStatus;
     sb.from('p30_task_occurrences').update({ status: newStatus, concluido_em: newStatus === 'concluida' ? new Date().toISOString() : null })
       .eq('id', r.occurrence.id).then(function (res) { if (res.error) console.error(res.error); });
-    renderRoutinesToday();
+    renderHabits();
     computeNextCommitment();
     renderNext();
     persistDailyScore();
@@ -1906,7 +1908,6 @@
       this.querySelectorAll('button').forEach(function (x) { x.classList.toggle('active', x === b); });
     });
     q('habitsToggle').addEventListener('click', function () { q('habitsBox').classList.toggle('open'); });
-    q('routinesToggle').addEventListener('click', function () { q('routinesBox').classList.toggle('open'); });
     el.scrim.addEventListener('click', function () {
       [el.sheetCapture, el.sheetSettings, el.sheetReorganize, el.sheetBraindump, el.sheetMoveTask, el.sheetSetup, el.sheetTaskManage, el.sheetGoalDetail].forEach(function (s) { s.classList.remove('show'); });
       el.scrim.classList.remove('show');
@@ -1927,8 +1928,6 @@
     el.missionsEmpty = q('missionsEmpty');
     el.restBanner = q('restBanner');
     el.habitsList = q('habitsList');
-    el.routinesBox = q('routinesBox');
-    el.routinesList = q('routinesList');
     el.nextBox = q('nextBox');
     el.infoChips = q('infoChips');
     el.weeklyGoal = q('weeklyGoal');
