@@ -387,6 +387,25 @@ a{ color:inherit; }
 .reorg-add-row .reorg-add-btn{ flex:0 0 auto; width:34px; height:34px; border-radius:10px; background:var(--coffee); border:1px solid var(--gold-dim); color:var(--gold); font-size:17px; line-height:1; cursor:pointer; }
 .reorg-add-row .reorg-add-btn:hover{ background:var(--graphite-2); }
 
+/* ---------- tarefas de hoje ---------- */
+.today-task-row{ display:flex; align-items:center; gap:10px; padding:7px 0; border-top:1px solid var(--line); }
+.today-task-row:first-child{ border-top:none; }
+.today-task-row .check{ flex:0 0 auto; width:20px; height:20px; border-radius:50%; border:1.4px solid var(--line-strong); display:flex; align-items:center; justify-content:center; cursor:pointer; }
+.today-task-row .check svg{ width:10px; height:10px; opacity:0; }
+.today-task-row.done .check{ background:var(--green); border-color:var(--green); }
+.today-task-row.done .check svg{ opacity:1; }
+.today-task-row .t{ flex:1; font-size:13.5px; color:var(--sand); min-width:0; }
+.today-task-row.done .t{ color:var(--sand-faint); text-decoration:line-through; }
+.today-task-time{ font-size:11px; color:var(--gold); font-weight:600; margin-left:6px; }
+.today-task-more{ flex:0 0 auto; width:24px; height:24px; border-radius:7px; background:none; border:none; color:var(--sand-faint); cursor:pointer; font-size:15px; line-height:1; }
+.today-task-more:hover{ color:var(--gold); background:rgba(239,231,218,.06); }
+.today-add-row{ display:flex; gap:6px; margin-top:9px; padding-top:9px; border-top:1px solid var(--line); }
+.today-add-row .today-add-input{ flex:1; min-width:0; background:var(--ink); border:1px solid var(--line-strong); border-radius:10px; color:var(--sand); padding:8px 10px; font-size:12.5px; font-family:inherit; }
+.today-add-row .today-add-input:focus{ outline:none; border-color:var(--gold-dim); }
+.today-add-row .today-add-time{ flex:0 0 auto; width:82px; background:var(--ink); border:1px solid var(--line-strong); border-radius:10px; color:var(--sand); padding:8px 6px; font-size:12px; font-family:inherit; color-scheme:dark; }
+.today-add-row .today-add-btn{ flex:0 0 auto; width:34px; height:34px; border-radius:10px; background:var(--coffee); border:1px solid var(--gold-dim); color:var(--gold); font-size:17px; line-height:1; cursor:pointer; }
+.today-add-row .today-add-btn:hover{ background:var(--graphite-2); }
+
 /* ---------- painel detalhado da meta ---------- */
 .gd-progress-wrap{ display:flex; align-items:center; gap:10px; margin:14px 0 4px; }
 .gd-progress-bar{ flex:1; height:8px; border-radius:99px; background:var(--line-strong); overflow:hidden; }
