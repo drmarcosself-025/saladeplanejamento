@@ -89,6 +89,7 @@
     weekday: null,
     cycle: null,
     missions: [],       // tasks com is_missao_hoje
+    todayTasks: [],     // tarefas acionáveis com data = hoje, exceto as que já são missão
     habits: [],         // {habit, done}
     routinesToday: [],  // {routine, occurrence}
     goals: [],
@@ -204,7 +205,7 @@
     ensureCycle()
       .then(function () {
         return Promise.all([
-          loadMissions(),
+          loadMissions().then(loadTodayTasks),
           loadHabits(),
           loadRoutinesToday(),
           loadGoals(),
@@ -262,6 +263,22 @@
       .then(function (res) {
         if (res.error) throw res.error;
         state.missions = (res.data || []).map(function (t) { return { task: t, done: t.status === 'concluida' }; });
+      });
+  }
+
+  // Todas as tarefas acionáveis com data = hoje, exceto as que já são
+  // missão (essas continuam só no bloco das três missões, sem duplicar
+  // visualmente). Depende de state.missions já estar carregado — por
+  // isso é sempre chamada como loadMissions().then(loadTodayTasks).
+  function loadTodayTasks() {
+    return sb.from('p30_tasks').select('*').eq('user_id', state.user.id).eq('data', state.today)
+      .in('tipo', ['tarefa', 'aguardando']).neq('status', 'arquivada')
+      .order('horario', { ascending: true, nullsFirst: false })
+      .then(function (res) {
+        if (res.error) throw res.error;
+        var missionIds = {};
+        state.missions.forEach(function (m) { missionIds[m.task.id] = true; });
+        state.todayTasks = (res.data || []).filter(function (t) { return !missionIds[t.id]; });
       });
   }
 
@@ -368,6 +385,7 @@
   function currentPoints() {
     var pts = 0;
     state.missions.forEach(function (m) { if (m.done) pts += m.task.pontos || 0; });
+    state.todayTasks.forEach(function (t) { if (t.status === 'concluida') pts += t.pontos || 0; });
     state.habits.forEach(function (h) { if (h.done) pts += h.habit.pontos || 0; });
     state.routinesToday.forEach(function (r) { if (r.occurrence && r.occurrence.status === 'concluida') pts += r.routine.pontos || 0; });
     return Math.min(pts, CAP);
@@ -412,6 +430,7 @@
     renderInfoChips();
     renderWeeklyGoal();
     renderMissions();
+    renderTodayTasks();
     renderHabits();
     renderRoutinesToday();
     renderNext();
@@ -508,6 +527,78 @@
           toast('Não consegui salvar. Tente de novo.');
         }
       });
+  }
+
+  // "Tarefas de hoje" — todas as tarefas com data = hoje que não são
+  // uma das três missões. Uma tarefa não precisa virar missão pra
+  // aparecer na tela Hoje: aparece aqui de qualquer forma.
+  function renderTodayTasks() {
+    var tasks = state.todayTasks;
+    q('todayTasksCount').textContent = tasks.filter(function (t) { return t.status === 'concluida'; }).length + ' de ' + tasks.length;
+    el.todayTasksList.innerHTML = tasks.length ? tasks.map(function (t) {
+      return '<div class="today-task-row' + (t.status === 'concluida' ? ' done' : '') + '" data-id="' + t.id + '">' +
+        '<span class="check" data-check="' + t.id + '">' + iconCheck() + '</span>' +
+        '<span class="t">' + esc(t.titulo) + (t.horario ? ' <span class="today-task-time">' + t.horario.slice(0, 5) + '</span>' : '') + '</span>' +
+        '<button class="today-task-more" data-more="' + t.id + '" type="button" aria-label="Opções">&#8942;</button></div>';
+    }).join('') : '<div class="empty-state">Nada mais planejado pra hoje.</div>';
+    Array.prototype.forEach.call(el.todayTasksList.querySelectorAll('[data-check]'), function (btn) {
+      btn.addEventListener('click', function (e) { e.stopPropagation(); toggleTodayTask(btn.dataset.check); });
+    });
+    Array.prototype.forEach.call(el.todayTasksList.querySelectorAll('[data-more]'), function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var t = tasks.filter(function (x) { return x.id === btn.dataset.more; })[0];
+        if (t) openTaskManage(t, { isMission: false });
+      });
+    });
+  }
+
+  function toggleTodayTask(id) {
+    var t = state.todayTasks.find(function (x) { return x.id === id; });
+    if (!t) return;
+    var prevStatus = t.status;
+    var newStatus = t.status === 'concluida' ? 'pendente' : 'concluida';
+    t.status = newStatus;
+    renderTodayTasks();
+    persistDailyScore();
+    sb.from('p30_tasks').update({ status: newStatus, concluido_em: newStatus === 'concluida' ? new Date().toISOString() : null })
+      .eq('id', id).then(function (res) {
+        if (res.error) {
+          console.error(res.error);
+          t.status = prevStatus;
+          renderTodayTasks();
+          persistDailyScore();
+          toast('Não consegui salvar. Tente de novo.');
+          return;
+        }
+        if (!q('viewSemana').hidden) reloadWeek();
+      });
+  }
+
+  function submitTodayAdd() {
+    var input = q('todayAddInput');
+    var timeInput = q('todayAddTime');
+    var btn = q('todayAddBtn');
+    var titulo = input.value.trim();
+    if (!titulo) { toast('Escreva algo antes de adicionar.'); return; }
+    input.disabled = true; btn.disabled = true;
+    sb.from('p30_tasks').insert({
+      user_id: state.user.id, cycle_id: state.cycle.id, titulo: titulo, texto_original: titulo,
+      tipo: 'tarefa', status: 'pendente', organizado: true, data: state.today,
+      horario: timeInput.value || null, pontos: 10
+    }).then(function (res) {
+      input.disabled = false; btn.disabled = false;
+      if (res.error) { toast('Não consegui salvar.'); console.error(res.error); return; }
+      input.value = ''; timeInput.value = '';
+      toast('Adicionada.');
+      refreshDailyViews();
+    });
+  }
+
+  function initTodayTasks() {
+    q('todayTasksToggle').addEventListener('click', function () { q('todayTasksBox').classList.toggle('open'); });
+    q('todayAddBtn').addEventListener('click', submitTodayAdd);
+    q('todayAddInput').addEventListener('keydown', function (e) { if (e.key === 'Enter') submitTodayAdd(); });
   }
 
   // Hábitos e rotina do dia moram na mesma caixa "Hábitos essenciais" —
@@ -696,6 +787,7 @@
         if (res.error) { toast('Não consegui salvar. Tente de novo.'); console.error(res.error); return; }
         closeCapture();
         toast('Pendência capturada.');
+        if (row.data === state.today) refreshDailyViews();
       });
     });
 
@@ -722,7 +814,7 @@
         if (res.error) { toast('Não consegui salvar. Tente de novo.'); console.error(res.error); return; }
         closeCapture();
         toast(isObrigacao ? 'Tarefa organizada.' : 'Registrado — isso não vira obrigação automaticamente.');
-        if (row.data === state.today || !row.data) { loadMissions().then(renderMissions); }
+        if (row.data === state.today || !row.data) refreshDailyViews();
       });
     });
   }
@@ -827,7 +919,7 @@
         q('reorganizeSaveBtn').disabled = false;
         closeReorganize();
         toast('Seu dia foi reorganizado.');
-        loadMissions().then(function () { renderMissions(); persistDailyScore(); computeNextCommitment(); renderNext(); });
+        refreshDailyViews();
       });
     });
   }
@@ -853,6 +945,7 @@
     Array.prototype.forEach.call(q('tmPrioridadeChips').querySelectorAll('.chip'), function (x) { x.classList.toggle('active', x.dataset.p === task.prioridade); });
     q('tmConcluirBtn').textContent = task.status === 'concluida' ? 'Desmarcar conclusão' : 'Concluir';
     q('tmRemoverMissaoBtn').hidden = !manageIsMission;
+    q('tmPromoverMissaoBtn').hidden = manageIsMission || state.missions.length >= 3;
     el.scrim.classList.add('show');
     el.sheetTaskManage.classList.add('show');
   }
@@ -861,15 +954,22 @@
     el.sheetTaskManage.classList.remove('show');
     manageTask = null;
   }
-  function refreshAfterTaskChange() {
-    loadMissions().then(function () {
+  // Função central de atualização — evita chamadas fragmentadas depois
+  // de qualquer mutação (editar/concluir/adiar/mover/excluir/promover
+  // tarefa). Recarrega missões e tarefas de hoje juntas (nessa ordem,
+  // já que tarefas de hoje depende de saber quais tasks já são missão
+  // pra não duplicar visualmente) e sincroniza Semana/Reorganizar se
+  // estiverem abertas.
+  function refreshDailyViews() {
+    return loadMissions().then(loadTodayTasks).then(function () {
       renderMissions();
+      renderTodayTasks();
       persistDailyScore();
       computeNextCommitment();
       renderNext();
+      if (!q('viewSemana').hidden) reloadWeek();
+      if (reorganizeRefreshRef) reorganizeRefreshRef();
     });
-    if (!q('viewSemana').hidden) reloadWeek();
-    if (reorganizeRefreshRef) reorganizeRefreshRef();
   }
   function initTaskManage() {
     q('tmCloseBtn').addEventListener('click', closeTaskManage);
@@ -898,7 +998,7 @@
         }
         toast(successMsg);
         closeTaskManage();
-        refreshAfterTaskChange();
+        refreshDailyViews();
       });
     }
 
@@ -940,6 +1040,14 @@
       }, 'Removida das missões de hoje — a tarefa continua existindo.');
     });
 
+    q('tmPromoverMissaoBtn').addEventListener('click', function () {
+      if (!manageTask) return;
+      if (state.missions.length >= 3) { toast('No máximo 3 missões por vez.'); return; }
+      runAction(q('tmPromoverMissaoBtn'), function () {
+        return sb.from('p30_tasks').update({ is_missao_hoje: true, missao_data: state.today }).eq('id', manageTask.id);
+      }, 'Virou uma das três missões de hoje.');
+    });
+
     q('tmDeleteBtn').addEventListener('click', function () {
       if (!manageTask) return;
       if (!window.confirm('Excluir esta tarefa definitivamente? Não tem como desfazer.')) return;
@@ -959,7 +1067,7 @@
     state.weekDates = [];
     for (var i = 0; i < 7; i++) state.weekDates.push(addDaysStr(monday, i));
     var pTasks = sb.from('p30_tasks').select('*').eq('user_id', state.user.id)
-      .in('tipo', ['tarefa', 'aguardando']).not('status', 'in', '(concluida,arquivada)')
+      .in('tipo', ['tarefa', 'aguardando']).neq('status', 'arquivada')
       .gte('data', monday).lte('data', sunday);
     var pRoutines = state.allRoutinesCache
       ? Promise.resolve({ data: state.allRoutinesCache, error: null })
@@ -1037,8 +1145,7 @@
       input.disabled = false;
       if (res.error) { toast('Não consegui salvar.'); console.error(res.error); return; }
       toast('Adicionada.');
-      loadWeek().then(renderWeek);
-      if (dateStr === state.today) { loadMissions().then(renderMissions); computeNextCommitment(); renderNext(); }
+      refreshDailyViews();
     });
   }
 
@@ -1047,9 +1154,12 @@
     if (!t) return;
     var newStatus = t.status === 'concluida' ? 'pendente' : 'concluida';
     t.status = newStatus;
-    sb.from('p30_tasks').update({ status: newStatus, concluido_em: newStatus === 'concluida' ? new Date().toISOString() : null })
-      .eq('id', id).then(function (res) { if (res.error) console.error(res.error); });
     renderWeek();
+    sb.from('p30_tasks').update({ status: newStatus, concluido_em: newStatus === 'concluida' ? new Date().toISOString() : null })
+      .eq('id', id).then(function (res) {
+        if (res.error) { console.error(res.error); return; }
+        refreshDailyViews();
+      });
   }
 
   function openMoveSheet(taskId) {
@@ -1073,7 +1183,10 @@
     var t = state.weekTasks.find(function (x) { return x.id === moveTaskId; });
     if (t) t.data = dateStr;
     sb.from('p30_tasks').update({ data: dateStr }).eq('id', moveTaskId)
-      .then(function (res) { if (res.error) console.error(res.error); });
+      .then(function (res) {
+        if (res.error) { console.error(res.error); return; }
+        refreshDailyViews();
+      });
     closeMoveSheet();
     renderWeek();
     toast('Tarefa movida.');
@@ -1927,6 +2040,7 @@
     el.missionsList = q('missionsList');
     el.missionsEmpty = q('missionsEmpty');
     el.restBanner = q('restBanner');
+    el.todayTasksList = q('todayTasksList');
     el.habitsList = q('habitsList');
     el.nextBox = q('nextBox');
     el.infoChips = q('infoChips');
@@ -1944,6 +2058,7 @@
     initNav();
     initCapture();
     initReorganize();
+    initTodayTasks();
     initTaskManage();
     initGoalDetail();
     initWeek();
