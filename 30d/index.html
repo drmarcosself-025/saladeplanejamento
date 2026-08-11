@@ -58,9 +58,14 @@
           </div>
           <h1 id="greeting" class="serif">Carregando<span class="accent">.</span></h1>
         </div>
-        <button class="icon-btn" id="settingsBtn" aria-label="Ajustes">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 13a7.6 7.6 0 0 0 0-2l1.9-1.5-1.9-3.3-2.3 1a7.7 7.7 0 0 0-1.7-1L15 3.5h-3.9l-.3 2.6a7.7 7.7 0 0 0-1.7 1l-2.3-1-2 3.3L6.7 11a7.6 7.6 0 0 0 0 2l-1.9 1.5 2 3.3 2.3-1a7.7 7.7 0 0 0 1.7 1l.3 2.6H15l.3-2.6a7.7 7.7 0 0 0 1.7-1l2.3 1 1.9-3.3z"/></svg>
-        </button>
+        <div class="head-actions">
+          <button class="icon-btn" id="checkinBtn" aria-label="Check-in rápido">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9 10c.5-1 1.5-1 2 0M13 10c.5-1 1.5-1 2 0M8.5 14.5c1 1.2 2.2 1.8 3.5 1.8s2.5-.6 3.5-1.8"/></svg>
+          </button>
+          <button class="icon-btn" id="settingsBtn" aria-label="Ajustes">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 13a7.6 7.6 0 0 0 0-2l1.9-1.5-1.9-3.3-2.3 1a7.7 7.7 0 0 0-1.7-1L15 3.5h-3.9l-.3 2.6a7.7 7.7 0 0 0-1.7 1l-2.3-1-2 3.3L6.7 11a7.6 7.6 0 0 0 0 2l-1.9 1.5 2 3.3 2.3-1a7.7 7.7 0 0 0 1.7 1l.3 2.6H15l.3-2.6a7.7 7.7 0 0 0 1.7-1l2.3 1 1.9-3.3z"/></svg>
+          </button>
+        </div>
       </div>
 
       <div class="energy">
@@ -473,6 +478,45 @@
     <button class="btn ghost" id="braindumpCancelBtn" type="button">Cancelar</button>
     <button class="btn primary" id="braindumpSaveBtn" type="button">Registrar</button>
   </div>
+</div>
+
+<!-- ---------- check-in rápido ---------- -->
+<div class="sheet" id="sheetCheckin">
+  <div class="sheet-grip"></div>
+  <div style="display:flex; align-items:center; justify-content:space-between;">
+    <h3 style="margin:0;">Check-in rápido</h3>
+    <button class="icon-x" id="checkinCloseBtn" type="button"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+  </div>
+  <p class="sub">Sem formulário longo — marque só o que quiser agora. Pode registrar quantas vezes fizer sentido no dia.</p>
+
+  <label>Energia</label>
+  <div class="scale-row" id="checkinEnergia"></div>
+  <label>Humor</label>
+  <div class="scale-row" id="checkinHumor"></div>
+  <label>Ansiedade / agitação</label>
+  <div class="scale-row" id="checkinAnsiedade"></div>
+  <label>Clareza mental</label>
+  <div class="scale-row" id="checkinClareza"></div>
+  <label>Qualidade do sono</label>
+  <div class="scale-row" id="checkinSono"></div>
+  <label>Horas dormidas (opcional)</label>
+  <input type="number" id="checkinHorasDormidas" min="0" max="24" step="0.5" placeholder="Ex.: 7">
+
+  <label>Estado predominante</label>
+  <div class="chip-row" id="checkinEstadoChips">
+    <button type="button" class="chip" data-estado="tranquilo">Tranquilo</button>
+    <button type="button" class="chip" data-estado="focado">Focado</button>
+    <button type="button" class="chip" data-estado="cansado">Cansado</button>
+    <button type="button" class="chip" data-estado="acelerado">Acelerado</button>
+    <button type="button" class="chip" data-estado="irritado">Irritado</button>
+    <button type="button" class="chip" data-estado="desanimado">Desanimado</button>
+    <button type="button" class="chip" data-estado="ansioso">Ansioso</button>
+  </div>
+
+  <label>Pensamento atual (opcional)</label>
+  <input type="text" id="checkinPensamento" placeholder="Uma frase, sem compromisso">
+
+  <button class="btn primary" id="checkinSaveBtn" type="button" style="margin-top:16px;">Registrar check-in</button>
 </div>
 
 <!-- ---------- ajustes rápidos ---------- -->

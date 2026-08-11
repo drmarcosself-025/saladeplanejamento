@@ -18,6 +18,7 @@
   var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
   var AREA_LABEL = { corpo: 'Corpo', mente: 'Mente', consultorio: 'Consultório', futuro: 'Futuro', organizacao: 'Organização' };
+  var ESTADO_LABEL = { tranquilo: 'Tranquilo', focado: 'Focado', cansado: 'Cansado', acelerado: 'Acelerado', irritado: 'Irritado', desanimado: 'Desanimado', ansioso: 'Ansioso' };
   var DAY_ABBR = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
   var DAY_FULL = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado'];
   var MONTHS = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
@@ -93,6 +94,7 @@
     habits: [],         // {habit, done}
     routinesToday: [],  // {routine, occurrence}
     goals: [],
+    todayCheckin: null, // check-in mais recente de hoje, ou null se nenhum ainda
     weeklyMilestone: null, // {milestone, goal}
     deadlineGoal: null,
     nextCommitment: null,
@@ -209,7 +211,8 @@
           loadHabits(),
           loadRoutinesToday(),
           loadGoals(),
-          loadDailyScore()
+          loadDailyScore(),
+          loadTodayCheckin()
         ]);
       })
       .then(function () {
@@ -342,6 +345,17 @@
       });
   }
 
+  // Mais de um check-in por dia é permitido de propósito — sempre pega
+  // o mais recente pra mostrar no indicador do cabeçalho.
+  function loadTodayCheckin() {
+    return sb.from('p30_checkins').select('*').eq('user_id', state.user.id).eq('data', state.today)
+      .order('created_at', { ascending: false }).limit(1)
+      .then(function (res) {
+        if (res.error) throw res.error;
+        state.todayCheckin = (res.data || [])[0] || null;
+      });
+  }
+
   function computeWeeklyMilestone() {
     state.weeklyMilestone = null;
     for (var i = 0; i < state.goals.length; i++) {
@@ -460,6 +474,16 @@
   function renderInfoChips() {
     var wrap = el.infoChips;
     wrap.innerHTML = '';
+    if (state.todayCheckin) {
+      var c = state.todayCheckin;
+      var parts = [];
+      if (c.humor != null) parts.push('humor ' + c.humor + '/5');
+      if (c.estado) parts.push(ESTADO_LABEL[c.estado]);
+      var div0 = document.createElement('div');
+      div0.className = 'info-chip';
+      div0.innerHTML = '<span class="ic">' + svgCheckinIcon() + '</span><span><b>Check-in de hoje</b>' + (parts.length ? ' — ' + esc(parts.join(' · ')) : '') + '</span>';
+      wrap.appendChild(div0);
+    }
     if (state.deadlineGoal) {
       var dias = diffDaysStr(state.today, state.deadlineGoal.prazo_final);
       var div = document.createElement('div');
@@ -735,6 +759,9 @@
   }
   function svgAlert() {
     return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.3 3.9 2.7 17.6a1.5 1.5 0 0 0 1.3 2.2h16a1.5 1.5 0 0 0 1.3-2.2L13.7 3.9a1.5 1.5 0 0 0-2.6 0Z"/></svg>';
+  }
+  function svgCheckinIcon() {
+    return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9 10c.5-1 1.5-1 2 0M13 10c.5-1 1.5-1 2 0M8.5 14.5c1 1.2 2.2 1.8 3.5 1.8s2.5-.6 3.5-1.8"/></svg>';
   }
 
   // ============================================================
@@ -1591,6 +1618,93 @@
   }
 
   // ============================================================
+  // CHECK-IN RÁPIDO (Fatia 2) — captura simples do estado atual, sem
+  // formulário longo. Permite mais de um registro por dia de propósito
+  // (ex.: manhã e noite). Nada de análise de padrão ou linguagem
+  // clínica aqui — isso só é dado bruto; a leitura de padrões (com as
+  // regras de segurança emocional: nunca diagnosticar, exigir amostra
+  // mínima) fica pra uma fatia futura, quando houver histórico
+  // suficiente pra isso fazer sentido.
+  // ============================================================
+  function initCheckin() {
+    var SCALE_FIELDS = ['checkinEnergia', 'checkinHumor', 'checkinAnsiedade', 'checkinClareza', 'checkinSono'];
+    var scaleValues = {};
+    var selectedEstado = null;
+
+    SCALE_FIELDS.forEach(function (id) {
+      var wrap = q(id);
+      wrap.innerHTML = [1, 2, 3, 4, 5].map(function (n) {
+        return '<button type="button" class="scale-btn" data-v="' + n + '">' + n + '</button>';
+      }).join('');
+      wrap.addEventListener('click', function (e) {
+        var b = e.target.closest('.scale-btn'); if (!b) return;
+        var already = b.classList.contains('active');
+        Array.prototype.forEach.call(wrap.querySelectorAll('.scale-btn'), function (x) { x.classList.remove('active'); });
+        scaleValues[id] = already ? null : +b.dataset.v;
+        if (!already) b.classList.add('active');
+      });
+    });
+
+    q('checkinEstadoChips').addEventListener('click', function (e) {
+      var b = e.target.closest('.chip'); if (!b) return;
+      var already = b.classList.contains('active');
+      Array.prototype.forEach.call(this.querySelectorAll('.chip'), function (x) { x.classList.remove('active'); });
+      selectedEstado = already ? null : b.dataset.estado;
+      if (!already) b.classList.add('active');
+    });
+
+    function resetCheckinForm() {
+      SCALE_FIELDS.forEach(function (id) {
+        scaleValues[id] = null;
+        Array.prototype.forEach.call(q(id).querySelectorAll('.scale-btn'), function (x) { x.classList.remove('active'); });
+      });
+      selectedEstado = null;
+      Array.prototype.forEach.call(q('checkinEstadoChips').querySelectorAll('.chip'), function (x) { x.classList.remove('active'); });
+      q('checkinHorasDormidas').value = '';
+      q('checkinPensamento').value = '';
+    }
+
+    function openCheckin() {
+      resetCheckinForm();
+      el.scrim.classList.add('show');
+      el.sheetCheckin.classList.add('show');
+    }
+    function closeCheckin() {
+      el.scrim.classList.remove('show');
+      el.sheetCheckin.classList.remove('show');
+    }
+    q('checkinBtn').addEventListener('click', openCheckin);
+    q('checkinCloseBtn').addEventListener('click', closeCheckin);
+
+    q('checkinSaveBtn').addEventListener('click', function () {
+      var horas = q('checkinHorasDormidas').value;
+      var pensamento = q('checkinPensamento').value.trim();
+      var row = {
+        user_id: state.user.id, data: state.today,
+        energia: scaleValues.checkinEnergia || null,
+        humor: scaleValues.checkinHumor || null,
+        ansiedade: scaleValues.checkinAnsiedade || null,
+        clareza_mental: scaleValues.checkinClareza || null,
+        qualidade_sono: scaleValues.checkinSono || null,
+        horas_dormidas: horas !== '' ? +horas : null,
+        estado: selectedEstado || null,
+        pensamento: pensamento || null
+      };
+      var algoPreenchido = row.energia || row.humor || row.ansiedade || row.clareza_mental ||
+        row.qualidade_sono || row.horas_dormidas != null || row.estado || row.pensamento;
+      if (!algoPreenchido) { toast('Marque ao menos alguma coisa antes de registrar.'); return; }
+      q('checkinSaveBtn').disabled = true;
+      sb.from('p30_checkins').insert(row).then(function (res) {
+        q('checkinSaveBtn').disabled = false;
+        if (res.error) { toast('Não consegui registrar o check-in.'); console.error(res.error); return; }
+        closeCheckin();
+        toast('Check-in registrado.');
+        loadTodayCheckin().then(renderInfoChips);
+      });
+    });
+  }
+
+  // ============================================================
   // ENCERRAR O DIA (ação real: fecha o dia; a sequência guiada
   // completa do modo noturno é da Fase 3)
   // ============================================================
@@ -2087,7 +2201,7 @@
     });
     q('habitsToggle').addEventListener('click', function () { q('habitsBox').classList.toggle('open'); });
     el.scrim.addEventListener('click', function () {
-      [el.sheetCapture, el.sheetSettings, el.sheetReorganize, el.sheetBraindump, el.sheetMoveTask, el.sheetSetup, el.sheetTaskManage, el.sheetGoalDetail].forEach(function (s) { s.classList.remove('show'); });
+      [el.sheetCapture, el.sheetSettings, el.sheetReorganize, el.sheetBraindump, el.sheetCheckin, el.sheetMoveTask, el.sheetSetup, el.sheetTaskManage, el.sheetGoalDetail].forEach(function (s) { s.classList.remove('show'); });
       el.scrim.classList.remove('show');
     });
     q('errorRetryBtn').addEventListener('click', function () {
@@ -2102,6 +2216,7 @@
     el.sheetSettings = q('sheetSettings');
     el.sheetReorganize = q('sheetReorganize');
     el.sheetBraindump = q('sheetBraindump');
+    el.sheetCheckin = q('sheetCheckin');
     el.missionsList = q('missionsList');
     el.missionsEmpty = q('missionsEmpty');
     el.restBanner = q('restBanner');
@@ -2128,6 +2243,7 @@
     initGoalDetail();
     initWeek();
     initBraindump();
+    initCheckin();
     initEndDay();
     initSettings();
     initSetup();

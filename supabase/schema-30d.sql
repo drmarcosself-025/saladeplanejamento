@@ -380,3 +380,37 @@ create policy "p30_goal_progress_log_owner" on public.p30_goal_progress_log for 
 -- p30_setup_proposals.created_target_id, devolvendo cada proposta
 -- para o estado "sugerido".
 -- ============================================================
+
+-- ============================================================
+-- CHECK-INS — registro rápido de estado (Fatia 2 da tela Hoje).
+-- Dado pessoal sensível: RLS por usuário, nunca using(true), nunca
+-- enviado a serviço externo sem consentimento explícito. Permite mais
+-- de um check-in por dia de propósito (não tem unique em user_id+data)
+-- — "periodo" deixa registrado se foi manhã/tarde/noite/livre, útil
+-- pra quando o resumo semanal/análise de padrões for construído (fora
+-- desta fatia). Cada escala vai de 1 (baixo) a 5 (alto).
+-- ============================================================
+create table if not exists public.p30_checkins (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  data date not null default current_date,
+  periodo text not null default 'livre' check (periodo in ('manha','tarde','noite','livre')),
+  energia smallint check (energia between 1 and 5),
+  humor smallint check (humor between 1 and 5),
+  ansiedade smallint check (ansiedade between 1 and 5),
+  clareza_mental smallint check (clareza_mental between 1 and 5),
+  qualidade_sono smallint check (qualidade_sono between 1 and 5),
+  horas_dormidas numeric,
+  estado text check (estado in ('tranquilo','focado','cansado','acelerado','irritado','desanimado','ansioso')),
+  pensamento text,
+  created_at timestamptz not null default now()
+);
+create index if not exists p30_checkins_user_data_idx on public.p30_checkins (user_id, data desc, created_at desc);
+
+grant select, insert, update, delete on public.p30_checkins to authenticated;
+alter table public.p30_checkins enable row level security;
+drop policy if exists "p30_checkins_owner" on public.p30_checkins;
+create policy "p30_checkins_owner" on public.p30_checkins for all to authenticated
+  using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+-- Rollback: drop table public.p30_checkins;
