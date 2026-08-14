@@ -313,6 +313,21 @@ create policy "wa_media_insert" on storage.objects for insert to authenticated
   with check (bucket_id = 'wa-media');
 
 -- ============================================================
+-- STORAGE: bucket privado "backups" — exportação semanal (JSON) das
+-- tabelas mais sensíveis (feita pela function wa-backup-export, com a
+-- service role — só ela grava aqui). Só o proprietário pode ler, já que
+-- um export completo de conversas/leads é mais sensível que um anexo
+-- avulso.
+-- ============================================================
+insert into storage.buckets (id, name, public)
+values ('backups', 'backups', false)
+on conflict (id) do nothing;
+
+drop policy if exists "backups_select" on storage.objects;
+create policy "backups_select" on storage.objects for select to authenticated
+  using (bucket_id = 'backups' and public.is_owner());
+
+-- ============================================================
 -- CRM_SEGMENTADOS (mapa próprio de contatos segmentados pelo WhatsApp —
 -- separado do Funil/Leads. Alimentado automaticamente quando a IA detecta
 -- palavra-chave numa conversa, e também editável manualmente pela equipe.)
