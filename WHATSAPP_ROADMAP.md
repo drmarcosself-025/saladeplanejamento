@@ -9,6 +9,109 @@ realmente está publicada hoje (mesmo que ainda não tenha sido copiada pro Supa
 
 ---
 
+## Auditoria focada — `whatsapp-proxy/index.ts` (main commit `01dd5ed`)
+
+Segunda rodada, só nesse arquivo, mais a fundo. Nenhum código alterado ainda.
+
+### F1 — `wa_send_log` DELETE falha silenciosamente pra staff não-owner
+**Confirmado:** RLS `wa_send_log_delete` (`schema.sql`) é `using (public.is_owner())`. As
+chamadas de delete em `send-text` (liberar reserva após falha) e `send-media` (3 pontos)
+rodam com a sessão do usuário que chamou a action (não service role) e **não checam o
+resultado**. Pra um funcionário que não é `owner`, o delete é bloqueado pela RLS e ignorado.
+**Risco:** toda vez que um envio de um funcionário falha, a reserva do throttle anti-bloqueio
+fica presa pra sempre — o funcionário vai "gastando" limite de envio sem nunca ter enviado.
+**Cenário real:** recepcionista tenta mandar mensagem pra número inválido; Evolution recusa;
+reserva nunca libera; ao longo do dia, o limite dela esgota mais rápido que o real.
+**Correção mínima:** ajustar a policy `wa_send_log_delete` pra `using (public.is_owner() or created_by = auth.email())` (já gravamos `created_by` na reserva).
+**Arquivo/SQL:** `schema.sql`, policy `wa_send_log_delete`.
+**Teste de regressão:** logar como staff, forçar envio inválido, confirmar via SQL que a linha some.
+
+### F2 — Exceção de rede/timeout não libera a reserva nem é diferenciada de falha real
+**Confirmado:** `fetch()` do envio não está em try/catch próprio — uma exceção (timeout, DNS,
+conexão recusada) cai no `catch` geral da function (resposta 500 genérica) sem nunca chegar
+no bloco que apaga a reserva. Reserva fica presa. Também não existe estado "não sei se
+enviou" — só sucesso ou erro genérico.
+**Risco:** reserva presa (mesmo problema do F1, causa diferente); e se a mensagem tiver sido
+processada pela Evolution apesar do timeout na resposta, o usuário pode reenviar e duplicar.
+**Correção mínima:** try/catch dedicado no fetch de envio; em exceção, não apagar a reserva
+automaticamente e responder com um estado "resultado desconhecido", não "falhou".
+**Arquivo:** `send-text`/`send-media` em `whatsapp-proxy/index.ts`.
+
+### F3 — HTTP 2xx com corpo não-JSON é tratado como falha (não deveria)
+**Confirmado:** `if (r.ok && respBody)` — quando a Evolution responde 200 mas o corpo não é
+JSON válido (`respBody` vira `null`), cai no `else`, que **apaga a reserva** como se o envio
+tivesse falhado — quando na verdade o HTTP 2xx sugere que a Evolution aceitou o envio.
+**Risco:** mensagem pode ter sido enviada de verdade, mas o sistema trata como falha —
+usuário reenvia, duplica pro paciente; e nada fica salvo no histórico.
+**Correção mínima:** separar as duas condições: `r.ok` + corpo ilegível ≠ falha definitiva.
+**Arquivo:** mesmos dois pontos do F2.
+
+### F4 — Consulta de `existentesPorId` sem checar erro desativa a proteção de telefone
+**Confirmado:** a busca em lote que alimenta a proteção "nunca degradar telefone real pra
+LID" (a mesma corrigida hoje) não verifica `error`. Se a consulta falhar, a proteção
+simplesmente não dispara pra aquele lote — sem aviso.
+**Risco:** o exato bug que corrigimos hoje (Igor Lima virando LID) pode voltar a acontecer,
+de forma ainda mais difícil de perceber (só quando a consulta falhar).
+**Correção mínima:** checar `error`; se falhar, abortar a sincronização inteira com mensagem
+clara, em vez de continuar sem a proteção (fail-closed).
+**Arquivo:** bloco `existentesPorId` em `sync-messages`.
+
+### F5 — Proteção "nunca degradar" pro nome
+Cada linha de `wa_messages` é independente (upsert por `wa_message_id`, não por conversa) —
+não existe um "nome da conversa" gravado centralizadamente pra degradar dentro do
+`sync-messages` em si; a agregação de nome pra exibição já é feita com proteção no
+`index.html`. O ponto real de risco era a busca de nome (`get-contact-name`), já corrigido
+hoje (rejeita nome puramente numérico) e a escrita já usa `is('nome_contato', null)` (nunca
+sobrescreve nome existente). **Nada pendente aqui além do que já foi corrigido.**
+
+### F6 — Payload bruto ainda vaza em `amostra` e `detalhe`
+**Confirmado:** `debugMessageId` já foi sanitizado hoje, mas `amostra = items.slice(0,3)`
+(quando `sincronizadas === 0`) e `detalhe: data` (nas respostas de erro de formato/página)
+continuam devolvendo os itens **brutos**, incluindo texto de mensagem do paciente.
+**Risco:** mesmo risco do achado já corrigido — texto de paciente parando no navegador/console
+de um funcionário.
+**Correção mínima:** sanitizar `amostra` do mesmo jeito que o `debugMessageId` (metadado, sem
+texto/mídia real); truncar/sanitizar `detalhe` nas respostas de erro.
+**Arquivo:** `whatsapp-proxy/index.ts`, ~3 pontos (linhas do `sync-messages`).
+
+### F7 — Paginação não detecta página repetida
+**Confirmado:** não há comparação entre o conteúdo de `page=1` e `page=2` — se a Evolution
+instalada ignorar o parâmetro `page`, o código empilha a mesma página várias vezes.
+**Risco:** relatório de sincronização mentiroso (diz "1000 recebidas" sendo 200 reais) e
+chamadas desperdiçadas — não corrompe o banco (upsert é idempotente), só engana o relatório.
+**Correção mínima:** comparar o primeiro `wa_message_id` da nova página com o da anterior;
+se igual, parar (assumir que "page" não é suportado).
+
+### F8 — Sem aviso de sincronização possivelmente incompleta
+**Confirmado:** ao atingir `MAX_PAGINAS` (10) com a última página ainda cheia, o código só
+para — sem sinalizar que pode faltar mensagem.
+**Correção mínima:** incluir `possivelmente_incompleto: true` na resposta nesse caso.
+
+### F9 — Normalização de telefone não centralizada
+**Confirmado:** `send-text`/`send-media`/`sync-messages` usam `toWhatsappDigits()` (garante
+prefixo 55); `get-profile-pic`/`get-contact-name` usam só `.replace(/\D/g,'')`, sem garantir
+o prefixo. Um telefone salvo sem "55" faria essas duas ações falharem silenciosamente
+(retornam vazio) mesmo o contato existindo.
+**Correção mínima:** usar `toWhatsappDigits()` também nessas duas ações.
+
+### F10 — Filtro de sync por número não encontra histórico em `@lid`
+**Confirmado:** o filtro opcional por `number` busca só `remoteJid` no formato
+`@s.whatsapp.net` — não existe nenhum caminho pra encontrar histórico salvo como `@lid`.
+**Nota:** o painel hoje não usa esse filtro (o botão "Sincronizar conversas" sempre sincroniza
+tudo, sem `number`) — risco real, mas não ativo no fluxo atual.
+
+---
+
+### Propostas maiores (NÃO implementar agora, só registrado)
+`authClient` separado de service role · `evolutionRequest()` com timeout e parse defensivo
+centralizados · estados `success/failed/unknown` · `client_request_id` idempotente ·
+persistência durável quando Evolution confirma mas `wa_messages` falha · upsert/merge atômico
+comum entre proxy/webhook/sync · lock/cooldown pro `sync-messages` (evitar dois cliques
+simultâneos) · sync incremental · limpeza de mídia órfã no Storage · endpoint de versão/build.
+Cada um é um projeto próprio — não encaixar reativamente.
+
+---
+
 ## P0 — Perda de dados
 
 ### P0.1 — Chamadas ao Supabase sem checar `error`
