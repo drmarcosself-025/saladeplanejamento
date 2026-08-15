@@ -1154,8 +1154,6 @@ async function renderWaConversations(){
     // sobrescrever um nome real que já apareceu antes na mesma conversa.
     if(m.nome_contato && m.nome_contato.trim().toLowerCase() !== 'você'){
       porTelefone[chave].nome_contato = m.nome_contato;
-    } else if(m.nome_contato && !porTelefone[chave].nome_contato){
-      porTelefone[chave].nome_contato = m.nome_contato;
     }
   });
   WA_CONVERSAS = Object.values(porTelefone).sort((a,b)=>{
@@ -1351,6 +1349,14 @@ async function renderWaThread(conv){
         ${legenda?`<div class="wa-media-caption">${legenda}</div>`:''}
         ${hora}
       </div>`;
+    }
+    // Mídia trazida pelo "Sincronizar conversas" ainda não tem o arquivo
+    // baixado (só a mensagem ao vivo, via webhook, baixa o anexo) — sem
+    // isso, a bolha ficava vazia (sem texto e sem media_path), parecendo
+    // quebrada. Mostra um aviso em vez de nada.
+    const semArquivoLabel = { imagem: '🖼️ Imagem', video: '🎥 Vídeo', audio: '🎤 Áudio', figurinha: '🖼️ Figurinha', documento: '📄 Documento' };
+    if(!legenda && semArquivoLabel[m.tipo]){
+      return `<div class="wa-msg ${m.direcao}"><i>${semArquivoLabel[m.tipo]} — recebida antes da sincronização, sem prévia disponível</i>${hora}</div>`;
     }
     return `<div class="wa-msg ${m.direcao}">${legenda}${hora}</div>`;
   }).join('');
