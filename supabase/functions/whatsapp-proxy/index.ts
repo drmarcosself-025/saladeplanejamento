@@ -420,15 +420,18 @@ Deno.serve(async (req) => {
         if (pageItems.length < 200) break; // última página (veio menos que o limite pedido)
       }
 
-      // Descobre de antemão quais wa_message_id já existem no banco, pra
-      // conseguir contar "já existentes" separado de "novas" (o upsert por
-      // si só não diz se foi insert ou update).
+      // Descobre de antemão quais wa_message_id já existem no banco (e com
+      // qual telefone/telefone_e_lid) — serve pra (a) contar "já existentes"
+      // separado de "novas" (o upsert por si só não diz se foi insert ou
+      // update), e (b) proteger contra regressão: nunca deixar um
+      // reprocessamento com LID não resolvido sobrescrever um telefone que
+      // já tinha sido resolvido antes (aconteceu na prática).
       const idsCandidatos = items.map((it) => it?.key?.id).filter(Boolean) as string[];
-      const idsJaExistentes = new Set<string>();
+      const existentesPorId = new Map<string, { telefone: string; telefone_e_lid: boolean }>();
       for (let i = 0; i < idsCandidatos.length; i += 500) {
         const lote = idsCandidatos.slice(i, i + 500);
-        const { data: existentes } = await supabase.from("wa_messages").select("wa_message_id").in("wa_message_id", lote);
-        (existentes ?? []).forEach((r: { wa_message_id: string }) => idsJaExistentes.add(r.wa_message_id));
+        const { data: existentes } = await supabase.from("wa_messages").select("wa_message_id, telefone, telefone_e_lid").in("wa_message_id", lote);
+        (existentes ?? []).forEach((r: { wa_message_id: string; telefone: string; telefone_e_lid: boolean }) => existentesPorId.set(r.wa_message_id, r));
       }
 
       // Diagnóstico opcional: dado um wa_message_id específico (que existe
@@ -449,7 +452,7 @@ Deno.serve(async (req) => {
             ehMidia: isMidia(tipoDebug),
             ehGrupo: (achado.key?.remoteJid || "").endsWith("@g.us"),
             telefoneExtraido: extrairTelefoneInfo(achado.key).telefone || null,
-            jaExistiaNoSupabase: idsJaExistentes.has(debugMessageId),
+            jaExistiaNoSupabase: existentesPorId.has(debugMessageId),
             itemBruto: achado,
           };
         }
@@ -466,7 +469,7 @@ Deno.serve(async (req) => {
         if (!item?.key) { motivos.semKey++; continue; }
         const remoteJid: string = item.key.remoteJid || "";
         if (remoteJid.endsWith("@g.us")) { motivos.grupo++; continue; } // grupo do WhatsApp, não conversa de paciente
-        const { telefone, ehLid } = extrairTelefoneInfo(item.key);
+        let { telefone, ehLid } = extrairTelefoneInfo(item.key);
         if (!telefone) { motivos.semTelefone++; continue; }
 
         const tipo = extractTipo(item.message);
@@ -477,7 +480,14 @@ Deno.serve(async (req) => {
         if (!texto && !midia) { motivos.formatoDesconhecido++; continue; } // formato não reconhecido, nada útil pra guardar
 
         const waMessageId: string | null = item.key.id || null;
-        const jaExistia = waMessageId ? idsJaExistentes.has(waMessageId) : false;
+        const existente = waMessageId ? existentesPorId.get(waMessageId) : undefined;
+        const jaExistia = !!existente;
+        // Proteção contra regressão: não deixa um LID não resolvido nessa
+        // sincronização sobrescrever um telefone que já era de verdade.
+        if (ehLid && existente && existente.telefone_e_lid === false) {
+          telefone = existente.telefone;
+          ehLid = false;
+        }
         const direcao = item.key.fromMe ? "enviada" : "recebida";
         const nomeContato = item.pushName || null;
         const timestamp = item.messageTimestamp
