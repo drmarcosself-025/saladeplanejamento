@@ -168,6 +168,23 @@ Deno.serve(async (req) => {
       return json(await r.json(), r.status);
     }
 
+    // Foto de perfil do contato no WhatsApp — pra mostrar no lugar do
+    // círculo com iniciais. Se o contato não tiver foto pública (ou for
+    // um LID não resolvido), a Evolution retorna sem profilePictureUrl e
+    // o painel volta pras iniciais sozinho.
+    if (action === "get-profile-pic") {
+      const numero = String(params?.telefone ?? "").replace(/\D/g, "");
+      if (!numero) return json({ error: "Telefone não informado." }, 400);
+      const r = await fetch(`${EVOLUTION_API_URL}/chat/fetchProfilePictureUrl/${EVOLUTION_INSTANCE}`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ number: numero }),
+      });
+      if (!r.ok) return json({ url: null });
+      const data = await r.json().catch(() => null);
+      return json({ url: data?.profilePictureUrl ?? null });
+    }
+
     if (action === "send-text") {
       const { number, text, nome } = params as { number?: string; text?: string; nome?: string };
       if (!number || !text) return json({ error: "Faltou número ou texto." }, 400);
