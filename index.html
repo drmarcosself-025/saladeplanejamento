@@ -376,7 +376,7 @@
             <button class="btn small secondary wa-emoji-btn" id="waEmojiBtn" type="button" title="Emoji">😊</button>
             <div class="wa-emoji-panel" id="waEmojiPanel"></div>
             <button class="btn small secondary wa-attach-btn" id="waAttachBtn" type="button" title="Anexar foto, vídeo ou documento">📎</button>
-            <input type="file" id="waAttachInput" accept="image/*,video/*,.pdf,.doc,.docx" style="display:none;">
+            <input type="file" id="waAttachInput" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar" style="display:none;">
             <textarea id="waComposeText" rows="2" placeholder="Digite uma mensagem..."></textarea>
             <div style="display:flex; flex-direction:column; gap:6px;">
               <button class="btn" id="waComposeSendBtn">Enviar</button>
@@ -1434,7 +1434,7 @@ document.getElementById('waAttachInput').addEventListener('change', async (ev)=>
   if(waSendBusy){ showToast('Aguarde, processando o envio anterior...'); return; }
   const MAX_MB = 16;
   if(file.size > MAX_MB * 1024 * 1024){ showToast(`Arquivo muito grande (máx. ${MAX_MB}MB).`); return; }
-  const mediatype = file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : 'document';
+  const mediatype = file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : file.type.startsWith('audio/') ? 'audio' : 'document';
   const conv = WA_CONVERSAS.find(c=>c.telefone===waConvSelecionada);
   const textarea = document.getElementById('waComposeText');
   const caption = textarea.value.trim();

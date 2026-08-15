@@ -302,7 +302,7 @@ Deno.serve(async (req) => {
       }));
       if (r.ok) {
         const waMessageId: string | null = respBody?.key?.id ?? null;
-        const tipo = mediatype === "image" ? "imagem" : mediatype === "video" ? "video" : "documento";
+        const tipo = mediatype === "image" ? "imagem" : mediatype === "video" ? "video" : mediatype === "audio" ? "audio" : "documento";
         await supabase.from("wa_messages").insert({
           telefone: digits, nome_contato: nome ?? null, direcao: "enviada", texto: caption || "", tipo,
           media_path: path, media_mime: mimetype ?? null,
