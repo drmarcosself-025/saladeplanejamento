@@ -221,8 +221,25 @@ Deno.serve(async (req) => {
 
       const remoteJid: string = item.key?.remoteJid || "";
       if (remoteJid.endsWith("@g.us")) continue; // grupo do WhatsApp, não conversa de paciente
-      const { telefone, ehLid } = extrairTelefoneInfo(item.key);
+      let { telefone, ehLid } = extrairTelefoneInfo(item.key);
       if (!telefone) continue;
+
+      // Proteção contra regressão: se essa mesma mensagem (mesmo
+      // wa_message_id) já estava salva com um telefone de verdade
+      // (telefone_e_lid=false), nunca deixa um reprocessamento com LID
+      // não resolvido piorar esse dado — mantém o que já era melhor.
+      const waMessageId: string | null = item.key?.id || null;
+      if (ehLid && waMessageId) {
+        const { data: existenteMsg } = await supabase
+          .from("wa_messages")
+          .select("telefone, telefone_e_lid")
+          .eq("wa_message_id", waMessageId)
+          .maybeSingle();
+        if (existenteMsg && existenteMsg.telefone_e_lid === false) {
+          telefone = existenteMsg.telefone;
+          ehLid = false;
+        }
+      }
 
       const tipo = extractTipo(item.message);
       if (tipo === "reacao" || tipo === "sistema") continue; // nunca é conteúdo de paciente
@@ -268,7 +285,6 @@ Deno.serve(async (req) => {
       // histórico completo da conversa, pra central de conversas do painel.
       // Usa upsert por wa_message_id pra nunca duplicar se a Evolution API
       // reenviar o mesmo evento de webhook (acontece na prática).
-      const waMessageId: string | null = item.key?.id || null;
       let media: { path: string; mime: string } | null = null;
       if (midia && waMessageId && EVOLUTION_API_URL && EVOLUTION_API_KEY) {
         const mediaNode = extractMediaNode(item.message, tipo);
