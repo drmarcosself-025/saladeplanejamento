@@ -1163,6 +1163,7 @@ async function renderWaConversations(){
   } else {
     renderWaThreadEmpty();
   }
+  waLoadAvatarsPendentes();
 }
 // Atualização em tempo real: assina mudanças na wa_messages enquanto a
 // conexão estiver ativa, pra não depender de dar refresh na página. Sempre
@@ -1197,7 +1198,33 @@ function waAvatarHTML(nome, telefone){
   const palette = ['#122043','#1b2c56','#8b6b2f','#5a4423','#2c4a9c','#7a2a2a','#1f7a4d'];
   let hash = 0; for(const ch of String(telefone||label)){ hash = (hash*31 + ch.charCodeAt(0)) >>> 0; }
   const color = palette[hash % palette.length];
-  return `<div class="wa-avatar" style="background:${color};">${esc(initials)}</div>`;
+  const tel = String(telefone||'').replace(/\D/g,'');
+  const cached = WA_AVATAR_CACHE[tel];
+  if(cached){
+    return `<div class="wa-avatar" data-avatar-tel="${esc(tel)}" style="background:${color}; padding:0; overflow:hidden;"><img src="${esc(cached)}" alt="" style="width:100%; height:100%; object-fit:cover;"></div>`;
+  }
+  return `<div class="wa-avatar" data-avatar-tel="${esc(tel)}" style="background:${color};">${esc(initials)}</div>`;
+}
+// Cache em memória (dura enquanto a aba estiver aberta) das fotos de perfil
+// já buscadas — evita perguntar a mesma foto pra Evolution a cada
+// re-renderização da lista (a cada 25s / a cada mensagem nova). Valor
+// `null` guardado quer dizer "já perguntei, não tem foto" (não fica
+// tentando de novo sem parar).
+const WA_AVATAR_CACHE = {};
+async function waLoadAvatarsPendentes(){
+  const els = [...document.querySelectorAll('.wa-avatar[data-avatar-tel]')];
+  const pendentes = [...new Set(els.map(e=>e.dataset.avatarTel).filter(tel => tel && !(tel in WA_AVATAR_CACHE)))];
+  for(const tel of pendentes){
+    WA_AVATAR_CACHE[tel] = null; // marca como "em andamento" já, pra não disparar duas vezes
+    const r = await waCall('get-profile-pic', { telefone: tel });
+    if(r?.url){
+      WA_AVATAR_CACHE[tel] = r.url;
+      document.querySelectorAll(`.wa-avatar[data-avatar-tel="${tel}"]`).forEach(el=>{
+        el.style.padding = '0'; el.style.overflow = 'hidden';
+        el.innerHTML = `<img src="${esc(r.url)}" alt="" style="width:100%; height:100%; object-fit:cover;">`;
+      });
+    }
+  }
 }
 function renderWaConvList(){
   const box = document.getElementById('waConvList');
