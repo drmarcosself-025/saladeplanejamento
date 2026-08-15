@@ -1338,8 +1338,11 @@ document.getElementById('waContactSalvarTelBtn').addEventListener('click', async
   // jeitos levemente diferentes mesmo sendo a mesma conversa.
   const ids = (conv?.mensagens||[]).map(m=>m.id).filter(Boolean);
   if(!ids.length){ showToast('Nada pra corrigir nessa conversa.'); return; }
-  const { error } = await sb.from('wa_messages').update({ telefone: novoTelefone }).in('id', ids);
+  const { error } = await sb.from('wa_messages').update({ telefone: novoTelefone, telefone_e_lid: false }).in('id', ids);
   if(error){ showToast('Erro ao corrigir telefone: '+error.message); return; }
+  // wa_inbox (fila de rascunho da IA) também guarda o telefone antigo — corrige
+  // junto, senão a fila continua achando que é um número inválido.
+  await sb.from('wa_inbox').update({ telefone: novoTelefone, telefone_e_lid: false }).eq('telefone', conv.telefone);
   showToast('Telefone corrigido.');
   waConvSelecionada = novoTelefone.replace(/\D/g,'');
   await renderWaConversations();
