@@ -969,7 +969,10 @@ async function checkWaStatus(){
   }
 
   if(state === 'connected'){
-    if(waLastState !== 'connected') showToast('WhatsApp conectado!');
+    if(waLastState !== 'connected'){
+      showToast('WhatsApp conectado!');
+      waStartRealtime();
+    }
     waSetBadge('Conectado', 'compareceu');
     document.getElementById('waConectarBtn').style.display = 'none';
     document.getElementById('waDesconectarBtn').style.display = 'inline-block';
@@ -977,7 +980,6 @@ async function checkWaStatus(){
     disconnectedPanel.style.display = 'none';
     crmPanel.style.display = 'grid';
     await renderWaConversations();
-    waStartRealtime();
     waSetPollInterval(WA_POLL_SLOW_MS); // depois de conectado, não precisa checar toda hora
   } else {
     waStopRealtime();
@@ -1135,8 +1137,12 @@ async function renderWaConversations(){
   (data||[]).forEach(m=>{
     const chave = String(m.telefone||'').replace(/\D/g,'');
     if(!chave) return;
-    if(!porTelefone[chave]) porTelefone[chave] = { telefone: chave, nome_contato: null, mensagens: [] };
+    if(!porTelefone[chave]) porTelefone[chave] = { telefone: chave, nome_contato: null, mensagens: [], telefone_e_lid: false };
     porTelefone[chave].mensagens.push(m);
+    // Uma mensagem só que veio de um JID oculto (@lid) já é sinal
+    // suficiente de que esse "telefone" não é confiável — mais preciso
+    // que o regex de formato, que só desconfia depois do fato.
+    if(m.telefone_e_lid) porTelefone[chave].telefone_e_lid = true;
     // Prefere um nome de contato de verdade — não deixa "Você" (nome que o
     // WhatsApp às vezes usa pra identificar a própria mensagem enviada)
     // sobrescrever um nome real que já apareceu antes na mesma conversa.
@@ -1179,7 +1185,8 @@ function waStopRealtime(){
 // verdadeiro por aqui (o WhatsApp esconde de propósito, por privacidade),
 // mas dá pra avisar visualmente que aquele contato provavelmente precisa
 // ser corrigido manualmente (botão "Editar" no painel de contato).
-function pareceTelefoneValido(telefone){
+function pareceTelefoneValido(telefone, telefoneELid){
+  if(telefoneELid) return false; // sinal confirmado no servidor — mais confiável que o formato
   const digits = String(telefone||'').replace(/\D/g,'');
   return /^55\d{10,11}$/.test(digits);
 }
@@ -1200,7 +1207,7 @@ function renderWaConvList(){
   box.innerHTML = list.map(c=>{
     const ultima = c.mensagens[c.mensagens.length-1];
     const hora = ultima ? new Date(ultima.created_at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '';
-    const telefoneSuspeito = !pareceTelefoneValido(c.telefone);
+    const telefoneSuspeito = !pareceTelefoneValido(c.telefone, c.telefone_e_lid);
     return `<div class="wa-conv-item ${waConvSelecionada===c.telefone?'active':''}" data-wa-conv="${c.telefone}">
       ${waAvatarHTML(c.nome_contato, c.telefone)}
       <div class="wa-conv-body">
@@ -1284,7 +1291,7 @@ async function renderWaContact(conv){
   document.getElementById('waContactBox').style.display = 'block';
   document.getElementById('waContactNome').textContent = conv.nome_contato || conv.telefone;
   document.getElementById('waContactTelefoneTexto').textContent = conv.telefone;
-  document.getElementById('waContactTelefoneWarn').style.display = pareceTelefoneValido(conv.telefone) ? 'none' : 'block';
+  document.getElementById('waContactTelefoneWarn').style.display = pareceTelefoneValido(conv.telefone, conv.telefone_e_lid) ? 'none' : 'block';
   document.getElementById('waContactTelefoneForm').style.display = 'none';
   document.getElementById('waContactTelefoneInput').value = conv.telefone;
   const info = document.getElementById('waContactLeadInfo');

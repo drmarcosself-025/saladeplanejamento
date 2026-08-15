@@ -45,3 +45,35 @@ select cron.schedule(
 
 -- Pra remover (se precisar refazer):
 -- select cron.unschedule('wa-process-inbox');
+
+-- ============================================================
+-- Backup semanal (grátis) das tabelas mais sensíveis (conversas, leads,
+-- CRM) pro bucket "backups" no Storage — rede de segurança enquanto o
+-- projeto está no plano Free do Supabase (que não faz backup automático).
+--
+-- Antes de rodar:
+--   1. Publicar a function wa-backup-export.
+--   2. Nela, em Secrets, usar a MESMA CRON_SECRET já configurada na
+--      whatsapp-process-inbox (não precisa inventar outra senha).
+--   3. Desligar "Enforce JWT Verification" nela também.
+--   4. Trocar SUA_SERVICE_ROLE_KEY_AQUI e SUA_CRON_SECRET_AQUI abaixo
+--      pelos mesmos valores já usados no agendamento acima.
+-- ============================================================
+select cron.schedule(
+  'wa-backup-export',
+  '0 6 * * 0', -- todo domingo às 6h (UTC)
+  $$
+  select net.http_post(
+    url := 'https://ftywkcxlyxaeihflfalv.supabase.co/functions/v1/wa-backup-export',
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'Authorization', 'Bearer SUA_SERVICE_ROLE_KEY_AQUI',
+      'x-cron-secret', 'SUA_CRON_SECRET_AQUI'
+    ),
+    body := '{}'::jsonb
+  );
+  $$
+);
+
+-- Pra remover (se precisar refazer):
+-- select cron.unschedule('wa-backup-export');
