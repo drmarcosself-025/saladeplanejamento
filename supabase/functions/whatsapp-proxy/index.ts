@@ -47,6 +47,20 @@ function toWhatsappDigits(number: string): string {
   return digits.startsWith("55") ? digits : "55" + digits;
 }
 
+// Mesma lógica de detecção de LID usada no whatsapp-webhook (duplicada de
+// propósito — cada Edge Function é publicada independente).
+function extrairTelefoneInfo(key: any): { telefone: string; ehLid: boolean } {
+  const remoteJid: string = key?.remoteJid || "";
+  const remoteJidAlt: string = key?.remoteJidAlt || "";
+  if (remoteJid.endsWith("@lid")) {
+    if (remoteJidAlt) return { telefone: remoteJidAlt.split("@")[0], ehLid: false };
+    return { telefone: remoteJid.split("@")[0], ehLid: true };
+  }
+  return { telefone: remoteJid.split("@")[0], ehLid: false };
+}
+
+const MAX_MEDIA_BYTES = 20 * 1024 * 1024; // combina com o file_size_limit do bucket wa-media
+
 // "status" fica de fora: qualquer pessoa da equipe precisa poder ver se o
 // WhatsApp está conectado na tela de Atendimento. Só quem realmente
 // gerencia a conexão (gerar QR, desconectar) é owner-only.
@@ -68,39 +82,26 @@ function json(body: unknown, status = 200) {
 // volume/ritmo suspeito. Reforçada aqui no servidor porque qualquer sessão
 // válida poderia chamar a ação direto, sem passar pela checagem que também
 // existe no navegador.
-async function checarThrottle(supabase: any): Promise<{ ok: true } | { ok: false; error: string }> {
-  const { data: cfg } = await supabase
-    .from("config")
-    .select("wa_intervalo_min_seg, wa_intervalo_max_seg, wa_limite_hora, wa_limite_dia")
-    .eq("id", 1)
-    .single();
-  const minSeg = cfg?.wa_intervalo_min_seg ?? 20;
-  const maxSeg = Math.max(minSeg, cfg?.wa_intervalo_max_seg ?? 50);
-  const limiteHora = cfg?.wa_limite_hora ?? 30;
-  const limiteDia = cfg?.wa_limite_dia ?? 120;
-
-  const umDiaAtras = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-  const { data: logs } = await supabase
-    .from("wa_send_log")
-    .select("created_at")
-    .gte("created_at", umDiaAtras)
-    .order("created_at", { ascending: false });
-
-  if (logs && logs.length) {
-    const ultimoEnvio = new Date(logs[0].created_at).getTime();
-    const esperar = (minSeg + Math.random() * (maxSeg - minSeg)) * 1000;
-    if (Date.now() - ultimoEnvio < esperar) {
-      return { ok: false, error: "Aguarde antes da próxima mensagem (proteção contra bloqueio do WhatsApp)." };
-    }
-    const umaHoraAtras = Date.now() - 60 * 60 * 1000;
-    if (logs.filter((l: { created_at: string }) => new Date(l.created_at).getTime() > umaHoraAtras).length >= limiteHora) {
-      return { ok: false, error: `Limite de ${limiteHora} mensagens por hora atingido.` };
-    }
-    if (logs.length >= limiteDia) {
-      return { ok: false, error: `Limite de ${limiteDia} mensagens no dia atingido.` };
-    }
-  }
-  return { ok: true };
+//
+// A checagem E a reserva (insert em wa_send_log) acontecem dentro da mesma
+// função de banco (public.wa_throttle_claim, em schema.sql), protegida por
+// um advisory lock — assim duas chamadas simultâneas não conseguem mais
+// ler o mesmo estado "livre" e passar juntas (o que antes era possível,
+// já que a checagem e o registro eram dois passos separados).
+async function reservarEnvio(
+  supabase: any,
+  telefone: string,
+  nome: string | null | undefined,
+  createdBy: string | null | undefined,
+): Promise<{ ok: true; logId: string } | { ok: false; error: string }> {
+  const { data, error } = await supabase.rpc("wa_throttle_claim", {
+    p_telefone: telefone,
+    p_nome: nome ?? null,
+    p_created_by: createdBy ?? null,
+  });
+  if (error) return { ok: false, error: error.message };
+  if (!data?.ok) return { ok: false, error: data?.error ?? "Não foi possível enviar agora." };
+  return { ok: true, logId: data.log_id };
 }
 
 Deno.serve(async (req) => {
@@ -177,10 +178,10 @@ Deno.serve(async (req) => {
       // checagem de intervalo/limite que existe no navegador. Por isso a
       // política anti-bloqueio é reforçada aqui também, no servidor, e não
       // só no index.html.
-      const throttle = await checarThrottle(supabase);
-      if (!throttle.ok) return json({ error: throttle.error }, 429);
-
       const digits = toWhatsappDigits(number);
+      const reserva = await reservarEnvio(supabase, digits, nome, user.email);
+      if (!reserva.ok) return json({ error: reserva.error }, 429);
+
       const startedAt = Date.now();
       const r = await fetch(`${EVOLUTION_API_URL}/message/sendText/${EVOLUTION_INSTANCE}`, {
         method: "POST",
@@ -206,11 +207,14 @@ Deno.serve(async (req) => {
         // fica correto mesmo se o navegador do atendente fechar ou cair
         // logo depois do envio já ter sido confirmado pela Evolution API.
         const waMessageId: string | null = respBody?.key?.id ?? null;
-        await supabase.from("wa_send_log").insert({ telefone: digits, nome: nome ?? null, created_by: user.email ?? null });
         await supabase.from("wa_messages").insert({
           telefone: digits, nome_contato: nome ?? null, direcao: "enviada", texto: text,
           wa_message_id: waMessageId, created_by: user.email ?? null,
         });
+      } else {
+        // Envio falhou de verdade (não foi o throttle) — desfaz a reserva
+        // pra não gastar uma "vaga" do limite anti-bloqueio à toa.
+        await supabase.from("wa_send_log").delete().eq("id", reserva.logId);
       }
       return json(respBody, r.status);
     }
@@ -232,12 +236,22 @@ Deno.serve(async (req) => {
       if (!["image", "video", "document"].includes(mediatype)) {
         return json({ error: "Tipo de mídia não suportado ainda (use image, video ou document)." }, 400);
       }
-      const throttle = await checarThrottle(supabase);
-      if (!throttle.ok) return json({ error: throttle.error }, 429);
+      const digits = toWhatsappDigits(number);
+      const reserva = await reservarEnvio(supabase, digits, nome, user.email);
+      if (!reserva.ok) return json({ error: reserva.error }, 429);
 
       const { data: fileBlob, error: downloadError } = await supabase.storage.from("wa-media").download(path);
       if (downloadError || !fileBlob) {
+        await supabase.from("wa_send_log").delete().eq("id", reserva.logId);
         return json({ error: "Não achei o arquivo enviado no Storage: " + (downloadError?.message ?? "desconhecido") }, 404);
+      }
+      // Segunda barreira de tamanho (a primeira é o file_size_limit do
+      // bucket) — evita montar uma string base64 gigante em memória mesmo
+      // que um arquivo grande de alguma forma já tenha sido aceito no
+      // Storage antes dessa trava existir.
+      if (fileBlob.size > MAX_MEDIA_BYTES) {
+        await supabase.from("wa_send_log").delete().eq("id", reserva.logId);
+        return json({ error: `Arquivo muito grande (máx. ${MAX_MEDIA_BYTES / 1024 / 1024}MB).` }, 413);
       }
       const bytes = new Uint8Array(await fileBlob.arrayBuffer());
       let binary = "";
@@ -246,7 +260,6 @@ Deno.serve(async (req) => {
       }
       const base64 = btoa(binary);
 
-      const digits = toWhatsappDigits(number);
       const startedAt = Date.now();
       const r = await fetch(`${EVOLUTION_API_URL}/message/sendMedia/${EVOLUTION_INSTANCE}`, {
         method: "POST",
@@ -273,12 +286,13 @@ Deno.serve(async (req) => {
       if (r.ok) {
         const waMessageId: string | null = respBody?.key?.id ?? null;
         const tipo = mediatype === "image" ? "imagem" : mediatype === "video" ? "video" : "documento";
-        await supabase.from("wa_send_log").insert({ telefone: digits, nome: nome ?? null, created_by: user.email ?? null });
         await supabase.from("wa_messages").insert({
           telefone: digits, nome_contato: nome ?? null, direcao: "enviada", texto: caption || "", tipo,
           media_path: path, media_mime: mimetype ?? null,
           wa_message_id: waMessageId, created_by: user.email ?? null,
         });
+      } else {
+        await supabase.from("wa_send_log").delete().eq("id", reserva.logId);
       }
       return json(respBody, r.status);
     }
@@ -376,7 +390,7 @@ Deno.serve(async (req) => {
         if (!item?.key) { motivos.semKey++; continue; }
         const remoteJid: string = item.key.remoteJid || "";
         if (remoteJid.endsWith("@g.us")) { motivos.grupo++; continue; } // grupo do WhatsApp, não conversa de paciente
-        const telefone = remoteJid.split("@")[0];
+        const { telefone, ehLid } = extrairTelefoneInfo(item.key);
         if (!telefone) { motivos.semTelefone++; continue; }
         const texto = extractText(item.message);
         if (!texto) { motivos.semTexto++; continue; }
@@ -391,10 +405,10 @@ Deno.serve(async (req) => {
         const { error } = waMessageId
           ? await supabase.from("wa_messages").upsert({
               telefone, nome_contato: nomeContato, direcao, texto, tipo,
-              created_at: timestamp, wa_message_id: waMessageId,
+              created_at: timestamp, wa_message_id: waMessageId, telefone_e_lid: ehLid,
             }, { onConflict: "wa_message_id" })
           : await supabase.from("wa_messages").insert({
-              telefone, nome_contato: nomeContato, direcao, texto, tipo, created_at: timestamp,
+              telefone, nome_contato: nomeContato, direcao, texto, tipo, created_at: timestamp, telefone_e_lid: ehLid,
             });
         if (error) {
           motivos.erroGravar++;

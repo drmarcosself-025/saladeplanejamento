@@ -54,12 +54,22 @@ Deno.serve(async (req) => {
     const iaPrompt = iaPromptRow?.texto ||
       "Você é o assistente virtual de um consultório odontológico. Responda de forma breve, profissional e acolhedora, sem diagnosticar nem prometer resultados.";
 
+    const MAX_TENTATIVAS = 5;
     const cutoff = new Date(Date.now() - silencioSeg * 1000).toISOString();
+
+    // Reserva atômica: o UPDATE...RETURNING do Postgres trava linha por
+    // linha, então se essa function já estiver rodando (ex.: a chamada
+    // anterior à Anthropic ainda não terminou quando o próximo minuto do
+    // agendador disparar), a segunda execução não consegue mais pegar as
+    // mesmas conversas — evita gerar rascunho (e cobrar da Anthropic) em
+    // dobro pra mesma conversa.
     const { data: pendentes, error: pendErr } = await supabase
       .from("wa_inbox")
-      .select("*")
+      .update({ status: "processando", processado_em: new Date().toISOString() })
       .eq("status", "aguardando")
       .lte("ultima_mensagem_em", cutoff)
+      .lt("tentativas", MAX_TENTATIVAS)
+      .select("*")
       .limit(20);
 
     if (pendErr) return new Response(JSON.stringify({ error: pendErr.message }), { status: 500 });
@@ -91,8 +101,19 @@ Deno.serve(async (req) => {
         if (!resp.ok) throw new Error(data?.error?.message || "Falha ao gerar resposta com a IA.");
         draft = (data.content || []).map((c: any) => c.text || "").join("\n").trim();
       } catch (e) {
-        resultados.push({ id: conversa.id, erro: String(e) });
-        continue; // deixa como "aguardando" pra tentar de novo na próxima rodada
+        // A linha já está "processando" (reservada acima) — precisa
+        // devolver pra "aguardando" explicitamente pra não ficar travada
+        // pra sempre. Depois de MAX_TENTATIVAS falhas seguidas, desiste
+        // de vez (marca como "descartado") em vez de tentar de novo a
+        // cada minuto pra sempre, gerando custo sem nunca resolver.
+        const tentativas = (conversa.tentativas ?? 0) + 1;
+        const desistir = tentativas >= MAX_TENTATIVAS;
+        await supabase.from("wa_inbox").update({
+          status: desistir ? "descartado" : "aguardando",
+          tentativas,
+        }).eq("id", conversa.id);
+        resultados.push({ id: conversa.id, erro: String(e), tentativas, desistiu: desistir });
+        continue;
       }
 
       const textoBusca = mensagensTexto.toLowerCase();

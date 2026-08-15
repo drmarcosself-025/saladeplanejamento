@@ -236,6 +236,63 @@ create table if not exists public.wa_send_log (
 );
 create index if not exists wa_send_log_created_at_idx on public.wa_send_log (created_at desc);
 
+-- Checagem + reserva do envio num único passo atômico (trava com advisory
+-- lock, escopo da transação — libera sozinha ao final da função). Antes,
+-- a whatsapp-proxy fazia "select pra decidir" e só depois "insert pra
+-- registrar" em dois passos separados: duas chamadas simultâneas podiam
+-- ler o mesmo estado e passar juntas, furando o intervalo mínimo pensado
+-- pra evitar bloqueio do número. Com a reserva feita aqui dentro (mesma
+-- transação do lock), isso não é mais possível.
+create or replace function public.wa_throttle_claim(
+  p_telefone text,
+  p_nome text,
+  p_created_by text
+) returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_min_seg int; v_max_seg int; v_limite_hora int; v_limite_dia int;
+  v_ultimo timestamptz;
+  v_esperar numeric;
+  v_count_hora int;
+  v_count_dia int;
+  v_log_id uuid;
+begin
+  perform pg_advisory_xact_lock(hashtext('wa_send_throttle'));
+
+  select wa_intervalo_min_seg, wa_intervalo_max_seg, wa_limite_hora, wa_limite_dia
+    into v_min_seg, v_max_seg, v_limite_hora, v_limite_dia
+    from public.config where id = 1;
+  v_min_seg := coalesce(v_min_seg, 20);
+  v_max_seg := greatest(v_min_seg, coalesce(v_max_seg, 50));
+  v_limite_hora := coalesce(v_limite_hora, 30);
+  v_limite_dia := coalesce(v_limite_dia, 120);
+
+  select max(created_at) into v_ultimo from public.wa_send_log where created_at > now() - interval '1 day';
+  if v_ultimo is not null then
+    v_esperar := v_min_seg + random() * (v_max_seg - v_min_seg);
+    if extract(epoch from (now() - v_ultimo)) < v_esperar then
+      return jsonb_build_object('ok', false, 'error', 'Aguarde antes da próxima mensagem (proteção contra bloqueio do WhatsApp).');
+    end if;
+  end if;
+
+  select count(*) into v_count_hora from public.wa_send_log where created_at > now() - interval '1 hour';
+  if v_count_hora >= v_limite_hora then
+    return jsonb_build_object('ok', false, 'error', format('Limite de %s mensagens por hora atingido.', v_limite_hora));
+  end if;
+
+  select count(*) into v_count_dia from public.wa_send_log where created_at > now() - interval '1 day';
+  if v_count_dia >= v_limite_dia then
+    return jsonb_build_object('ok', false, 'error', format('Limite de %s mensagens no dia atingido.', v_limite_dia));
+  end if;
+
+  insert into public.wa_send_log (telefone, nome, created_by) values (p_telefone, p_nome, p_created_by) returning id into v_log_id;
+  return jsonb_build_object('ok', true, 'log_id', v_log_id);
+end;
+$$;
+
 -- ============================================================
 -- WA_INBOX (conversas recebidas pelo WhatsApp, aguardando ou já com
 -- rascunho de resposta da IA pronto pra revisão humana)
@@ -256,6 +313,17 @@ create table if not exists public.wa_inbox (
 );
 create index if not exists wa_inbox_status_idx on public.wa_inbox (status);
 create index if not exists wa_inbox_telefone_idx on public.wa_inbox (telefone);
+-- tentativas: quantas vezes a IA já tentou gerar resposta e falhou (ex.:
+-- erro de rede, chave inválida) — sem isso, uma falha sistemática gerava
+-- uma chamada nova pra Anthropic a cada minuto, pra sempre, sem nunca
+-- resolver (custo acidental). Depois de algumas tentativas, desiste.
+alter table public.wa_inbox add column if not exists tentativas int not null default 0;
+-- "processando": reserva atômica da conversa por uma execução do cron
+-- (evita duas execuções sobrepostas pegarem e processarem a mesma
+-- conversa duas vezes, gerando chamada dupla à IA e custo em dobro).
+alter table public.wa_inbox drop constraint if exists wa_inbox_status_check;
+alter table public.wa_inbox add constraint wa_inbox_status_check
+  check (status in ('aguardando','processando','rascunho_pronto','enviado','descartado'));
 
 -- ============================================================
 -- WA_MESSAGES (histórico real de todas as mensagens de WhatsApp,
@@ -293,6 +361,14 @@ create index if not exists wa_messages_telefone_idx on public.wa_messages (telef
 -- como renderizar (imagem, vídeo, player de áudio ou link de documento).
 alter table public.wa_messages add column if not exists media_path text;
 alter table public.wa_messages add column if not exists media_mime text;
+-- telefone_e_lid: true quando o "telefone" veio de um identificador oculto
+-- do WhatsApp (JID terminado em @lid), não de um número de verdade — a
+-- Evolution API já resolve isso sozinha quando consegue (usando
+-- remoteJidAlt), mas quando não consegue, guardar essa marcação evita
+-- tratar esse valor como se fosse um telefone confiável em qualquer tela
+-- ou relatório futuro.
+alter table public.wa_messages add column if not exists telefone_e_lid boolean not null default false;
+alter table public.wa_inbox add column if not exists telefone_e_lid boolean not null default false;
 
 -- ============================================================
 -- STORAGE: bucket privado pra fotos/vídeos/áudios/documentos trocados no
@@ -300,9 +376,14 @@ alter table public.wa_messages add column if not exists media_mime text;
 -- está autenticado no painel consegue ler (via link assinado, temporário)
 -- ou enviar arquivo pra esse bucket.
 -- ============================================================
-insert into storage.buckets (id, name, public)
-values ('wa-media', 'wa-media', false)
-on conflict (id) do nothing;
+-- file_size_limit trava o tamanho direto na API de Storage (antes de
+-- qualquer upload ser aceito) — sem isso, só existia um teto de 16MB no
+-- navegador, que não é uma barreira de segurança de verdade (dá pra
+-- chamar a API de Storage direto). 20MB dá folga sobre o limite do
+-- navegador sem deixar arquivo enorme passar.
+insert into storage.buckets (id, name, public, file_size_limit)
+values ('wa-media', 'wa-media', false, 20971520)
+on conflict (id) do update set file_size_limit = excluded.file_size_limit;
 
 drop policy if exists "wa_media_select" on storage.objects;
 create policy "wa_media_select" on storage.objects for select to authenticated
@@ -401,8 +482,27 @@ drop policy if exists "wa_send_log_all" on public.wa_send_log;
 create policy "wa_send_log_select" on public.wa_send_log for select to authenticated using (true);
 create policy "wa_send_log_insert" on public.wa_send_log for insert to authenticated with check (true);
 create policy "wa_send_log_delete" on public.wa_send_log for delete to authenticated using (public.is_owner());
-create policy "wa_inbox_all" on public.wa_inbox for all to authenticated using (true) with check (true);
-create policy "wa_messages_all" on public.wa_messages for all to authenticated using (true) with check (true);
+-- wa_inbox / wa_messages / crm_segmentados: histórico de conversa de
+-- paciente — toda a equipe precisa ler/editar no dia a dia, mas só o
+-- proprietário pode apagar (mesma lógica já usada em wa_send_log e
+-- rotinas). Sem essa restrição, qualquer conta de equipe podia apagar
+-- o histórico inteiro de um paciente sem deixar rastro.
+drop policy if exists "wa_inbox_all" on public.wa_inbox;
+create policy "wa_inbox_select" on public.wa_inbox for select to authenticated using (true);
+create policy "wa_inbox_insert" on public.wa_inbox for insert to authenticated with check (true);
+create policy "wa_inbox_update" on public.wa_inbox for update to authenticated using (true);
+create policy "wa_inbox_delete" on public.wa_inbox for delete to authenticated using (public.is_owner());
+
+drop policy if exists "wa_messages_all" on public.wa_messages;
+create policy "wa_messages_select" on public.wa_messages for select to authenticated using (true);
+create policy "wa_messages_insert" on public.wa_messages for insert to authenticated with check (true);
+create policy "wa_messages_update" on public.wa_messages for update to authenticated using (true);
+create policy "wa_messages_delete" on public.wa_messages for delete to authenticated using (public.is_owner());
+
+-- crm_segmentados: diferente de wa_inbox/wa_messages, aqui a equipe toda
+-- já usa um botão "Remover do CRM" no dia a dia (index.html) — restringir
+-- a exclusão só ao proprietário quebraria esse fluxo sem aviso claro.
+-- Mantido como estava.
 create policy "crm_segmentados_all" on public.crm_segmentados for all to authenticated using (true) with check (true);
 
 -- rotinas: todo mundo lê; só o proprietário cria/edita/exclui.

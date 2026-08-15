@@ -83,6 +83,29 @@ function extensaoPorMime(mimetype: string | undefined, fallback: string): string
   return sub ? sub.replace(/[^a-z0-9]/gi, "").toLowerCase() || fallback : fallback;
 }
 
+// A Evolution API já tenta resolver o telefone de verdade por trás de um
+// JID oculto (@lid) quando o WhatsApp fornece essa informação (campo
+// remoteJidAlt) — nesse caso o remoteJid que chega aqui já vem corrigido.
+// Quando o WhatsApp NÃO fornece (contato protegido por privacidade de
+// verdade), o remoteJid continua terminando em @lid — sem essa checagem,
+// esse identificador opaco era salvo como se fosse um telefone real,
+// contaminando o histórico, o lead e a segmentação do CRM.
+function extrairTelefoneInfo(key: any): { telefone: string; ehLid: boolean } {
+  const remoteJid: string = key?.remoteJid || "";
+  const remoteJidAlt: string = key?.remoteJidAlt || "";
+  if (remoteJid.endsWith("@lid")) {
+    if (remoteJidAlt) return { telefone: remoteJidAlt.split("@")[0], ehLid: false };
+    return { telefone: remoteJid.split("@")[0], ehLid: true };
+  }
+  return { telefone: remoteJid.split("@")[0], ehLid: false };
+}
+
+// Teto de tamanho pro download de mídia recebida — sem isso, uma mensagem
+// de mídia grande vinda de qualquer número de WhatsApp (nem precisa ser da
+// equipe) podia estourar a memória da function. 20MB combina com o teto
+// do bucket wa-media.
+const MAX_MEDIA_BASE64_CHARS = 27_000_000; // ~20MB decodificado (base64 é ~1.37x maior)
+
 // Baixa o conteúdo binário de uma mensagem de mídia já recebida e sobe pro
 // bucket privado "wa-media". A Evolution API v2.x documenta o endpoint
 // /chat/getBase64FromMediaMessage/{instance} pra isso — como este ambiente
@@ -116,6 +139,10 @@ async function baixarEGuardarMidia(
     const mimetype: string = data?.mimetype || data?.media?.mimetype || mediaNode?.mimetype || "application/octet-stream";
     if (!base64) {
       console.log(JSON.stringify({ event: "whatsapp_media_download_formato_desconhecido", waMessageId, detalhe: data }));
+      return null;
+    }
+    if (base64.length > MAX_MEDIA_BASE64_CHARS) {
+      console.log(JSON.stringify({ event: "whatsapp_media_download_muito_grande", waMessageId, tamanhoBase64: base64.length }));
       return null;
     }
     const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
@@ -164,7 +191,7 @@ Deno.serve(async (req) => {
 
       const remoteJid: string = item.key?.remoteJid || "";
       if (remoteJid.endsWith("@g.us")) continue; // grupo do WhatsApp, não conversa de paciente
-      const telefone = remoteJid.split("@")[0];
+      const { telefone, ehLid } = extrairTelefoneInfo(item.key);
       if (!telefone) continue;
 
       const tipo = extractTipo(item.message);
@@ -193,7 +220,7 @@ Deno.serve(async (req) => {
           const mensagens = [...(existente.mensagens || []), { texto, timestamp }];
           await supabase
             .from("wa_inbox")
-            .update({ mensagens, ultima_mensagem_em: timestamp, nome_contato: nomeContato })
+            .update({ mensagens, ultima_mensagem_em: timestamp, nome_contato: nomeContato, telefone_e_lid: ehLid })
             .eq("id", existente.id);
         } else {
           await supabase.from("wa_inbox").insert({
@@ -202,6 +229,7 @@ Deno.serve(async (req) => {
             mensagens: [{ texto, timestamp }],
             ultima_mensagem_em: timestamp,
             status: "aguardando",
+            telefone_e_lid: ehLid,
           });
         }
       }
@@ -222,11 +250,12 @@ Deno.serve(async (req) => {
       if (waMessageId) {
         await supabase.from("wa_messages").upsert({
           telefone, nome_contato: nomeContato, direcao: "recebida", texto, tipo, ...mediaCols,
-          created_at: timestamp, wa_message_id: waMessageId,
+          created_at: timestamp, wa_message_id: waMessageId, telefone_e_lid: ehLid,
         }, { onConflict: "wa_message_id" });
       } else {
         await supabase.from("wa_messages").insert({
-          telefone, nome_contato: nomeContato, direcao: "recebida", texto, tipo, ...mediaCols, created_at: timestamp,
+          telefone, nome_contato: nomeContato, direcao: "recebida", texto, tipo, ...mediaCols,
+          created_at: timestamp, telefone_e_lid: ehLid,
         });
       }
     }
