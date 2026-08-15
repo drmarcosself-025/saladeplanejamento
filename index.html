@@ -1205,16 +1205,39 @@ function waAvatarHTML(nome, telefone){
   }
   return `<div class="wa-avatar" data-avatar-tel="${esc(tel)}" style="background:${color};">${esc(initials)}</div>`;
 }
-// Cache em memória (dura enquanto a aba estiver aberta) das fotos de perfil
-// já buscadas — evita perguntar a mesma foto pra Evolution a cada
-// re-renderização da lista (a cada 25s / a cada mensagem nova). Valor
-// `null` guardado quer dizer "já perguntei, não tem foto" (não fica
+// Cache das fotos de perfil já buscadas — evita perguntar a mesma foto pra
+// Evolution a cada re-renderização da lista (a cada 25s / a cada mensagem
+// nova). Fica salvo no localStorage (sobrevive a um F5) por 24h — depois
+// disso busca de novo, caso o contato tenha trocado de foto. Valor `null`
+// em memória quer dizer "já perguntei nessa aba, não tem foto" (não fica
 // tentando de novo sem parar).
-const WA_AVATAR_CACHE = {};
+const WA_AVATAR_CACHE_KEY = 'wa_avatar_cache_v1';
+const WA_AVATAR_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+function waLoadAvatarCacheDoDisco(){
+  try {
+    const salvo = JSON.parse(localStorage.getItem(WA_AVATAR_CACHE_KEY) || '{}');
+    const agora = Date.now();
+    const valido = {};
+    for(const tel in salvo){ if(agora - salvo[tel].t < WA_AVATAR_CACHE_TTL_MS) valido[tel] = salvo[tel].url; }
+    return valido;
+  } catch(e){ return {}; }
+}
+function waSalvarAvatarCacheNoDisco(){
+  try {
+    const agora = Date.now();
+    const paraSalvar = {};
+    for(const tel in WA_AVATAR_CACHE){ if(WA_AVATAR_CACHE[tel]) paraSalvar[tel] = { url: WA_AVATAR_CACHE[tel], t: agora }; }
+    localStorage.setItem(WA_AVATAR_CACHE_KEY, JSON.stringify(paraSalvar));
+  } catch(e){ /* localStorage cheio/bloqueado — sem problema, só não persiste entre sessões */ }
+}
+const WA_AVATAR_CACHE = waLoadAvatarCacheDoDisco();
 async function waLoadAvatarsPendentes(){
   const els = [...document.querySelectorAll('.wa-avatar[data-avatar-tel]')];
   const pendentes = [...new Set(els.map(e=>e.dataset.avatarTel).filter(tel => tel && !(tel in WA_AVATAR_CACHE)))];
-  for(const tel of pendentes){
+  if(!pendentes.length) return;
+  // Busca todas em paralelo (em vez de uma de cada vez) — bem mais rápido
+  // quando tem muitos contatos novos pra carregar de uma vez.
+  await Promise.all(pendentes.map(async tel => {
     WA_AVATAR_CACHE[tel] = null; // marca como "em andamento" já, pra não disparar duas vezes
     const r = await waCall('get-profile-pic', { telefone: tel });
     if(r?.url){
@@ -1224,7 +1247,8 @@ async function waLoadAvatarsPendentes(){
         el.innerHTML = `<img src="${esc(r.url)}" alt="" style="width:100%; height:100%; object-fit:cover;">`;
       });
     }
-  }
+  }));
+  waSalvarAvatarCacheNoDisco();
 }
 function renderWaConvList(){
   const box = document.getElementById('waConvList');
