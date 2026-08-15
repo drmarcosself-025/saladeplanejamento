@@ -1168,6 +1168,7 @@ async function renderWaConversations(){
     renderWaThreadEmpty();
   }
   waLoadAvatarsPendentes();
+  waLoadNomesPendentes();
 }
 // Atualização em tempo real: assina mudanças na wa_messages enquanto a
 // conexão estiver ativa, pra não depender de dar refresh na página. Sempre
@@ -1268,6 +1269,52 @@ async function waLoadAvatarsPendentes(){
     }
   }));
   waSalvarAvatarCacheNoDisco();
+}
+// Mesmo padrão de cache da foto de perfil, só que pro nome — o WhatsApp
+// nem sempre manda o nome (pushName) junto da mensagem, principalmente em
+// histórico antigo trazido pelo "Sincronizar". Só busca pra conversas que
+// ainda não têm nome nenhum guardado (não sobrescreve um nome real).
+const WA_NOME_CACHE_KEY = 'wa_nome_cache_v1';
+const WA_NOME_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+function waLoadNomeCacheDoDisco(){
+  try {
+    const salvo = JSON.parse(localStorage.getItem(WA_NOME_CACHE_KEY) || '{}');
+    const agora = Date.now();
+    const valido = {};
+    for(const tel in salvo){ if(agora - salvo[tel].t < WA_NOME_CACHE_TTL_MS) valido[tel] = salvo[tel].nome; }
+    return valido;
+  } catch(e){ return {}; }
+}
+function waSalvarNomeCacheNoDisco(){
+  try {
+    const agora = Date.now();
+    const paraSalvar = {};
+    for(const tel in WA_NOME_CACHE){ if(WA_NOME_CACHE[tel]) paraSalvar[tel] = { nome: WA_NOME_CACHE[tel], t: agora }; }
+    localStorage.setItem(WA_NOME_CACHE_KEY, JSON.stringify(paraSalvar));
+  } catch(e){ /* localStorage cheio/bloqueado — sem problema, só não persiste entre sessões */ }
+}
+const WA_NOME_CACHE = waLoadNomeCacheDoDisco();
+async function waLoadNomesPendentes(){
+  // LID não entra aqui — não faz sentido perguntar o nome de um código
+  // interno do WhatsApp, e o telefone ainda nem está confirmado como real.
+  const pendentes = WA_CONVERSAS
+    .filter(c => !c.nome_contato && !c.telefone_e_lid && !(c.telefone in WA_NOME_CACHE))
+    .map(c => c.telefone);
+  if(!pendentes.length) return;
+  let algumEncontrado = false;
+  await Promise.all(pendentes.map(async tel => {
+    WA_NOME_CACHE[tel] = null; // marca como "já perguntei" já, pra não disparar de novo
+    const r = await waCall('get-contact-name', { telefone: tel });
+    if(r?.name){
+      WA_NOME_CACHE[tel] = r.name;
+      algumEncontrado = true;
+      // Só preenche onde ainda está vazio — nunca sobrescreve um nome que
+      // já tenha vindo de uma mensagem de verdade (is('nome_contato', null)).
+      await sb.from('wa_messages').update({ nome_contato: r.name }).eq('telefone', tel).is('nome_contato', null);
+    }
+  }));
+  waSalvarNomeCacheNoDisco();
+  if(algumEncontrado) await renderWaConversations(); // atualiza a tela com os nomes novos
 }
 function renderWaConvList(){
   const box = document.getElementById('waConvList');
