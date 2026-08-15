@@ -1,7 +1,7 @@
 # Maison D'Or — Inventário técnico do módulo WhatsApp
 
-Última auditoria: 15/08/2026
-Commit auditado: `3543104` (branch `claude/maison-dor-reception-panel-zuynl5`)
+Última auditoria: 15/08/2026 (revisão de consistência)
+Commit auditado: `07a8aaf` (branch `main`)
 
 > Este arquivo descreve o que **existe de verdade no código hoje**, não o que
 > deveria existir. Sempre que mexer em algo do WhatsApp, atualize a linha
@@ -21,7 +21,7 @@ Legenda: ✅ implementado e testado · 🟡 implementado, não testado de verdad
 | Receber imagem | ✅ | 🟡 | 🟡 |
 | Enviar vídeo | ✅ | ❌ | 🟡 |
 | Receber vídeo | ✅ | ❌ | 🟡 |
-| Enviar áudio | 🔴 (aceito no navegador, rejeitado no servidor) | ❌ | 🔴 |
+| Enviar áudio | ✅ (corrigido — servidor já aceita) | ❌ | 🟡 |
 | Receber áudio | ✅ | ❌ | 🟡 |
 | Enviar documento | ✅ | ❌ | 🟡 |
 | Receber documento | ✅ | ❌ | 🟡 |
@@ -54,10 +54,12 @@ Legenda: ✅ implementado e testado · 🟡 implementado, não testado de verdad
 - **Teste manual:** passo 3-4.
 
 ## 3. Envio de mensagens
-- **Status:** ✅ (texto e imagem/vídeo/documento) / 🔴 (áudio).
-- **Onde:** `index.html` (composer, `waComposeSendBtn`, `waAttachBtn`) → `whatsapp-proxy` (ações `send-text` inexistente no fluxo do painel — hoje o painel usa link `wa.me` direto pro texto simples; `send-media` cobre anexos).
-- **Bug encontrado:** `whatsapp-proxy` linha ~253 só aceita `mediatype` em `["image","video","document"]`. O anexo de áudio foi liberado no navegador hoje (`accept="...audio/*..."`) mas vai bater nessa validação e falhar com erro 400. **Precisa de 1 linha de correção** (adicionar `"audio"` na lista).
-- **Teste manual:** passo 5, 8.
+- **Status:** ✅ (texto e imagem/vídeo/documento) / 🟡 (áudio — corrigido, aguardando validação ponta a ponta).
+- **Onde:** `index.html` (composer, `waComposeSendBtn` chama `waCall('send-text', ...)`; `waAttachBtn`/`waAttachInput` chamam `waCall('send-media', ...)`) → `whatsapp-proxy` (ações `send-text` e `send-media`).
+- **Correção:** ~~o painel usava link `wa.me`~~ — **incorreto na versão anterior deste inventário**. O composer chama `send-text` de verdade (grava em `wa_messages` com `direcao:"enviada"` e passa pelo throttle anti-bloqueio no servidor). O botão "Abrir no WhatsApp Web" é só um atalho manual **alternativo**, não o caminho principal.
+- **Bug corrigido:** `whatsapp-proxy` só aceitava `mediatype` em `["image","video","document"]`, rejeitando áudio com erro 400 mesmo já sendo aceito no navegador. Corrigido (commit `3e0c382`, isolado, só essa validação) — ainda não testado com um áudio real de ponta a ponta.
+- **Bug de layout corrigido (não era de envio, mas impedia enviar na prática):** em conversas com mensagens suficientes pra "estourar" a altura da coluna, a caixa de compor mensagem inteira ficava fora da área visível (faltava `min-height:0` no CSS Grid do layout). Corrigido (commit `061d8f5`), confirmado funcionando pelo usuário.
+- **Teste manual:** ver `WHATSAPP_TESTES.md` — matriz de entrada/saída por tipo de mídia.
 
 ## 4. Histórico / conversas
 - **Status:** ✅.
@@ -66,9 +68,10 @@ Legenda: ✅ implementado e testado · 🟡 implementado, não testado de verdad
 - **Riscos conhecidos:** não pagina — carrega a tabela inteira toda vez. Com poucos meses de uso isso deve ficar lento.
 
 ## 5. Realtime
-- **Status:** ✅ (corrigido hoje).
-- **Onde:** `index.html` (`waStartRealtime`, canal `wa_messages_live`) + Supabase Realtime (publicação `supabase_realtime`, tabela `wa_messages` habilitada manualmente no painel).
-- **Bug corrigido hoje:** o canal era recriado a cada 25s (checagem periódica de status), causando perda de mensagens na janela de re-inscrição. Corrigido pra só (re)criar na transição de "desconectado" → "conectado".
+- **Status:** ✅ (dois bugs corrigidos hoje).
+- **Onde:** `index.html` (`waStartRealtime`/`waStopRealtime`, canal `wa_messages_live`) + Supabase Realtime (publicação `supabase_realtime`, tabela `wa_messages` habilitada manualmente no painel).
+- **Bug 1 corrigido:** o canal era recriado a cada 25s (checagem periódica de status), causando perda de mensagens na janela de re-inscrição. Corrigido pra só (re)criar na transição de "desconectado" → "conectado" (commit `f2f7b82`).
+- **Bug 2 corrigido:** sem essa checagem periódica, o canal podia cair sozinho (rede instável, aba muito tempo em segundo plano) e nunca mais se reconectar — mensagem nova só aparecia no próximo poll de segurança (até 25s de atraso). Corrigido com reconexão automática ao detectar `CLOSED`/`CHANNEL_ERROR`/`TIMED_OUT` (commit `b08e8df`). **Ainda não confirmado com teste real após esse ajuste específico.**
 - **Risco conhecido:** a habilitação da tabela `wa_messages` na publicação `supabase_realtime` foi feita **manualmente no painel do Supabase**, não está no `schema.sql`. Se o projeto for recriado do zero a partir do schema, o tempo real vai parecer quebrado até alguém lembrar de reativar esse toggle.
 
 ## 6. Contatos e identidade
@@ -88,7 +91,7 @@ Legenda: ✅ implementado e testado · 🟡 implementado, não testado de verdad
 - **Risco conhecido:** depende da Evolution conseguir resolver o telefone (não funciona bem pra conversas ainda marcadas como LID).
 
 ## 9-12. Imagens / Vídeos / Áudios / Documentos
-- **Status:** 🟡 no geral, 🔴 no envio de áudio (ver seção 3).
+- **Status:** 🟡 no geral (código presente, ponta a ponta não confirmada).
 - **Onde:** `whatsapp-webhook` (`extractMediaNode`, `baixarEGuardarMidia`, download da Evolution pro bucket `wa-media`) + `index.html` (render de mídia na conversa, `waCarregarMidias` com signed URLs).
 - **Risco conhecido:** o download de mídia recebida depende de um endpoint (`/chat/getBase64FromMediaMessage`) cujo formato exato de resposta nunca foi confirmado com a instância real rodando hoje na Hetzner (o código tenta vários formatos de campo, mas não foi validado ponta-a-ponta com um teste real de imagem/vídeo/áudio/documento recebido).
 
@@ -153,26 +156,26 @@ wa-media (Storage bucket privado) ← upload (whatsapp-webhook, recebido) / (ind
 
 ## Totais
 - ✅ Completo e testado: **9**
-- 🟡 Existe, não testado / risco leve: **9**
-- 🔴 Problema conhecido: **2** (envio de áudio rejeitado no servidor; secret do webhook em query string)
+- 🟡 Existe, não testado / risco leve: **10** (áudio entrou aqui — código corrigido, falta validar de ponta a ponta)
+- 🔴 Problema conhecido: **1** (secret do webhook em query string — risco de design aceito, já mitigado por rotação)
 - ❌ Não implementado: **6**
 
 ## 5 partes mais frágeis
-1. **Envio de áudio** — quebrado de verdade agora (código incompleto), não só "não testado".
-2. **LID/identidade duplicando conversa** — mitigado mas não resolvido na raiz, depende de correção manual.
-3. **Deploy manual de Edge Functions dessincronizado do GitHub** — causa real de bugs "fantasma" (código certo, comportamento antigo) hoje.
-4. **Realtime habilitado só manualmente no painel do Supabase** (fora do `schema.sql`) — não sobrevive a uma reconstrução do projeto do zero.
-5. **Download de mídia recebida** (`baixarEGuardarMidia`) — nunca validado ponta-a-ponta com a instância real; formato de resposta é "melhor palpite".
+1. **LID/identidade duplicando conversa** — mitigado mas não resolvido na raiz, depende de correção manual.
+2. **Deploy manual de Edge Functions dessincronizado do GitHub** — causa real de bugs "fantasma" (código certo, comportamento antigo) hoje; já aconteceu mais de uma vez.
+3. **Realtime habilitado só manualmente no painel do Supabase** (fora do `schema.sql`) — não sobrevive a uma reconstrução do projeto do zero.
+4. **Download de mídia recebida** (`baixarEGuardarMidia`) — nunca validado ponta-a-ponta com a instância real; formato de resposta é "melhor palpite".
+5. **Envio de áudio/vídeo/documento** — código corrigido hoje, mas nenhum teste real de ponta a ponta ainda confirmou que funciona (ver matriz em `WHATSAPP_TESTES.md`).
 
 ## 5 partes mais estáveis
 1. Conexão/QR Code.
 2. Envio e recebimento de texto.
-3. Tempo real (recém-corrigido, mecanismo agora é simples e correto).
+3. Tempo real (dois bugs corrigidos hoje, mecanismo agora mais robusto — reconecta sozinho).
 4. Foto de perfil (recém-implementado, testado e confirmado).
 5. Anti-bloqueio / throttle (protegido em dois níveis, com advisory lock).
 
 ## Recomendação de ordem de estabilização
-1. Corrigir a validação de `mediatype` pra aceitar `"audio"` no `whatsapp-proxy` (1 linha, resolve um 🔴 real).
-2. Testar de verdade envio/recebimento de imagem, vídeo, áudio e documento (hoje é só 🟡 "deveria funcionar").
+1. ~~Corrigir a validação de `mediatype` pra aceitar `"audio"`~~ — **feito** (commit `3e0c382`).
+2. **Próximo passo:** testar de verdade, ponta a ponta, envio e recebimento de imagem, vídeo, áudio e documento — usar a matriz de testes em `WHATSAPP_TESTES.md`. Hoje ainda é só 🟡 "código existe".
 3. Adicionar a habilitação do Realtime em `wa_messages` como SQL versionado (`alter publication supabase_realtime add table wa_messages`) dentro do `schema.sql`, pra não depender de alguém lembrar de clicar no painel.
 4. Só depois disso, avançar pra funcionalidades novas (não lidas, toast, status de leitura) — construir em cima de uma base confirmada, não presumida.
