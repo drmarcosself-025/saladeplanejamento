@@ -1170,14 +1170,29 @@ async function renderWaConversations(){
 // derruba a inscrição anterior antes de criar outra, pra nunca acumular
 // mais de uma (o que duplicaria as atualizações).
 let waRealtimeChannel = null;
+let waRealtimeReconnectTimer = null;
 function waStartRealtime(){
   waStopRealtime();
-  waRealtimeChannel = sb
+  const channel = sb
     .channel('wa_messages_live')
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'wa_messages' }, () => { renderWaConversations(); })
-    .subscribe();
+    .subscribe((status) => {
+      // O canal pode cair sozinho (rede instável, aba muito tempo em
+      // segundo plano, etc.) sem que a gente peça — sem reconectar aqui,
+      // mensagem nova só aparecia de novo no próximo "check" periódico
+      // (até 25s de atraso), em vez de na hora.
+      const caiu = status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT';
+      if(caiu && waRealtimeChannel === channel && !waRealtimeReconnectTimer){
+        waRealtimeReconnectTimer = setTimeout(()=>{
+          waRealtimeReconnectTimer = null;
+          if(waRealtimeChannel === channel) waStartRealtime();
+        }, 3000);
+      }
+    });
+  waRealtimeChannel = channel;
 }
 function waStopRealtime(){
+  if(waRealtimeReconnectTimer){ clearTimeout(waRealtimeReconnectTimer); waRealtimeReconnectTimer = null; }
   if(waRealtimeChannel){ sb.removeChannel(waRealtimeChannel); waRealtimeChannel = null; }
 }
 // Número brasileiro de WhatsApp válido: 55 + DDD (2) + 8 ou 9 dígitos.
