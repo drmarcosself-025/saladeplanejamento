@@ -215,6 +215,13 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
+    // Nunca responder "ok" pra Evolution API se a gravação principal
+    // (wa_messages) falhou — ela usa a resposta pra decidir se reenvia o
+    // evento (retry automático já embutido na Evolution). Sem isso, um
+    // erro de banco (RLS, coluna obrigatória, timeout) fazia a mensagem
+    // sumir silenciosamente, sem log e sem chance de reenvio.
+    const falhasGraves: string[] = [];
+
     for (const item of items) {
       if (!item) continue;
       if (item.key?.fromMe) continue; // ignora mensagens que a própria clínica mandou
@@ -264,21 +271,23 @@ Deno.serve(async (req) => {
           .eq("status", "aguardando")
           .maybeSingle();
 
-        if (existente) {
-          const mensagens = [...(existente.mensagens || []), { texto, timestamp }];
-          await supabase
-            .from("wa_inbox")
-            .update({ mensagens, ultima_mensagem_em: timestamp, nome_contato: nomeContato, telefone_e_lid: ehLid })
-            .eq("id", existente.id);
-        } else {
-          await supabase.from("wa_inbox").insert({
-            telefone,
-            nome_contato: nomeContato,
-            mensagens: [{ texto, timestamp }],
-            ultima_mensagem_em: timestamp,
-            status: "aguardando",
-            telefone_e_lid: ehLid,
-          });
+        // wa_inbox é secundária (só alimenta o rascunho automático da IA)
+        // — um erro aqui não deve impedir o histórico principal de ser
+        // salvo, mas precisa ficar registrado, não desaparecer calado.
+        const resultadoInbox = existente
+          ? await supabase
+              .from("wa_inbox")
+              .update({
+                mensagens: [...(existente.mensagens || []), { texto, timestamp }],
+                ultima_mensagem_em: timestamp, nome_contato: nomeContato, telefone_e_lid: ehLid,
+              })
+              .eq("id", existente.id)
+          : await supabase.from("wa_inbox").insert({
+              telefone, nome_contato: nomeContato, mensagens: [{ texto, timestamp }],
+              ultima_mensagem_em: timestamp, status: "aguardando", telefone_e_lid: ehLid,
+            });
+        if (resultadoInbox.error) {
+          console.log(JSON.stringify({ event: "whatsapp_wa_inbox_erro", waMessageId, erro: resultadoInbox.error.message }));
         }
       }
 
@@ -294,19 +303,28 @@ Deno.serve(async (req) => {
         );
       }
       const mediaCols = { media_path: media?.path ?? null, media_mime: media?.mime ?? null };
-      if (waMessageId) {
-        await supabase.from("wa_messages").upsert({
-          telefone, nome_contato: nomeContato, direcao: "recebida", texto, tipo, ...mediaCols,
-          created_at: timestamp, wa_message_id: waMessageId, telefone_e_lid: ehLid,
-        }, { onConflict: "wa_message_id" });
-      } else {
-        await supabase.from("wa_messages").insert({
-          telefone, nome_contato: nomeContato, direcao: "recebida", texto, tipo, ...mediaCols,
-          created_at: timestamp, telefone_e_lid: ehLid,
-        });
+      const { error: erroMensagem } = waMessageId
+        ? await supabase.from("wa_messages").upsert({
+            telefone, nome_contato: nomeContato, direcao: "recebida", texto, tipo, ...mediaCols,
+            created_at: timestamp, wa_message_id: waMessageId, telefone_e_lid: ehLid,
+          }, { onConflict: "wa_message_id" })
+        : await supabase.from("wa_messages").insert({
+            telefone, nome_contato: nomeContato, direcao: "recebida", texto, tipo, ...mediaCols,
+            created_at: timestamp, telefone_e_lid: ehLid,
+          });
+      if (erroMensagem) {
+        console.log(JSON.stringify({ event: "whatsapp_wa_messages_erro", waMessageId, erro: erroMensagem.message }));
+        falhasGraves.push(erroMensagem.message);
       }
     }
 
+    // Se alguma mensagem não foi salva de verdade, avisa a Evolution API
+    // com erro (em vez de "ok:true") — ela já tem retry automático com
+    // backoff, então isso dá uma segunda chance sem precisar de nada
+    // construído por nós. "Sucesso" só quando realmente gravou tudo.
+    if (falhasGraves.length > 0) {
+      return json({ error: "Falha ao gravar uma ou mais mensagens.", detalhes: falhasGraves }, 500);
+    }
     return json({ ok: true });
   } catch (e) {
     return json({ error: String(e) }, 500);

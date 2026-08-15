@@ -205,16 +205,37 @@ Deno.serve(async (req) => {
       return json({ url: data?.profilePictureUrl ?? null });
     }
 
+    // Nome de exibição do contato — só é chamado pelo painel quando a
+    // conversa não tem nenhum nome guardado ainda (o WhatsApp nem sempre
+    // manda pushName junto da mensagem, principalmente em histórico
+    // antigo trazido pelo Sincronizar). /chat/whatsappNumbers é o mesmo
+    // endpoint que a Evolution usa pra verificar se um número existe no
+    // WhatsApp, e já devolve o nome público quando existe — mais leve do
+    // que /chat/fetchProfile (que também busca foto/status/perfil comercial
+    // desnecessariamente aqui).
+    if (action === "get-contact-name") {
+      const numero = String(params?.telefone ?? "").replace(/\D/g, "");
+      if (!numero) return json({ error: "Telefone não informado." }, 400);
+      const r = await fetch(`${EVOLUTION_API_URL}/chat/whatsappNumbers/${EVOLUTION_INSTANCE}`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ numbers: [numero] }),
+      });
+      if (!r.ok) return json({ name: null });
+      const data = await r.json().catch(() => null);
+      const info = Array.isArray(data) ? data[0] : data;
+      return json({ name: info?.name || null });
+    }
+
     if (action === "send-text") {
       const { number, text, nome } = params as { number?: string; text?: string; nome?: string };
       if (!number || !text) return json({ error: "Faltou número ou texto." }, 400);
 
-      // O painel nunca chama esta ação hoje (ele só abre um link wa.me pro
-      // atendente clicar em enviar) — mas a ação existe e qualquer pessoa
-      // com uma sessão válida poderia chamá-la direto, sem passar pela
-      // checagem de intervalo/limite que existe no navegador. Por isso a
-      // política anti-bloqueio é reforçada aqui também, no servidor, e não
-      // só no index.html.
+      // O composer do painel chama essa ação de verdade (waComposeSendBtn) —
+      // mas qualquer pessoa com uma sessão válida também poderia chamá-la
+      // direto, sem passar pela checagem de intervalo/limite que existe no
+      // navegador. Por isso a política anti-bloqueio é reforçada aqui
+      // também, no servidor, e não só no index.html.
       const digits = toWhatsappDigits(number);
       const reserva = await reservarEnvio(supabase, digits, nome, user.email);
       if (!reserva.ok) return json({ error: reserva.error }, 429);
@@ -225,7 +246,10 @@ Deno.serve(async (req) => {
         headers,
         body: JSON.stringify({ number: digits, text }),
       });
-      const respBody = await r.json();
+      // Defensivo: se a Evolution (ou um proxy na frente dela) responder
+      // algo que não é JSON válido (erro 502 em HTML, corpo vazio), isso
+      // não pode derrubar a function inteira com uma exceção sem log.
+      const respBody = await r.json().catch(() => null);
       // Log estruturado (aba "Logs" da function no Supabase) — nunca o
       // número completo nem o texto da mensagem, só o suficiente pra
       // diagnosticar (status, tempo, ack/status da Evolution).
@@ -238,22 +262,29 @@ Deno.serve(async (req) => {
         ack_status: respBody?.status ?? respBody?.message?.[0]?.status ?? null,
         message_id: respBody?.key?.id ?? null,
         exists_check: respBody?.response?.message?.[0]?.exists ?? null,
+        resposta_nao_json: respBody === null,
       }));
-      if (r.ok) {
+      if (r.ok && respBody) {
         // Grava aqui (no servidor), não no navegador — assim o histórico
         // fica correto mesmo se o navegador do atendente fechar ou cair
         // logo depois do envio já ter sido confirmado pela Evolution API.
         const waMessageId: string | null = respBody?.key?.id ?? null;
-        await supabase.from("wa_messages").insert({
+        const { error: erroGravar } = await supabase.from("wa_messages").insert({
           telefone: digits, nome_contato: nome ?? null, direcao: "enviada", texto: text,
           wa_message_id: waMessageId, created_by: user.email ?? null,
         });
+        // A mensagem FOI enviada (a Evolution confirmou) — não faz sentido
+        // dizer que falhou pro usuário. Mas se o histórico não gravou, isso
+        // precisa aparecer destacado no log, não desaparecer calado.
+        if (erroGravar) {
+          console.log(JSON.stringify({ event: "whatsapp_send_text_historico_falhou_apos_envio", waMessageId, erro: erroGravar.message }));
+        }
       } else {
         // Envio falhou de verdade (não foi o throttle) — desfaz a reserva
         // pra não gastar uma "vaga" do limite anti-bloqueio à toa.
         await supabase.from("wa_send_log").delete().eq("id", reserva.logId);
       }
-      return json(respBody, r.status);
+      return json(respBody ?? { error: "A Evolution API não respondeu um formato reconhecido." }, r.status);
     }
 
     if (action === "send-media") {
@@ -310,7 +341,7 @@ Deno.serve(async (req) => {
           media: base64,
         }),
       });
-      const respBody = await r.json();
+      const respBody = await r.json().catch(() => null);
       console.log(JSON.stringify({
         event: "whatsapp_send_media",
         instance: EVOLUTION_INSTANCE,
@@ -319,19 +350,23 @@ Deno.serve(async (req) => {
         status_http: r.status,
         elapsed_ms: Date.now() - startedAt,
         message_id: respBody?.key?.id ?? null,
+        resposta_nao_json: respBody === null,
       }));
-      if (r.ok) {
+      if (r.ok && respBody) {
         const waMessageId: string | null = respBody?.key?.id ?? null;
         const tipo = mediatype === "image" ? "imagem" : mediatype === "video" ? "video" : mediatype === "audio" ? "audio" : "documento";
-        await supabase.from("wa_messages").insert({
+        const { error: erroGravar } = await supabase.from("wa_messages").insert({
           telefone: digits, nome_contato: nome ?? null, direcao: "enviada", texto: caption || "", tipo,
           media_path: path, media_mime: mimetype ?? null,
           wa_message_id: waMessageId, created_by: user.email ?? null,
         });
+        if (erroGravar) {
+          console.log(JSON.stringify({ event: "whatsapp_send_media_historico_falhou_apos_envio", waMessageId, erro: erroGravar.message }));
+        }
       } else {
         await supabase.from("wa_send_log").delete().eq("id", reserva.logId);
       }
-      return json(respBody, r.status);
+      return json(respBody ?? { error: "A Evolution API não respondeu um formato reconhecido." }, r.status);
     }
 
     if (action === "sync-messages") {
@@ -445,15 +480,21 @@ Deno.serve(async (req) => {
           debug = { encontradoNaEvolution: false, mensagem: "Esse wa_message_id não veio em nenhuma página do /chat/findMessages nesta sincronização." };
         } else {
           const tipoDebug = extractTipo(achado.message);
+          // Só metadado — nunca o texto/legenda real da mensagem do
+          // paciente. "chavesMensagem" mostra os nomes dos campos presentes
+          // (ex.: ["viewOnceMessageV2"]), útil pra diagnosticar um formato
+          // novo/desconhecido sem expor conteúdo.
           debug = {
             encontradoNaEvolution: true,
             tipo: tipoDebug,
             temTexto: !!extractText(achado.message),
             ehMidia: isMidia(tipoDebug),
             ehGrupo: (achado.key?.remoteJid || "").endsWith("@g.us"),
-            telefoneExtraido: extrairTelefoneInfo(achado.key).telefone || null,
+            fromMe: !!achado.key?.fromMe,
+            telefoneExtraido: extrairTelefoneInfo(achado.key).telefone ? "***" : null,
             jaExistiaNoSupabase: existentesPorId.has(debugMessageId),
-            itemBruto: achado,
+            chavesMensagem: achado.message ? Object.keys(achado.message) : [],
+            messageTimestamp: achado.messageTimestamp ?? null,
           };
         }
       }
