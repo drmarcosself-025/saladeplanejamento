@@ -59,6 +59,26 @@ function isMidia(tipo: string): boolean {
   return tipo === "imagem" || tipo === "video" || tipo === "audio" || tipo === "figurinha" || tipo === "documento";
 }
 
+// Usado quando a Evolution responde num formato inesperado (erro de
+// página/paginação) — antes devolvíamos a resposta bruta inteira pro
+// navegador do atendente pra ajudar a diagnosticar, mas isso podia incluir
+// texto de mensagem de paciente dentro de "messages"/"records". Mantém só
+// o que ajuda a diagnosticar formato (chaves do objeto, tipo de cada
+// campo), sem o conteúdo.
+function sanitizarRespostaErro(data: any): unknown {
+  if (data === null || data === undefined) return null;
+  if (Array.isArray(data)) return { tipo: "array", tamanho: data.length };
+  if (typeof data === "object") {
+    const resumo: Record<string, string> = {};
+    for (const chave of Object.keys(data)) {
+      const v = (data as Record<string, unknown>)[chave];
+      resumo[chave] = Array.isArray(v) ? `array(${v.length})` : typeof v;
+    }
+    return resumo;
+  }
+  return { tipo: typeof data };
+}
+
 // Mesma regra do waLink() no index.html: número sem código de país (55) é
 // inválido pro WhatsApp verificar ("exists: false"), mesmo sendo um número
 // de verdade — confirmado com o teste real do usuário.
@@ -122,6 +142,44 @@ async function reservarEnvio(
   if (error) return { ok: false, error: error.message };
   if (!data?.ok) return { ok: false, error: data?.error ?? "Não foi possível enviar agora." };
   return { ok: true, logId: data.log_id };
+}
+
+// Libera (apaga) uma reserva de wa_send_log depois de uma falha real de
+// envio — via a function wa_throttle_release (security definer), porque a
+// policy de DELETE em wa_send_log é só do proprietário e essa chamada roda
+// com a sessão do funcionário que fez o envio. Sem isso, todo envio que
+// falhava pra um funcionário (não-owner) deixava a reserva presa pra
+// sempre (a policy bloqueia silenciosamente, sem erro visível).
+async function liberarReserva(supabase: any, logId: string) {
+  const { error } = await supabase.rpc("wa_throttle_release", { p_log_id: logId });
+  if (error) console.log(JSON.stringify({ event: "whatsapp_throttle_release_falhou", logId, erro: error.message }));
+}
+
+type ResultadoEnvio = { resultado: "sucesso" | "falha" | "desconhecido_rede" | "desconhecido_resposta"; respBody: any; status: number };
+
+// Chama um endpoint de envio da Evolution (texto ou mídia) e classifica o
+// resultado em vez de só sucesso/erro binário:
+// - "sucesso": HTTP 2xx com corpo JSON reconhecível.
+// - "desconhecido_resposta": HTTP 2xx mas corpo não é JSON válido — a
+//   Evolution provavelmente processou o envio (status de sucesso), só a
+//   resposta que veio malformada. NÃO deve ser tratado como falha, e a
+//   reserva do throttle não deve ser liberada (a mensagem provavelmente
+//   foi enviada de verdade — liberar deixaria reenviar e duplicar).
+// - "desconhecido_rede": a chamada nem completou (timeout, DNS, conexão
+//   recusada) — não dá pra saber se a Evolution chegou a receber. Libera a
+//   reserva (mais provável que nada tenha sido enviado).
+// - "falha": HTTP não-2xx — falha real confirmada pela Evolution.
+async function chamarEnvioEvolution(url: string, headers: Record<string, string>, body: unknown): Promise<ResultadoEnvio> {
+  let r: Response;
+  try {
+    r = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
+  } catch (e) {
+    return { resultado: "desconhecido_rede", respBody: { error: String(e) }, status: 0 };
+  }
+  const respBody = await r.json().catch(() => null);
+  if (r.ok && respBody) return { resultado: "sucesso", respBody, status: r.status };
+  if (r.ok) return { resultado: "desconhecido_resposta", respBody: null, status: r.status };
+  return { resultado: "falha", respBody, status: r.status };
 }
 
 Deno.serve(async (req) => {
@@ -193,8 +251,12 @@ Deno.serve(async (req) => {
     // um LID não resolvido), a Evolution retorna sem profilePictureUrl e
     // o painel volta pras iniciais sozinho.
     if (action === "get-profile-pic") {
-      const numero = String(params?.telefone ?? "").replace(/\D/g, "");
-      if (!numero) return json({ error: "Telefone não informado." }, 400);
+      // Mesma normalização usada no envio (toWhatsappDigits) — sem o
+      // prefixo "55", um telefone salvo sem o código do país fazia essa
+      // busca falhar em silêncio (a Evolution não reconhece o número sem
+      // o código do país, mesmo sendo um número de verdade).
+      const numero = toWhatsappDigits(String(params?.telefone ?? ""));
+      if (numero === "55") return json({ error: "Telefone não informado." }, 400);
       const r = await fetch(`${EVOLUTION_API_URL}/chat/fetchProfilePictureUrl/${EVOLUTION_INSTANCE}`, {
         method: "POST",
         headers,
@@ -214,8 +276,8 @@ Deno.serve(async (req) => {
     // que /chat/fetchProfile (que também busca foto/status/perfil comercial
     // desnecessariamente aqui).
     if (action === "get-contact-name") {
-      const numero = String(params?.telefone ?? "").replace(/\D/g, "");
-      if (!numero) return json({ error: "Telefone não informado." }, 400);
+      const numero = toWhatsappDigits(String(params?.telefone ?? ""));
+      if (numero === "55") return json({ error: "Telefone não informado." }, 400);
       const r = await fetch(`${EVOLUTION_API_URL}/chat/whatsappNumbers/${EVOLUTION_INSTANCE}`, {
         method: "POST",
         headers,
@@ -247,15 +309,9 @@ Deno.serve(async (req) => {
       if (!reserva.ok) return json({ error: reserva.error }, 429);
 
       const startedAt = Date.now();
-      const r = await fetch(`${EVOLUTION_API_URL}/message/sendText/${EVOLUTION_INSTANCE}`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ number: digits, text }),
-      });
-      // Defensivo: se a Evolution (ou um proxy na frente dela) responder
-      // algo que não é JSON válido (erro 502 em HTML, corpo vazio), isso
-      // não pode derrubar a function inteira com uma exceção sem log.
-      const respBody = await r.json().catch(() => null);
+      const { resultado, respBody, status } = await chamarEnvioEvolution(
+        `${EVOLUTION_API_URL}/message/sendText/${EVOLUTION_INSTANCE}`, headers, { number: digits, text },
+      );
       // Log estruturado (aba "Logs" da function no Supabase) — nunca o
       // número completo nem o texto da mensagem, só o suficiente pra
       // diagnosticar (status, tempo, ack/status da Evolution).
@@ -263,14 +319,15 @@ Deno.serve(async (req) => {
         event: "whatsapp_send_text",
         instance: EVOLUTION_INSTANCE,
         numero_final: digits.slice(-4),
-        status_http: r.status,
+        status_http: status,
         elapsed_ms: Date.now() - startedAt,
+        resultado,
         ack_status: respBody?.status ?? respBody?.message?.[0]?.status ?? null,
         message_id: respBody?.key?.id ?? null,
         exists_check: respBody?.response?.message?.[0]?.exists ?? null,
-        resposta_nao_json: respBody === null,
       }));
-      if (r.ok && respBody) {
+
+      if (resultado === "sucesso") {
         // Grava aqui (no servidor), não no navegador — assim o histórico
         // fica correto mesmo se o navegador do atendente fechar ou cair
         // logo depois do envio já ter sido confirmado pela Evolution API.
@@ -285,12 +342,27 @@ Deno.serve(async (req) => {
         if (erroGravar) {
           console.log(JSON.stringify({ event: "whatsapp_send_text_historico_falhou_apos_envio", waMessageId, erro: erroGravar.message }));
         }
-      } else {
-        // Envio falhou de verdade (não foi o throttle) — desfaz a reserva
-        // pra não gastar uma "vaga" do limite anti-bloqueio à toa.
-        await supabase.from("wa_send_log").delete().eq("id", reserva.logId);
+        return json(respBody, status);
       }
-      return json(respBody ?? { error: "A Evolution API não respondeu um formato reconhecido." }, r.status);
+
+      if (resultado === "falha") {
+        // Falha real confirmada pela Evolution — libera a reserva, não fez
+        // sentido gastar uma "vaga" do limite anti-bloqueio à toa.
+        await liberarReserva(supabase, reserva.logId);
+        return json(respBody ?? { error: "Falha ao enviar." }, status || 502);
+      }
+
+      if (resultado === "desconhecido_rede") {
+        // A chamada nem completou — mais provável que nada tenha sido
+        // enviado, então libera a reserva pra não ficar presa.
+        await liberarReserva(supabase, reserva.logId);
+        return json({ error: "Não foi possível confirmar o envio (falha de rede). Tente de novo em instantes." }, 502);
+      }
+
+      // resultado === "desconhecido_resposta": HTTP 2xx mas corpo ilegível —
+      // a Evolution provavelmente processou o envio. NÃO libera a reserva
+      // (evita reenviar e duplicar em cima de um envio que já pode ter ido).
+      return json({ error: "A Evolution confirmou recebimento, mas a resposta não veio num formato reconhecido. Verifique no WhatsApp antes de tentar de novo." }, 202);
     }
 
     if (action === "send-media") {
@@ -316,7 +388,7 @@ Deno.serve(async (req) => {
 
       const { data: fileBlob, error: downloadError } = await supabase.storage.from("wa-media").download(path);
       if (downloadError || !fileBlob) {
-        await supabase.from("wa_send_log").delete().eq("id", reserva.logId);
+        await liberarReserva(supabase, reserva.logId);
         return json({ error: "Não achei o arquivo enviado no Storage: " + (downloadError?.message ?? "desconhecido") }, 404);
       }
       // Segunda barreira de tamanho (a primeira é o file_size_limit do
@@ -324,7 +396,7 @@ Deno.serve(async (req) => {
       // que um arquivo grande de alguma forma já tenha sido aceito no
       // Storage antes dessa trava existir.
       if (fileBlob.size > MAX_MEDIA_BYTES) {
-        await supabase.from("wa_send_log").delete().eq("id", reserva.logId);
+        await liberarReserva(supabase, reserva.logId);
         return json({ error: `Arquivo muito grande (máx. ${MAX_MEDIA_BYTES / 1024 / 1024}MB).` }, 413);
       }
       const bytes = new Uint8Array(await fileBlob.arrayBuffer());
@@ -335,30 +407,22 @@ Deno.serve(async (req) => {
       const base64 = btoa(binary);
 
       const startedAt = Date.now();
-      const r = await fetch(`${EVOLUTION_API_URL}/message/sendMedia/${EVOLUTION_INSTANCE}`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          number: digits,
-          mediatype,
-          mimetype: mimetype || undefined,
-          fileName: fileName || undefined,
-          caption: caption || undefined,
-          media: base64,
-        }),
-      });
-      const respBody = await r.json().catch(() => null);
+      const { resultado, respBody, status } = await chamarEnvioEvolution(
+        `${EVOLUTION_API_URL}/message/sendMedia/${EVOLUTION_INSTANCE}`, headers,
+        { number: digits, mediatype, mimetype: mimetype || undefined, fileName: fileName || undefined, caption: caption || undefined, media: base64 },
+      );
       console.log(JSON.stringify({
         event: "whatsapp_send_media",
         instance: EVOLUTION_INSTANCE,
         numero_final: digits.slice(-4),
         mediatype,
-        status_http: r.status,
+        status_http: status,
         elapsed_ms: Date.now() - startedAt,
+        resultado,
         message_id: respBody?.key?.id ?? null,
-        resposta_nao_json: respBody === null,
       }));
-      if (r.ok && respBody) {
+
+      if (resultado === "sucesso") {
         const waMessageId: string | null = respBody?.key?.id ?? null;
         const tipo = mediatype === "image" ? "imagem" : mediatype === "video" ? "video" : mediatype === "audio" ? "audio" : "documento";
         const { error: erroGravar } = await supabase.from("wa_messages").insert({
@@ -369,10 +433,22 @@ Deno.serve(async (req) => {
         if (erroGravar) {
           console.log(JSON.stringify({ event: "whatsapp_send_media_historico_falhou_apos_envio", waMessageId, erro: erroGravar.message }));
         }
-      } else {
-        await supabase.from("wa_send_log").delete().eq("id", reserva.logId);
+        return json(respBody, status);
       }
-      return json(respBody ?? { error: "A Evolution API não respondeu um formato reconhecido." }, r.status);
+
+      if (resultado === "falha") {
+        await liberarReserva(supabase, reserva.logId);
+        return json(respBody ?? { error: "Falha ao enviar." }, status || 502);
+      }
+
+      if (resultado === "desconhecido_rede") {
+        await liberarReserva(supabase, reserva.logId);
+        return json({ error: "Não foi possível confirmar o envio (falha de rede). Tente de novo em instantes." }, 502);
+      }
+
+      // "desconhecido_resposta": 2xx mas corpo ilegível — não libera a
+      // reserva (provavelmente foi enviado).
+      return json({ error: "A Evolution confirmou recebimento, mas a resposta não veio num formato reconhecido. Verifique no WhatsApp antes de tentar de novo." }, 202);
     }
 
     if (action === "sync-messages") {
@@ -397,6 +473,7 @@ Deno.serve(async (req) => {
       let paginaFormato: "page" | "offset" | null = null;
       const MAX_PAGINAS = 10;
       let ultimoStatus = 0;
+      let possivelmenteIncompleto = false;
 
       for (let pagina = 1; pagina <= MAX_PAGINAS; pagina++) {
         const body: Record<string, unknown> = { limit: 200 };
@@ -417,9 +494,11 @@ Deno.serve(async (req) => {
 
         if (!r.ok) {
           if (pagina === 1) {
+            // "detalhe" nunca deve carregar texto de mensagem de paciente —
+            // só o suficiente pra diagnosticar o formato de resposta.
             return json({
               error: `A Evolution API respondeu ${r.status} em /chat/findMessages/${EVOLUTION_INSTANCE}. Essa versão instalada pode usar outro endpoint — confira a documentação da sua versão.`,
-              detalhe: data,
+              detalhe: sanitizarRespostaErro(data),
             }, 502);
           }
           break; // já tinha trazido alguma coisa nas páginas anteriores, para por aqui
@@ -439,7 +518,7 @@ Deno.serve(async (req) => {
           if (pagina === 1) {
             return json({
               error: "A Evolution API respondeu, mas não num formato de lista de mensagens reconhecido. Veja 'detalhe' e me avise pra eu ajustar a leitura desse formato.",
-              detalhe: data,
+              detalhe: sanitizarRespostaErro(data),
             }, 502);
           }
           break;
@@ -457,8 +536,17 @@ Deno.serve(async (req) => {
         }
         if (paginaFormato === null) paginaFormato = "page";
 
+        // Se a Evolution instalada ignorar o parâmetro "page" (bug ou
+        // versão diferente), toda página devolve o mesmo conteúdo da
+        // primeira — sem detectar isso, empilharíamos as mesmas ~200
+        // mensagens várias vezes, inflando o relatório sem ganho real.
+        if (pagina > 1 && items[0]?.key?.id && pageItems[0]?.key?.id === items[0].key.id) {
+          break;
+        }
+
         items.push(...pageItems);
         if (pageItems.length < 200) break; // última página (veio menos que o limite pedido)
+        if (pagina === MAX_PAGINAS) possivelmenteIncompleto = true; // atingiu o teto ainda com página cheia
       }
 
       // Descobre de antemão quais wa_message_id já existem no banco (e com
@@ -471,7 +559,15 @@ Deno.serve(async (req) => {
       const existentesPorId = new Map<string, { telefone: string; telefone_e_lid: boolean }>();
       for (let i = 0; i < idsCandidatos.length; i += 500) {
         const lote = idsCandidatos.slice(i, i + 500);
-        const { data: existentes } = await supabase.from("wa_messages").select("wa_message_id, telefone, telefone_e_lid").in("wa_message_id", lote);
+        const { data: existentes, error: erroConsulta } = await supabase.from("wa_messages").select("wa_message_id, telefone, telefone_e_lid").in("wa_message_id", lote);
+        // Fail-closed: se essa consulta falhar, a proteção "telefone real
+        // nunca degrada pra LID" (logo abaixo) ficaria desligada em
+        // silêncio pra esse lote — mesmo bug que já corrigimos hoje, só que
+        // mais difícil de perceber. Melhor abortar a sincronização inteira
+        // com um erro claro do que continuar sem essa proteção.
+        if (erroConsulta) {
+          return json({ error: "Não foi possível verificar mensagens já existentes antes de sincronizar. Tente de novo.", detalhe: erroConsulta.message }, 500);
+        }
         (existentes ?? []).forEach((r: { wa_message_id: string; telefone: string; telefone_e_lid: boolean }) => existentesPorId.set(r.wa_message_id, r));
       }
 
@@ -561,12 +657,23 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Se quase nada foi salvo, manda uma amostra dos itens brutos junto —
-      // sem isso não dá pra saber, sem acesso à Evolution API real, se o
-      // formato de "message" é diferente do que o extractText espera.
-      const amostra = sincronizadas === 0 ? items.slice(0, 3) : undefined;
+      // Se quase nada foi salvo, manda uma amostra junto — sem isso não dá
+      // pra saber, sem acesso à Evolution API real, se o formato de
+      // "message" é diferente do que o extractText espera. Só metadado
+      // (nunca o texto/legenda real da mensagem do paciente) — mesmo
+      // cuidado do debugMessageId.
+      const amostra = sincronizadas === 0
+        ? items.slice(0, 3).map((it) => ({
+            tipo: extractTipo(it?.message),
+            temTexto: !!extractText(it?.message),
+            fromMe: !!it?.key?.fromMe,
+            ehGrupo: (it?.key?.remoteJid || "").endsWith("@g.us"),
+            chavesMensagem: it?.message ? Object.keys(it.message) : [],
+          }))
+        : undefined;
       return json({
         ok: true, sincronizadas, total_recebido: items.length, motivos, primeiroErroGravar, amostra, debug,
+        possivelmente_incompleto: possivelmenteIncompleto,
         paginacao: { formato_usado: paginaFormato, ultimo_status: ultimoStatus },
       });
     }

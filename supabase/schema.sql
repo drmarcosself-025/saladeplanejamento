@@ -293,6 +293,35 @@ begin
 end;
 $$;
 
+-- Libera (apaga) uma reserva específica de wa_send_log quando o envio
+-- correspondente falhou de verdade — pra não "gastar" uma vaga do limite
+-- anti-bloqueio à toa. A policy de DELETE em wa_send_log é só do
+-- proprietário (de propósito: ninguém da equipe deveria conseguir apagar
+-- linhas livremente pra "resetar" o próprio contador) — então o
+-- whatsapp-proxy, chamando como o próprio funcionário, não consegue apagar
+-- direto. Esta function (security definer) abre uma exceção estreita: só
+-- libera a reserva que o PRÓPRIO usuário acabou de criar (confere
+-- created_by contra o e-mail do token) e só se foi criada há pouco tempo
+-- (evita virar um jeito de apagar reservas antigas à vontade).
+create or replace function public.wa_throttle_release(
+  p_log_id uuid
+) returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_deletados int;
+begin
+  delete from public.wa_send_log
+  where id = p_log_id
+    and created_by = (auth.jwt() ->> 'email')
+    and created_at > now() - interval '5 minutes';
+  get diagnostics v_deletados = row_count;
+  return jsonb_build_object('ok', true, 'liberado', v_deletados > 0);
+end;
+$$;
+
 -- ============================================================
 -- WA_INBOX (conversas recebidas pelo WhatsApp, aguardando ou já com
 -- rascunho de resposta da IA pronto pra revisão humana)
