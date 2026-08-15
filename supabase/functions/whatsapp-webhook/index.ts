@@ -37,43 +37,73 @@ function json(body: unknown, status = 200) {
   });
 }
 
+// Alguns tipos de mensagem do WhatsApp vêm "embrulhados" — a mensagem de
+// verdade fica um nível (ou mais) abaixo (mensagem temporária, "ver uma
+// vez", documento com legenda). Sem desembrulhar, extractText/extractTipo
+// não reconheciam nada dentro desses e a mensagem virava "outro" sem texto
+// — descartada silenciosamente no sync-messages, classificada errado no
+// webhook.
+function desembrulhar(message: any, profundidade = 0): any {
+  if (!message || profundidade > 5) return message;
+  const interno =
+    message.ephemeralMessage?.message ||
+    message.viewOnceMessage?.message ||
+    message.viewOnceMessageV2?.message ||
+    message.viewOnceMessageV2Extension?.message ||
+    message.documentWithCaptionMessage?.message;
+  return interno ? desembrulhar(interno, profundidade + 1) : message;
+}
+
 // Extrai o texto de diferentes formatos de mensagem que a Evolution API
 // pode mandar (texto simples, resposta a mensagem citada, legenda de
-// foto/vídeo, etc.)
+// foto/vídeo/documento, etc.)
 function extractText(message: any): string {
-  if (!message) return "";
+  const m = desembrulhar(message);
+  if (!m) return "";
   return (
-    message.conversation ||
-    message.extendedTextMessage?.text ||
-    message.imageMessage?.caption ||
-    message.videoMessage?.caption ||
-    message.text || // formato usado por /chat/findMessages nesta instância (confirmado com dado real)
+    m.conversation ||
+    m.extendedTextMessage?.text ||
+    m.imageMessage?.caption ||
+    m.videoMessage?.caption ||
+    m.documentMessage?.caption ||
+    m.text || // formato usado por /chat/findMessages nesta instância (confirmado com dado real)
     ""
   );
 }
 
-// Identifica o tipo da mensagem, pra já ficar salvo mesmo sem exibir ainda
-// nada além de texto na tela (anexos ficam pra uma etapa futura).
+// Identifica o tipo da mensagem. "reacao" e "sistema" nunca são conteúdo de
+// paciente (reação de emoji, mensagem de protocolo/criptografia) — são
+// descartadas de propósito, não por engano. Áudio, figurinha e documento
+// raramente têm texto/legenda — são válidos mesmo com texto vazio (ver
+// isMidia() abaixo).
 function extractTipo(message: any): string {
-  if (!message) return "outro";
-  if (message.conversation || message.extendedTextMessage || message.text) return "texto";
-  if (message.imageMessage) return "imagem";
-  if (message.videoMessage) return "video";
-  if (message.audioMessage) return "audio";
-  if (message.stickerMessage) return "figurinha";
-  if (message.documentMessage || message.documentWithCaptionMessage) return "documento";
+  const m = desembrulhar(message);
+  if (!m) return "outro";
+  if (m.conversation || m.extendedTextMessage || m.text) return "texto";
+  if (m.imageMessage) return "imagem";
+  if (m.videoMessage) return "video";
+  if (m.audioMessage) return "audio";
+  if (m.stickerMessage) return "figurinha";
+  if (m.documentMessage) return "documento";
+  if (m.reactionMessage) return "reacao";
+  if (m.protocolMessage || m.senderKeyDistributionMessage) return "sistema";
   return "outro";
+}
+
+function isMidia(tipo: string): boolean {
+  return tipo === "imagem" || tipo === "video" || tipo === "audio" || tipo === "figurinha" || tipo === "documento";
 }
 
 // Pega o "nó" de mídia certo dentro de message, conforme o tipo — cada um
 // tem mimetype no mesmo formato (campo "mimetype" do proto do WhatsApp).
 function extractMediaNode(message: any, tipo: string): any {
-  if (!message) return null;
-  if (tipo === "imagem") return message.imageMessage;
-  if (tipo === "video") return message.videoMessage;
-  if (tipo === "audio") return message.audioMessage;
-  if (tipo === "figurinha") return message.stickerMessage;
-  if (tipo === "documento") return message.documentMessage || message.documentWithCaptionMessage?.message?.documentMessage;
+  const m = desembrulhar(message);
+  if (!m) return null;
+  if (tipo === "imagem") return m.imageMessage;
+  if (tipo === "video") return m.videoMessage;
+  if (tipo === "audio") return m.audioMessage;
+  if (tipo === "figurinha") return m.stickerMessage;
+  if (tipo === "documento") return m.documentMessage;
   return null;
 }
 
@@ -195,9 +225,10 @@ Deno.serve(async (req) => {
       if (!telefone) continue;
 
       const tipo = extractTipo(item.message);
+      if (tipo === "reacao" || tipo === "sistema") continue; // nunca é conteúdo de paciente
       const texto = extractText(item.message);
-      const isMidia = tipo === "imagem" || tipo === "video" || tipo === "audio" || tipo === "figurinha" || tipo === "documento";
-      if (!texto && !isMidia) continue; // nada de útil pra guardar (ex.: reação, mensagem de sistema)
+      const midia = isMidia(tipo);
+      if (!texto && !midia) continue; // formato não reconhecido, sem nada útil pra guardar
 
       const nomeContato = item.pushName || null;
       const timestamp = item.messageTimestamp
@@ -239,7 +270,7 @@ Deno.serve(async (req) => {
       // reenviar o mesmo evento de webhook (acontece na prática).
       const waMessageId: string | null = item.key?.id || null;
       let media: { path: string; mime: string } | null = null;
-      if (isMidia && waMessageId && EVOLUTION_API_URL && EVOLUTION_API_KEY) {
+      if (midia && waMessageId && EVOLUTION_API_URL && EVOLUTION_API_KEY) {
         const mediaNode = extractMediaNode(item.message, tipo);
         media = await baixarEGuardarMidia(
           supabase, EVOLUTION_API_URL, EVOLUTION_API_KEY, EVOLUTION_INSTANCE,
