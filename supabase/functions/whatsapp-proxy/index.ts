@@ -250,8 +250,8 @@ Deno.serve(async (req) => {
         fileName?: string; caption?: string; nome?: string;
       };
       if (!number || !path || !mediatype) return json({ error: "Faltou número, arquivo ou tipo de mídia." }, 400);
-      if (!["image", "video", "document"].includes(mediatype)) {
-        return json({ error: "Tipo de mídia não suportado ainda (use image, video ou document)." }, 400);
+      if (!["image", "video", "document", "audio"].includes(mediatype)) {
+        return json({ error: "Tipo de mídia não suportado ainda (use image, video, document ou audio)." }, 400);
       }
       const digits = toWhatsappDigits(number);
       const reserva = await reservarEnvio(supabase, digits, nome, user.email);
