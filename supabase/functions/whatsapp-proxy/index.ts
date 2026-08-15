@@ -17,26 +17,46 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 
 // Mesma lógica de extração usada no whatsapp-webhook (duplicada aqui de
 // propósito: cada Edge Function do Supabase é colada/publicada de forma
-// independente, sem importar arquivo de outra function).
+// independente, sem importar arquivo de outra function). Se mudar aqui,
+// mudar lá também — as duas precisam classificar mensagem exatamente igual.
+function desembrulhar(message: any, profundidade = 0): any {
+  if (!message || profundidade > 5) return message;
+  const interno =
+    message.ephemeralMessage?.message ||
+    message.viewOnceMessage?.message ||
+    message.viewOnceMessageV2?.message ||
+    message.viewOnceMessageV2Extension?.message ||
+    message.documentWithCaptionMessage?.message;
+  return interno ? desembrulhar(interno, profundidade + 1) : message;
+}
 function extractText(message: any): string {
-  if (!message) return "";
+  const m = desembrulhar(message);
+  if (!m) return "";
   return (
-    message.conversation ||
-    message.extendedTextMessage?.text ||
-    message.imageMessage?.caption ||
-    message.videoMessage?.caption ||
-    message.text || // formato usado por /chat/findMessages nesta instância (confirmado com dado real)
+    m.conversation ||
+    m.extendedTextMessage?.text ||
+    m.imageMessage?.caption ||
+    m.videoMessage?.caption ||
+    m.documentMessage?.caption ||
+    m.text || // formato usado por /chat/findMessages nesta instância (confirmado com dado real)
     ""
   );
 }
 function extractTipo(message: any): string {
-  if (!message) return "outro";
-  if (message.conversation || message.extendedTextMessage || message.text) return "texto";
-  if (message.imageMessage) return "imagem";
-  if (message.videoMessage) return "video";
-  if (message.audioMessage) return "audio";
-  if (message.stickerMessage) return "figurinha";
+  const m = desembrulhar(message);
+  if (!m) return "outro";
+  if (m.conversation || m.extendedTextMessage || m.text) return "texto";
+  if (m.imageMessage) return "imagem";
+  if (m.videoMessage) return "video";
+  if (m.audioMessage) return "audio";
+  if (m.stickerMessage) return "figurinha";
+  if (m.documentMessage) return "documento";
+  if (m.reactionMessage) return "reacao";
+  if (m.protocolMessage || m.senderKeyDistributionMessage) return "sistema";
   return "outro";
+}
+function isMidia(tipo: string): boolean {
+  return tipo === "imagem" || tipo === "video" || tipo === "audio" || tipo === "figurinha" || tipo === "documento";
 }
 
 // Mesma regra do waLink() no index.html: número sem código de país (55) é
@@ -400,8 +420,47 @@ Deno.serve(async (req) => {
         if (pageItems.length < 200) break; // última página (veio menos que o limite pedido)
       }
 
+      // Descobre de antemão quais wa_message_id já existem no banco, pra
+      // conseguir contar "já existentes" separado de "novas" (o upsert por
+      // si só não diz se foi insert ou update).
+      const idsCandidatos = items.map((it) => it?.key?.id).filter(Boolean) as string[];
+      const idsJaExistentes = new Set<string>();
+      for (let i = 0; i < idsCandidatos.length; i += 500) {
+        const lote = idsCandidatos.slice(i, i + 500);
+        const { data: existentes } = await supabase.from("wa_messages").select("wa_message_id").in("wa_message_id", lote);
+        (existentes ?? []).forEach((r: { wa_message_id: string }) => idsJaExistentes.add(r.wa_message_id));
+      }
+
+      // Diagnóstico opcional: dado um wa_message_id específico (que existe
+      // na Evolution mas o dono desconfia que não entrou no Supabase),
+      // devolve exatamente por que ele foi ou não foi salvo.
+      const { debugMessageId } = params as { debugMessageId?: string };
+      let debug: Record<string, unknown> | undefined;
+      if (debugMessageId) {
+        const achado = items.find((it) => it?.key?.id === debugMessageId);
+        if (!achado) {
+          debug = { encontradoNaEvolution: false, mensagem: "Esse wa_message_id não veio em nenhuma página do /chat/findMessages nesta sincronização." };
+        } else {
+          const tipoDebug = extractTipo(achado.message);
+          debug = {
+            encontradoNaEvolution: true,
+            tipo: tipoDebug,
+            temTexto: !!extractText(achado.message),
+            ehMidia: isMidia(tipoDebug),
+            ehGrupo: (achado.key?.remoteJid || "").endsWith("@g.us"),
+            telefoneExtraido: extrairTelefoneInfo(achado.key).telefone || null,
+            jaExistiaNoSupabase: idsJaExistentes.has(debugMessageId),
+            itemBruto: achado,
+          };
+        }
+      }
+
       let sincronizadas = 0;
-      const motivos = { semKey: 0, semTelefone: 0, semTexto: 0, erroGravar: 0, grupo: 0 };
+      const motivos = {
+        semKey: 0, grupo: 0, semTelefone: 0, jaExistentes: 0,
+        texto: 0, imagem: 0, video: 0, audio: 0, documento: 0, figurinha: 0,
+        reacaoIgnorada: 0, sistemaIgnorado: 0, formatoDesconhecido: 0, erroGravar: 0,
+      };
       let primeiroErroGravar: string | null = null;
       for (const item of items) {
         if (!item?.key) { motivos.semKey++; continue; }
@@ -409,15 +468,21 @@ Deno.serve(async (req) => {
         if (remoteJid.endsWith("@g.us")) { motivos.grupo++; continue; } // grupo do WhatsApp, não conversa de paciente
         const { telefone, ehLid } = extrairTelefoneInfo(item.key);
         if (!telefone) { motivos.semTelefone++; continue; }
+
+        const tipo = extractTipo(item.message);
+        if (tipo === "reacao") { motivos.reacaoIgnorada++; continue; }
+        if (tipo === "sistema") { motivos.sistemaIgnorado++; continue; }
         const texto = extractText(item.message);
-        if (!texto) { motivos.semTexto++; continue; }
+        const midia = isMidia(tipo);
+        if (!texto && !midia) { motivos.formatoDesconhecido++; continue; } // formato não reconhecido, nada útil pra guardar
+
         const waMessageId: string | null = item.key.id || null;
+        const jaExistia = waMessageId ? idsJaExistentes.has(waMessageId) : false;
         const direcao = item.key.fromMe ? "enviada" : "recebida";
         const nomeContato = item.pushName || null;
         const timestamp = item.messageTimestamp
           ? new Date(Number(item.messageTimestamp) * 1000).toISOString()
           : new Date().toISOString();
-        const tipo = extractTipo(item.message);
 
         const { error } = waMessageId
           ? await supabase.from("wa_messages").upsert({
@@ -432,6 +497,10 @@ Deno.serve(async (req) => {
           if (!primeiroErroGravar) primeiroErroGravar = error.message;
         } else {
           sincronizadas++;
+          if (jaExistia) motivos.jaExistentes++;
+          // A essa altura tipo só pode ser texto/imagem/video/audio/documento/figurinha
+          // (reacao, sistema e formato desconhecido já causaram "continue" acima).
+          (motivos as Record<string, number>)[tipo]++;
         }
       }
 
@@ -440,7 +509,7 @@ Deno.serve(async (req) => {
       // formato de "message" é diferente do que o extractText espera.
       const amostra = sincronizadas === 0 ? items.slice(0, 3) : undefined;
       return json({
-        ok: true, sincronizadas, total_recebido: items.length, motivos, primeiroErroGravar, amostra,
+        ok: true, sincronizadas, total_recebido: items.length, motivos, primeiroErroGravar, amostra, debug,
         paginacao: { formato_usado: paginaFormato, ultimo_status: ultimoStatus },
       });
     }

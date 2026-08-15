@@ -362,6 +362,7 @@
         <input type="text" id="waConvBusca" placeholder="🔍 Buscar conversa...">
         <button class="btn small secondary" id="waSyncBtn" style="margin-top:8px;" title="Busca o histórico de mensagens direto da Evolution API">Sincronizar conversas</button>
         <div id="waConvError" class="warn-note" style="display:none; margin-top:10px;"></div>
+        <div id="waSyncResultado" style="display:none; margin-top:8px; padding:8px 10px; font-size:11.5px; line-height:1.6; color:var(--muted); background:var(--bg); border-radius:8px;"></div>
         <div id="waConvList" class="wa-conv-list"></div>
       </div>
       <div class="wa-crm-thread">
@@ -1028,11 +1029,16 @@ document.getElementById('waSyncBtn').addEventListener('click', async ()=>{
       return;
     }
     console.log('[WhatsApp] resultado da sincronização (texto puro, copie tudo abaixo):\n' + JSON.stringify(r, null, 2));
-    if(r.sincronizadas === 0 && r.total_recebido > 0){
-      showToast(`0 de ${r.total_recebido} salvas — veja o console (F12) pra detalhes.`);
-    } else {
-      showToast(`${r.sincronizadas} de ${r.total_recebido} mensagem(ns) sincronizada(s).`);
-    }
+    showToast(`${r.sincronizadas} de ${r.total_recebido} mensagem(ns) sincronizada(s).`);
+    const m = r.motivos || {};
+    const resultadoBox = document.getElementById('waSyncResultado');
+    resultadoBox.style.display = 'block';
+    resultadoBox.innerHTML = `
+      <b>Última sincronização</b> — recebidas: ${r.total_recebido} · salvas: ${r.sincronizadas} · já existentes: ${m.jaExistentes||0}<br>
+      Por tipo — texto: ${m.texto||0} · imagem: ${m.imagem||0} · vídeo: ${m.video||0} · áudio: ${m.audio||0} · documento: ${m.documento||0} · figurinha: ${m.figurinha||0}<br>
+      Ignoradas de propósito — grupos: ${m.grupo||0} · reação: ${m.reacaoIgnorada||0} · sistema: ${m.sistemaIgnorado||0}<br>
+      Problemas — sem telefone: ${m.semTelefone||0} · formato desconhecido: ${m.formatoDesconhecido||0} · erro ao gravar: ${m.erroGravar||0}
+    `;
     await renderWaConversations();
   } finally {
     btn.disabled = false; btn.textContent = original;
