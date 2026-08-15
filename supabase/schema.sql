@@ -459,28 +459,42 @@ alter table public.crm_segmentados enable row level security;
 
 -- profiles: todo mundo autenticado vê a equipe; cada um cria/edita o próprio
 -- perfil; só o proprietário pode mudar o "role" de outra pessoa.
+-- (todo "drop policy if exists" abaixo existe só pra deixar seguro rodar
+-- este arquivo inteiro de novo num banco que já rodou ele antes — sem
+-- isso, "create policy" dá erro de "já existe" e trava o resto do arquivo)
+drop policy if exists "profiles_select" on public.profiles;
 create policy "profiles_select" on public.profiles for select to authenticated using (true);
+drop policy if exists "profiles_insert_self" on public.profiles;
 create policy "profiles_insert_self" on public.profiles for insert to authenticated with check (auth.uid() = id);
+drop policy if exists "profiles_update" on public.profiles;
 create policy "profiles_update" on public.profiles for update to authenticated using (auth.uid() = id or public.is_owner());
 
 -- leads / diárias / ativos / contatos / checklist / confirmações do dia:
 -- toda a equipe autenticada usa no dia a dia.
+drop policy if exists "leads_all" on public.leads;
 create policy "leads_all" on public.leads for all to authenticated using (true) with check (true);
+drop policy if exists "diarias_all" on public.diarias;
 create policy "diarias_all" on public.diarias for all to authenticated using (true) with check (true);
+drop policy if exists "ativos_all" on public.ativos;
 create policy "ativos_all" on public.ativos for all to authenticated using (true) with check (true);
+drop policy if exists "contatos_all" on public.contatos;
 create policy "contatos_all" on public.contatos for all to authenticated using (true) with check (true);
+drop policy if exists "checklist_state_all" on public.checklist_state;
 create policy "checklist_state_all" on public.checklist_state for all to authenticated using (true) with check (true);
+drop policy if exists "confirmacoes_dia_all" on public.confirmacoes_dia;
 create policy "confirmacoes_dia_all" on public.confirmacoes_dia for all to authenticated using (true) with check (true);
+drop policy if exists "templates_all" on public.templates;
 create policy "templates_all" on public.templates for all to authenticated using (true) with check (true);
 -- wa_send_log é o registro que sustenta a proteção anti-bloqueio (intervalo
 -- mínimo + limites por hora/dia): todo mundo pode registrar e ler um envio,
 -- mas ninguém de equipe pode apagar linhas pra "resetar" o contador — só o
 -- proprietário, e mesmo assim isso não deveria ser necessário no dia a dia.
--- (o "drop... if exists" deixa seguro rodar este arquivo de novo num banco
--- que já tinha a policy antiga, mais permissiva)
 drop policy if exists "wa_send_log_all" on public.wa_send_log;
+drop policy if exists "wa_send_log_select" on public.wa_send_log;
 create policy "wa_send_log_select" on public.wa_send_log for select to authenticated using (true);
+drop policy if exists "wa_send_log_insert" on public.wa_send_log;
 create policy "wa_send_log_insert" on public.wa_send_log for insert to authenticated with check (true);
+drop policy if exists "wa_send_log_delete" on public.wa_send_log;
 create policy "wa_send_log_delete" on public.wa_send_log for delete to authenticated using (public.is_owner());
 -- wa_inbox / wa_messages / crm_segmentados: histórico de conversa de
 -- paciente — toda a equipe precisa ler/editar no dia a dia, mas só o
@@ -488,33 +502,50 @@ create policy "wa_send_log_delete" on public.wa_send_log for delete to authentic
 -- rotinas). Sem essa restrição, qualquer conta de equipe podia apagar
 -- o histórico inteiro de um paciente sem deixar rastro.
 drop policy if exists "wa_inbox_all" on public.wa_inbox;
+drop policy if exists "wa_inbox_select" on public.wa_inbox;
 create policy "wa_inbox_select" on public.wa_inbox for select to authenticated using (true);
+drop policy if exists "wa_inbox_insert" on public.wa_inbox;
 create policy "wa_inbox_insert" on public.wa_inbox for insert to authenticated with check (true);
+drop policy if exists "wa_inbox_update" on public.wa_inbox;
 create policy "wa_inbox_update" on public.wa_inbox for update to authenticated using (true);
+drop policy if exists "wa_inbox_delete" on public.wa_inbox;
 create policy "wa_inbox_delete" on public.wa_inbox for delete to authenticated using (public.is_owner());
 
 drop policy if exists "wa_messages_all" on public.wa_messages;
+drop policy if exists "wa_messages_select" on public.wa_messages;
 create policy "wa_messages_select" on public.wa_messages for select to authenticated using (true);
+drop policy if exists "wa_messages_insert" on public.wa_messages;
 create policy "wa_messages_insert" on public.wa_messages for insert to authenticated with check (true);
+drop policy if exists "wa_messages_update" on public.wa_messages;
 create policy "wa_messages_update" on public.wa_messages for update to authenticated using (true);
+drop policy if exists "wa_messages_delete" on public.wa_messages;
 create policy "wa_messages_delete" on public.wa_messages for delete to authenticated using (public.is_owner());
 
 -- crm_segmentados: diferente de wa_inbox/wa_messages, aqui a equipe toda
 -- já usa um botão "Remover do CRM" no dia a dia (index.html) — restringir
 -- a exclusão só ao proprietário quebraria esse fluxo sem aviso claro.
 -- Mantido como estava.
+drop policy if exists "crm_segmentados_all" on public.crm_segmentados;
 create policy "crm_segmentados_all" on public.crm_segmentados for all to authenticated using (true) with check (true);
 
 -- rotinas: todo mundo lê; só o proprietário cria/edita/exclui.
+drop policy if exists "rotinas_select" on public.rotinas;
 create policy "rotinas_select" on public.rotinas for select to authenticated using (true);
+drop policy if exists "rotinas_write" on public.rotinas;
 create policy "rotinas_write" on public.rotinas for insert to authenticated with check (public.is_owner());
+drop policy if exists "rotinas_update" on public.rotinas;
 create policy "rotinas_update" on public.rotinas for update to authenticated using (public.is_owner());
+drop policy if exists "rotinas_delete" on public.rotinas;
 create policy "rotinas_delete" on public.rotinas for delete to authenticated using (public.is_owner());
 
 -- config: todo mundo lê (metas aparecem no checklist); só o proprietário edita.
+drop policy if exists "config_select" on public.config;
 create policy "config_select" on public.config for select to authenticated using (true);
+drop policy if exists "config_update" on public.config;
 create policy "config_update" on public.config for update to authenticated using (public.is_owner());
 
 -- ia_prompt: só o proprietário lê e edita.
+drop policy if exists "ia_prompt_select" on public.ia_prompt;
 create policy "ia_prompt_select" on public.ia_prompt for select to authenticated using (public.is_owner());
+drop policy if exists "ia_prompt_update" on public.ia_prompt;
 create policy "ia_prompt_update" on public.ia_prompt for update to authenticated using (public.is_owner());
