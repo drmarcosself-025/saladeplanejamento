@@ -224,7 +224,13 @@ Deno.serve(async (req) => {
       if (!r.ok) return json({ name: null });
       const data = await r.json().catch(() => null);
       const info = Array.isArray(data) ? data[0] : data;
-      return json({ name: info?.name || null });
+      const nomeBruto: string = info?.name || "";
+      // Um nome de exibição de verdade nunca é só dígitos — se a Evolution
+      // devolver isso (ex.: sem nome salvo, ela ecoa o número/JID de volta
+      // em "name"), não é um nome, é ruído. Confirmado na prática: causou
+      // um contato aparecer com o código LID como "nome".
+      const nomeValido = nomeBruto && !/^\d+$/.test(nomeBruto.trim());
+      return json({ name: nomeValido ? nomeBruto : null });
     }
 
     if (action === "send-text") {

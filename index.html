@@ -1305,7 +1305,11 @@ async function waLoadNomesPendentes(){
   await Promise.all(pendentes.map(async tel => {
     WA_NOME_CACHE[tel] = null; // marca como "já perguntei" já, pra não disparar de novo
     const r = await waCall('get-contact-name', { telefone: tel });
-    if(r?.name){
+    // Um nome de verdade nunca é só dígitos — se vier assim, é a própria
+    // Evolution/Baileys devolvendo o número (ou um código interno) no lugar
+    // do nome por falta de um nome salvo, não um nome de exibição real.
+    const nomeValido = r?.name && !/^\d+$/.test(String(r.name).trim());
+    if(nomeValido){
       WA_NOME_CACHE[tel] = r.name;
       algumEncontrado = true;
       // Só preenche onde ainda está vazio — nunca sobrescreve um nome que
