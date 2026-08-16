@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Funil de leads — WhatsApp</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <!-- Tela de login. O painel inteiro depende de sessão: sem login, o RLS
+       não devolve nenhuma linha. -->
+  <section id="login" class="login">
+    <form id="loginForm" class="login-card">
+      <h1>Funil de leads</h1>
+      <p class="muted">Entre com o e-mail autorizado da clínica.</p>
+      <input id="email" type="email" placeholder="email@clinica.com" autocomplete="username" required>
+      <input id="password" type="password" placeholder="senha" autocomplete="current-password" required>
+      <button type="submit">Entrar</button>
+      <p id="loginError" class="error" hidden></p>
+    </form>
+  </section>
+
+  <!-- Uma tela só: o Kanban. Sem sidebar, sem módulos, sem chat interno. -->
+  <main id="app" class="app" hidden>
+    <header class="topbar">
+      <h1>Funil de leads</h1>
+      <div class="topbar-actions">
+        <span id="updatedAt" class="muted"></span>
+        <button id="refreshBtn" class="ghost" type="button">Atualizar</button>
+        <button id="logoutBtn" class="ghost" type="button">Sair</button>
+      </div>
+    </header>
+
+    <div id="board" class="board"></div>
+  </main>
+
+  <!-- Drawer do lead: pequeno, de propósito. Não é conversa, é ficha. -->
+  <aside id="drawer" class="drawer" hidden>
+    <div class="drawer-backdrop" data-close></div>
+    <div class="drawer-panel">
+      <button class="drawer-close" type="button" data-close aria-label="Fechar">×</button>
+      <h2 id="drawerName">—</h2>
+      <p id="drawerPhone" class="muted"></p>
+
+      <dl class="fields">
+        <div><dt>Interesse</dt><dd id="drawerInterest">—</dd></div>
+        <div><dt>Etapa</dt><dd id="drawerStage">—</dd></div>
+        <div><dt>Automação</dt><dd id="drawerAutomation">—</dd></div>
+      </dl>
+
+      <section>
+        <h3>Resumo da conversa</h3>
+        <p id="drawerSummary" class="box">—</p>
+      </section>
+
+      <section>
+        <h3>Última mensagem</h3>
+        <p id="drawerLastMessage" class="box">—</p>
+      </section>
+
+      <section>
+        <h3>Por que a IA classificou assim</h3>
+        <p id="drawerReason" class="box small">—</p>
+      </section>
+
+      <section class="actions">
+        <h3>Ações</h3>
+        <button id="toggleAiBtn" type="button">Ligar/desligar IA</button>
+        <label class="move">
+          Mover etapa
+          <select id="stageSelect">
+            <option value="NEW">Novo</option>
+            <option value="CONVERSATION">Em conversa</option>
+            <option value="INTEREST">Interesse</option>
+            <option value="SCHEDULING">Agendamento</option>
+            <option value="CONVERTED">Convertido</option>
+            <option value="LOST">Perdido</option>
+          </select>
+        </label>
+        <div class="row">
+          <button id="convertedBtn" class="ok" type="button">Marcar convertido</button>
+          <button id="lostBtn" class="danger" type="button">Marcar perdido</button>
+        </div>
+        <a id="whatsappLink" class="wa" target="_blank" rel="noopener">Abrir WhatsApp</a>
+        <p id="drawerError" class="error" hidden></p>
+      </section>
+    </div>
+  </aside>
+
+  <script src="config.js"></script>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

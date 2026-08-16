@@ -1,0 +1,8 @@
+# Secrets reais nunca entram no repositório — só .env.example.
+.env
+.env.*
+!.env.example
+
+# Artefatos locais da Supabase CLI
+.temp/
+.branches/
