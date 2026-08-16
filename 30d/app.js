@@ -125,6 +125,73 @@
   }
 
   // ============================================================
+  // SALVAMENTO CONFIÁVEL — toda ação otimista (toque num check pra
+  // concluir/reabrir hábito, rotina, tarefa, missão) passa por aqui.
+  // Trava contra toque duplo enquanto a operação está em andamento,
+  // aplica timeout (nunca fica "carregando" pra sempre), e se o
+  // Supabase recusar a gravação, desfaz a mudança visual e avisa com
+  // toast — nunca finge sucesso.
+  // ============================================================
+  var SAVE_TIMEOUT_MS = 12000;
+  var busyKeys = {};
+  function guardedToggle(key, apply, revert, request, onSuccess) {
+    if (busyKeys[key]) return;
+    busyKeys[key] = true;
+    apply();
+    var settled = false;
+    var timer = setTimeout(function () {
+      if (settled) return;
+      settled = true;
+      delete busyKeys[key];
+      revert();
+      toast('Isso está demorando muito. Tente de novo.');
+    }, SAVE_TIMEOUT_MS);
+    request().then(function (res) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      delete busyKeys[key];
+      if (!res || res.error) {
+        console.error('[30D] falha ao salvar (' + key + ')', res && res.error);
+        revert();
+        toast('Não consegui salvar. Tente de novo.');
+        return;
+      }
+      if (onSuccess) onSuccess();
+    });
+  }
+
+  // Mesma lógica de timeout + reabilitar botão, pra ações de
+  // "adicionar"/"salvar" que já são não-otimistas (só atualizam a tela
+  // depois da confirmação do servidor) — aqui só falta garantir que
+  // nunca fiquem "carregando" pra sempre em caso de rede lenta/travada.
+  function withSaveTimeout(disableEls, promise, ms) {
+    var settled = false;
+    var timer = setTimeout(function () {
+      if (settled) return;
+      settled = true;
+      disableEls.forEach(function (elx) { if (elx) elx.disabled = false; });
+      toast('Isso está demorando muito. Tente de novo.');
+    }, ms || SAVE_TIMEOUT_MS);
+    return promise.then(function (res) {
+      if (settled) return null;
+      settled = true;
+      clearTimeout(timer);
+      return res;
+    });
+  }
+
+  // Normaliza o valor de qualquer <input type="time"> antes de mandar pro
+  // Supabase (coluna Postgres `time`). O input já entrega "HH:MM", mas
+  // isso protege contra espaço em branco ou um "HH:MM:SS" inesperado em
+  // algum navegador/mobile fora do padrão — nunca usar Date pra isso,
+  // é só horário local, sem fuso.
+  function normHorario(v) {
+    v = (v || '').trim();
+    return v ? v.slice(0, 5) : null;
+  }
+
+  // ============================================================
   // AUTH
   // ============================================================
   function initAuthScreen() {
@@ -558,23 +625,15 @@
   function toggleMission(i) {
     var m = state.missions[i];
     var prevDone = m.done, prevStatus = m.task.status;
-    m.done = !m.done;
-    var newStatus = m.done ? 'concluida' : 'pendente';
-    m.task.status = newStatus;
-    renderMissions();
-    renderPerf();
-    persistDailyScore();
-    sb.from('p30_tasks').update({ status: newStatus, concluido_em: m.done ? new Date().toISOString() : null })
-      .eq('id', m.task.id).then(function (res) {
-        if (res.error) {
-          console.error(res.error);
-          m.done = prevDone; m.task.status = prevStatus;
-          renderMissions();
-          renderPerf();
-          persistDailyScore();
-          toast('Não consegui salvar. Tente de novo.');
-        }
-      });
+    var novoDone = !prevDone;
+    var newStatus = novoDone ? 'concluida' : 'pendente';
+    guardedToggle('mission-' + m.task.id,
+      function () { m.done = novoDone; m.task.status = newStatus; renderMissions(); renderPerf(); persistDailyScore(); },
+      function () { m.done = prevDone; m.task.status = prevStatus; renderMissions(); renderPerf(); persistDailyScore(); },
+      function () {
+        return sb.from('p30_tasks').update({ status: newStatus, concluido_em: novoDone ? new Date().toISOString() : null }).eq('id', m.task.id);
+      }
+    );
   }
 
   // "Tarefas de hoje" — todas as tarefas com data = hoje que não são
@@ -605,24 +664,15 @@
     var t = state.todayTasks.find(function (x) { return x.id === id; });
     if (!t) return;
     var prevStatus = t.status;
-    var newStatus = t.status === 'concluida' ? 'pendente' : 'concluida';
-    t.status = newStatus;
-    renderTodayTasks();
-    renderPerf();
-    persistDailyScore();
-    sb.from('p30_tasks').update({ status: newStatus, concluido_em: newStatus === 'concluida' ? new Date().toISOString() : null })
-      .eq('id', id).then(function (res) {
-        if (res.error) {
-          console.error(res.error);
-          t.status = prevStatus;
-          renderTodayTasks();
-          renderPerf();
-          persistDailyScore();
-          toast('Não consegui salvar. Tente de novo.');
-          return;
-        }
-        if (!q('viewSemana').hidden) reloadWeek();
-      });
+    var newStatus = prevStatus === 'concluida' ? 'pendente' : 'concluida';
+    guardedToggle('todaytask-' + id,
+      function () { t.status = newStatus; renderTodayTasks(); renderPerf(); persistDailyScore(); },
+      function () { t.status = prevStatus; renderTodayTasks(); renderPerf(); persistDailyScore(); },
+      function () {
+        return sb.from('p30_tasks').update({ status: newStatus, concluido_em: newStatus === 'concluida' ? new Date().toISOString() : null }).eq('id', id);
+      },
+      function () { if (!q('viewSemana').hidden) reloadWeek(); }
+    );
   }
 
   function submitTodayAdd() {
@@ -632,13 +682,14 @@
     var titulo = input.value.trim();
     if (!titulo) { toast('Escreva algo antes de adicionar.'); return; }
     input.disabled = true; btn.disabled = true;
-    sb.from('p30_tasks').insert({
+    withSaveTimeout([input, btn], sb.from('p30_tasks').insert({
       user_id: state.user.id, cycle_id: state.cycle.id, titulo: titulo, texto_original: titulo,
       tipo: 'tarefa', status: 'pendente', organizado: true, data: state.today,
-      horario: timeInput.value || null, pontos: 10
-    }).then(function (res) {
+      horario: normHorario(timeInput.value), pontos: 10
+    })).then(function (res) {
+      if (!res) return;
       input.disabled = false; btn.disabled = false;
-      if (res.error) { toast('Não consegui salvar.'); console.error(res.error); return; }
+      if (res.error) { toast('Não consegui salvar.'); console.error('[30D] falha ao adicionar tarefa de hoje', res.error); return; }
       input.value = ''; timeInput.value = '';
       toast('Adicionada.');
       refreshDailyViews();
@@ -685,13 +736,17 @@
 
   function toggleHabit(i) {
     var h = state.habits[i];
-    h.done = !h.done;
-    var p = h.done
-      ? sb.from('p30_habit_logs').insert({ habit_id: h.habit.id, user_id: state.user.id, data: state.today, concluido: true })
-      : sb.from('p30_habit_logs').delete().eq('habit_id', h.habit.id).eq('user_id', state.user.id).eq('data', state.today);
-    p.then(function (res) { if (res.error) console.error(res.error); });
-    renderHabits();
-    persistDailyScore();
+    var prevDone = h.done;
+    var novoDone = !prevDone;
+    guardedToggle('habit-' + h.habit.id,
+      function () { h.done = novoDone; renderHabits(); persistDailyScore(); },
+      function () { h.done = prevDone; renderHabits(); persistDailyScore(); },
+      function () {
+        return novoDone
+          ? sb.from('p30_habit_logs').insert({ habit_id: h.habit.id, user_id: state.user.id, data: state.today, concluido: true })
+          : sb.from('p30_habit_logs').delete().eq('habit_id', h.habit.id).eq('user_id', state.user.id).eq('data', state.today);
+      }
+    );
   }
 
   function renderRoutinesToday() {
@@ -700,14 +755,16 @@
 
   function toggleRoutine(i) {
     var r = state.routinesToday[i];
-    var newStatus = r.occurrence.status === 'concluida' ? 'pendente' : 'concluida';
-    r.occurrence.status = newStatus;
-    sb.from('p30_task_occurrences').update({ status: newStatus, concluido_em: newStatus === 'concluida' ? new Date().toISOString() : null })
-      .eq('id', r.occurrence.id).then(function (res) { if (res.error) console.error(res.error); });
-    renderHabits();
-    computeNextCommitment();
-    renderNext();
-    persistDailyScore();
+    var prevStatus = r.occurrence.status;
+    var newStatus = prevStatus === 'concluida' ? 'pendente' : 'concluida';
+    guardedToggle('routine-' + r.occurrence.id,
+      function () { r.occurrence.status = newStatus; renderHabits(); computeNextCommitment(); renderNext(); persistDailyScore(); },
+      function () { r.occurrence.status = prevStatus; renderHabits(); computeNextCommitment(); renderNext(); persistDailyScore(); },
+      function () {
+        return sb.from('p30_task_occurrences').update({ status: newStatus, concluido_em: newStatus === 'concluida' ? new Date().toISOString() : null })
+          .eq('id', r.occurrence.id);
+      }
+    );
   }
 
   function renderNext() {
@@ -855,9 +912,11 @@
         area: selectedArea, tipo: 'tarefa', status: 'pendente', organizado: false, pontos: 10,
         data: resolveWhenToDate(selectedWhen)
       };
-      q('saveCaptureBtn').disabled = true;
-      sb.from('p30_tasks').insert(row).select().single().then(function (res) {
-        q('saveCaptureBtn').disabled = false;
+      var captureBtnEl = q('saveCaptureBtn');
+      captureBtnEl.disabled = true;
+      withSaveTimeout([captureBtnEl], sb.from('p30_tasks').insert(row).select().single()).then(function (res) {
+        if (!res) return;
+        captureBtnEl.disabled = false;
         if (res.error) { toast('Não consegui salvar. Tente de novo.'); console.error(res.error); return; }
         closeCapture();
         toast('Pendência capturada.');
@@ -874,7 +933,7 @@
       var row = {
         user_id: state.user.id, titulo: titulo, texto_original: titulo,
         area: selectedArea, tipo: selectedTipo, status: status, organizado: true,
-        data: q('capPrazo').value || null, horario: q('capHorario').value || null,
+        data: q('capPrazo').value || null, horario: normHorario(q('capHorario').value),
         duracao_min: q('capDuracao').value ? +q('capDuracao').value : null,
         prioridade: selectedPrioridade, responsavel: q('capResponsavel').value.trim() || null,
         proxima_acao: q('capProximaAcao').value.trim() || null, observacao: q('capObs').value.trim() || null,
@@ -882,9 +941,11 @@
         recorrencia: recorrenciaSel === 'nenhuma' ? null : { tipo: recorrenciaSel },
         pontos: selectedPrioridade === 'alta' ? 20 : selectedPrioridade === 'baixa' ? 8 : 10
       };
-      q('organizeSaveBtn').disabled = true;
-      sb.from('p30_tasks').insert(row).select().single().then(function (res) {
-        q('organizeSaveBtn').disabled = false;
+      var organizeBtnEl = q('organizeSaveBtn');
+      organizeBtnEl.disabled = true;
+      withSaveTimeout([organizeBtnEl], sb.from('p30_tasks').insert(row).select().single()).then(function (res) {
+        if (!res) return;
+        organizeBtnEl.disabled = false;
         if (res.error) { toast('Não consegui salvar. Tente de novo.'); console.error(res.error); return; }
         closeCapture();
         toast(isObrigacao ? 'Tarefa organizada.' : 'Registrado — isso não vira obrigação automaticamente.');
@@ -957,15 +1018,17 @@
 
     function submitReorganizeAdd() {
       var input = q('reorganizeAddInput');
+      var btn = q('reorganizeAddBtn');
       var titulo = input.value.trim();
       if (!titulo) { toast('Escreva algo antes de adicionar.'); return; }
-      input.disabled = true;
-      sb.from('p30_tasks').insert({
+      input.disabled = true; btn.disabled = true;
+      withSaveTimeout([input, btn], sb.from('p30_tasks').insert({
         user_id: state.user.id, cycle_id: state.cycle.id, titulo: titulo, texto_original: titulo,
         tipo: 'tarefa', status: 'pendente', organizado: true, pontos: 10
-      }).select().single().then(function (res) {
-        input.disabled = false;
-        if (res.error) { toast('Não consegui salvar.'); console.error(res.error); return; }
+      }).select().single()).then(function (res) {
+        if (!res) return;
+        input.disabled = false; btn.disabled = false;
+        if (res.error) { toast('Não consegui salvar.'); console.error('[30D] falha ao adicionar tarefa (reorganizar)', res.error); return; }
         input.value = '';
         lastTasks = [res.data].concat(lastTasks);
         var checkedCount = Object.keys(selected).filter(function (k) { return selected[k]; }).length;
@@ -977,23 +1040,37 @@
     q('reorganizeAddBtn').addEventListener('click', submitReorganizeAdd);
     q('reorganizeAddInput').addEventListener('keydown', function (e) { if (e.key === 'Enter') submitReorganizeAdd(); });
 
+    // Confere o resultado de CADA operação antes de dizer "reorganizado":
+    // antes disso o Promise.all ignorava erros individuais e mostrava
+    // "Seu dia foi reorganizado." mesmo quando uma ou todas as escolhas
+    // de missão falhavam ao salvar no servidor — a tela mentia pro usuário.
     q('reorganizeSaveBtn').addEventListener('click', function () {
       var chosenIds = Object.keys(selected).filter(function (k) { return selected[k]; });
       if (!chosenIds.length) { toast('Escolha ao menos uma missão.'); return; }
       var previouslyMissionIds = state.missions.map(function (m) { return m.task.id; });
       var toUnset = previouslyMissionIds.filter(function (id) { return chosenIds.indexOf(id) === -1; });
-      q('reorganizeSaveBtn').disabled = true;
+      var reorgBtn = q('reorganizeSaveBtn');
+      reorgBtn.disabled = true;
       var ops = [];
       chosenIds.forEach(function (id) {
         ops.push(sb.from('p30_tasks').update({ is_missao_hoje: true, missao_data: state.today, status: 'pendente' }).eq('id', id).eq('status', 'inbox'));
         ops.push(sb.from('p30_tasks').update({ is_missao_hoje: true, missao_data: state.today }).eq('id', id).neq('status', 'inbox'));
       });
       toUnset.forEach(function (id) { ops.push(sb.from('p30_tasks').update({ is_missao_hoje: false, missao_data: null }).eq('id', id)); });
-      Promise.all(ops).then(function () {
-        q('reorganizeSaveBtn').disabled = false;
+      withSaveTimeout([reorgBtn], Promise.all(ops)).then(function (results) {
+        if (!results) return;
+        reorgBtn.disabled = false;
+        var failed = results.filter(function (r) { return r && r.error; });
+        // Recarrega o estado real do servidor de qualquer forma — mesmo em
+        // falha parcial, a tela precisa refletir o que de fato foi salvo.
+        refreshDailyViews();
+        if (failed.length) {
+          failed.forEach(function (r) { console.error('[30D] falha ao reorganizar missão', r.error); });
+          toast('Parte das missões não foi salva. Confira e tente de novo.');
+          return;
+        }
         closeReorganize();
         toast('Seu dia foi reorganizado.');
-        refreshDailyViews();
       });
     });
   }
@@ -1064,10 +1141,11 @@
     function runAction(btn, promiseFn, successMsg) {
       if (btn.disabled) return;
       btn.disabled = true;
-      promiseFn().then(function (res) {
+      withSaveTimeout([btn], promiseFn()).then(function (res) {
+        if (!res) return;
         btn.disabled = false;
-        if (res && res.error) {
-          console.error(res.error);
+        if (res.error) {
+          console.error('[30D] falha ao executar ação da tarefa', res.error);
           toast('Não consegui salvar. Tente de novo.');
           return;
         }
@@ -1085,7 +1163,7 @@
       var prioChip = q('tmPrioridadeChips').querySelector('.chip.active');
       var patch = {
         titulo: titulo, area: areaChip ? areaChip.dataset.a : null,
-        data: q('tmData').value || null, horario: q('tmHorario').value || null,
+        data: q('tmData').value || null, horario: normHorario(q('tmHorario').value),
         prioridade: prioChip ? prioChip.dataset.p : null,
         proxima_acao: q('tmProximaAcao').value.trim() || null,
         pontos: q('tmPontos').value !== '' ? +q('tmPontos').value : 10
@@ -1213,12 +1291,14 @@
     if (!titulo) { toast('Escreva algo antes de adicionar.'); return; }
     var row = {
       user_id: state.user.id, cycle_id: state.cycle.id, titulo: titulo, texto_original: titulo,
-      tipo: 'tarefa', status: 'pendente', organizado: true, data: dateStr, horario: timeInput.value || null, pontos: 10
+      tipo: 'tarefa', status: 'pendente', organizado: true, data: dateStr, horario: normHorario(timeInput.value), pontos: 10
     };
-    input.disabled = true;
-    sb.from('p30_tasks').insert(row).then(function (res) {
-      input.disabled = false;
-      if (res.error) { toast('Não consegui salvar.'); console.error(res.error); return; }
+    var addBtn = q('weekDays').querySelector('.week-add-btn[data-day="' + dateStr + '"]');
+    input.disabled = true; if (addBtn) addBtn.disabled = true;
+    withSaveTimeout([input, addBtn], sb.from('p30_tasks').insert(row)).then(function (res) {
+      if (!res) return;
+      input.disabled = false; if (addBtn) addBtn.disabled = false;
+      if (res.error) { toast('Não consegui salvar.'); console.error('[30D] falha ao adicionar tarefa (semana)', res.error); return; }
       toast('Adicionada.');
       refreshDailyViews();
     });
@@ -1227,14 +1307,16 @@
   function toggleWeekTask(id) {
     var t = state.weekTasks.find(function (x) { return x.id === id; });
     if (!t) return;
-    var newStatus = t.status === 'concluida' ? 'pendente' : 'concluida';
-    t.status = newStatus;
-    renderWeek();
-    sb.from('p30_tasks').update({ status: newStatus, concluido_em: newStatus === 'concluida' ? new Date().toISOString() : null })
-      .eq('id', id).then(function (res) {
-        if (res.error) { console.error(res.error); return; }
-        refreshDailyViews();
-      });
+    var prevStatus = t.status;
+    var newStatus = prevStatus === 'concluida' ? 'pendente' : 'concluida';
+    guardedToggle('weektask-' + id,
+      function () { t.status = newStatus; renderWeek(); },
+      function () { t.status = prevStatus; renderWeek(); },
+      function () {
+        return sb.from('p30_tasks').update({ status: newStatus, concluido_em: newStatus === 'concluida' ? new Date().toISOString() : null }).eq('id', id);
+      },
+      function () { refreshDailyViews(); }
+    );
   }
 
   function openMoveSheet(taskId) {
@@ -1256,15 +1338,30 @@
   }
   function moveTaskTo(dateStr) {
     var t = state.weekTasks.find(function (x) { return x.id === moveTaskId; });
-    if (t) t.data = dateStr;
-    sb.from('p30_tasks').update({ data: dateStr }).eq('id', moveTaskId)
-      .then(function (res) {
-        if (res.error) { console.error(res.error); return; }
-        refreshDailyViews();
-      });
+    if (!t) { closeMoveSheet(); return; }
+    var prevData = t.data;
+    var movingId = moveTaskId;
+    t.data = dateStr;
     closeMoveSheet();
     renderWeek();
-    toast('Tarefa movida.');
+    withSaveTimeout([], sb.from('p30_tasks').update({ data: dateStr }).eq('id', movingId)).then(function (res) {
+      if (!res) {
+        var stillHere = state.weekTasks.find(function (x) { return x.id === movingId; });
+        if (stillHere) stillHere.data = prevData;
+        renderWeek();
+        return;
+      }
+      if (res.error) {
+        console.error('[30D] falha ao mover tarefa', res.error);
+        toast('Não consegui mover a tarefa. Tente de novo.');
+        var stillHere2 = state.weekTasks.find(function (x) { return x.id === movingId; });
+        if (stillHere2) stillHere2.data = prevData;
+        renderWeek();
+        return;
+      }
+      toast('Tarefa movida.');
+      refreshDailyViews();
+    });
   }
   function reloadWeek() {
     q('weekRangeLabel').textContent = 'Carregando…';
@@ -1458,14 +1555,17 @@
   }
 
   function toggleMilestoneDone(id) {
+    var busyKey = 'milestone-toggle-' + id;
+    if (busyKeys[busyKey]) return;
+    busyKeys[busyKey] = true;
     var m = gdState.milestones.filter(function (x) { return x.id === id; })[0];
-    if (!m) return;
+    if (!m) { delete busyKeys[busyKey]; return; }
     var prevPct = computeWeightedProgress(gdState.milestones);
     var novoConcluido = !m.concluido;
     var simulated = gdState.milestones.map(function (x) { return x.id === id ? Object.assign({}, x, { concluido: novoConcluido }) : x; });
     var newPct = computeWeightedProgress(simulated);
     var patch = { concluido: novoConcluido, data_conclusao: novoConcluido ? state.today : null };
-    sb.from('p30_goal_milestones').update(patch).eq('id', id).then(function (res) {
+    var req = sb.from('p30_goal_milestones').update(patch).eq('id', id).then(function (res) {
       if (res.error) throw res.error;
       return sb.from('p30_goal_progress_log').insert({
         user_id: state.user.id, goal_id: gdState.goal.id, milestone_id: id, data: state.today,
@@ -1476,28 +1576,39 @@
       loadGoalDetail(gdState.goal.id).then(renderGoalDetail);
       syncWeeklyWidgetsAfterGoalChange();
     }).catch(function (err) {
-      console.error(err);
+      console.error('[30D] falha ao concluir etapa', err);
       toast('Não consegui salvar. Tente de novo.');
     });
+    withSaveTimeout([], req).then(function () { delete busyKeys[busyKey]; }, function () { delete busyKeys[busyKey]; });
   }
 
   function reorderMilestone(id, dir) {
+    var busyKey = 'milestone-reorder-' + id;
+    if (busyKeys[busyKey]) return;
     var marcos = gdState.milestones.filter(function (m) { return m.tipo === 'marco'; }).sort(function (a, b) { return (a.ordem || 0) - (b.ordem || 0); });
     var idx = marcos.findIndex(function (m) { return m.id === id; });
     var swapIdx = idx + dir;
     if (idx < 0 || swapIdx < 0 || swapIdx >= marcos.length) return;
+    busyKeys[busyKey] = true;
     var a = marcos[idx], b = marcos[swapIdx];
     var ordemA = a.ordem, ordemB = b.ordem;
-    Promise.all([
+    var req = Promise.all([
       sb.from('p30_goal_milestones').update({ ordem: ordemB }).eq('id', a.id),
       sb.from('p30_goal_milestones').update({ ordem: ordemA }).eq('id', b.id)
     ]).then(function (results) {
-      if (results.some(function (r) { return r.error; })) { toast('Não consegui reordenar.'); return; }
+      if (results.some(function (r) { return r.error; })) {
+        console.error('[30D] falha ao reordenar etapa', results.filter(function (r) { return r.error; }).map(function (r) { return r.error; }));
+        toast('Não consegui reordenar. Tente de novo.');
+        return;
+      }
       loadGoalDetail(gdState.goal.id).then(renderGoalDetail);
     });
+    withSaveTimeout([], req).then(function () { delete busyKeys[busyKey]; }, function () { delete busyKeys[busyKey]; });
   }
 
   function saveMilestoneEdit(id) {
+    var busyKey = 'milestone-edit-' + id;
+    if (busyKeys[busyKey]) return;
     var row = document.getElementById('gdEditRow-' + id);
     if (!row) return;
     var titulo = row.querySelector('.gd-e-titulo').value.trim();
@@ -1509,22 +1620,28 @@
       proxima_acao: row.querySelector('.gd-e-proxima').value.trim() || null,
       observacao: row.querySelector('.gd-e-obs').value.trim() || null
     };
-    sb.from('p30_goal_milestones').update(patch).eq('id', id).then(function (res) {
-      if (res.error) { toast('Não consegui salvar.'); console.error(res.error); return; }
+    busyKeys[busyKey] = true;
+    var req = sb.from('p30_goal_milestones').update(patch).eq('id', id).then(function (res) {
+      if (res.error) { toast('Não consegui salvar.'); console.error('[30D] falha ao editar etapa', res.error); return; }
       toast('Etapa atualizada.');
       loadGoalDetail(gdState.goal.id).then(renderGoalDetail);
       syncWeeklyWidgetsAfterGoalChange();
     });
+    withSaveTimeout([], req).then(function () { delete busyKeys[busyKey]; }, function () { delete busyKeys[busyKey]; });
   }
 
   function removeMilestone(id) {
     if (!window.confirm('Remover esta etapa? O progresso é recalculado sem ela.')) return;
-    sb.from('p30_goal_milestones').delete().eq('id', id).then(function (res) {
-      if (res.error) { toast('Não consegui remover.'); console.error(res.error); return; }
+    var busyKey = 'milestone-remove-' + id;
+    if (busyKeys[busyKey]) return;
+    busyKeys[busyKey] = true;
+    var req = sb.from('p30_goal_milestones').delete().eq('id', id).then(function (res) {
+      if (res.error) { toast('Não consegui remover.'); console.error('[30D] falha ao remover etapa', res.error); return; }
       toast('Etapa removida.');
       loadGoalDetail(gdState.goal.id).then(renderGoalDetail);
       syncWeeklyWidgetsAfterGoalChange();
     });
+    withSaveTimeout([], req).then(function () { delete busyKeys[busyKey]; }, function () { delete busyKeys[busyKey]; });
   }
 
   // Não existe uma coluna "é o TCC" no banco — ele é só mais uma meta.
@@ -1549,6 +1666,8 @@
       if (!gdState.goal) return;
       var titulo = q('gdNewTitulo').value.trim();
       if (!titulo) { toast('Dê um título pra etapa.'); return; }
+      var addBtn = q('gdAddMilestoneBtn');
+      if (addBtn.disabled) return;
       var marcos = gdState.milestones.filter(function (m) { return m.tipo === 'marco'; });
       var maxOrdem = marcos.reduce(function (mx, m) { return Math.max(mx, m.ordem || 0); }, 0);
       var row = {
@@ -1556,8 +1675,11 @@
         peso: q('gdNewPeso').value !== '' ? +q('gdNewPeso').value : null,
         prazo: q('gdNewPrazo').value || null, ordem: maxOrdem + 1
       };
-      sb.from('p30_goal_milestones').insert(row).then(function (res) {
-        if (res.error) { toast('Não consegui adicionar.'); console.error(res.error); return; }
+      addBtn.disabled = true;
+      withSaveTimeout([addBtn], sb.from('p30_goal_milestones').insert(row)).then(function (res) {
+        if (!res) return;
+        addBtn.disabled = false;
+        if (res.error) { toast('Não consegui adicionar.'); console.error('[30D] falha ao adicionar etapa', res.error); return; }
         q('gdNewTitulo').value = ''; q('gdNewPeso').value = ''; q('gdNewPrazo').value = '';
         toast('Etapa adicionada.');
         loadGoalDetail(gdState.goal.id).then(renderGoalDetail);
@@ -1566,6 +1688,8 @@
     });
     q('gdSessaoSaveBtn').addEventListener('click', function () {
       if (!gdState.goal) return;
+      var sessaoBtn = q('gdSessaoSaveBtn');
+      if (sessaoBtn.disabled) return;
       var dur = q('gdSessaoDuracao').value;
       var obs = q('gdSessaoObs').value.trim();
       var titulo = 'Sessão de trabalho' + (obs ? ' — ' + obs : '');
@@ -1575,8 +1699,11 @@
         status: 'concluida', organizado: true, data: state.today,
         duracao_min: dur !== '' ? +dur : null, concluido_em: new Date().toISOString(), pontos: 10
       };
-      sb.from('p30_tasks').insert(row).then(function (res) {
-        if (res.error) { toast('Não consegui registrar.'); console.error(res.error); return; }
+      sessaoBtn.disabled = true;
+      withSaveTimeout([sessaoBtn], sb.from('p30_tasks').insert(row)).then(function (res) {
+        if (!res) return;
+        sessaoBtn.disabled = false;
+        if (res.error) { toast('Não consegui registrar.'); console.error('[30D] falha ao registrar sessão', res.error); return; }
         q('gdSessaoDuracao').value = ''; q('gdSessaoObs').value = '';
         toast('Sessão registrada.');
         loadGoalDetail(gdState.goal.id).then(renderGoalDetail);
@@ -1605,12 +1732,17 @@
     q('braindumpSaveBtn').addEventListener('click', function () {
       var texto = q('braindumpText').value.trim();
       if (!texto) { closeBraindump(); return; }
+      var bdBtn = q('braindumpSaveBtn');
+      if (bdBtn.disabled) return;
       var titulo = texto.length > 60 ? texto.slice(0, 57) + '…' : texto;
-      sb.from('p30_tasks').insert({
+      bdBtn.disabled = true;
+      withSaveTimeout([bdBtn], sb.from('p30_tasks').insert({
         user_id: state.user.id, titulo: titulo, texto_original: texto,
         tipo: 'pensamento', status: 'registrado', organizado: false, pontos: 0
-      }).then(function (res) {
-        if (res.error) { toast('Não consegui registrar.'); console.error(res.error); return; }
+      })).then(function (res) {
+        if (!res) return;
+        bdBtn.disabled = false;
+        if (res.error) { toast('Não consegui registrar.'); console.error('[30D] falha ao registrar pensamento', res.error); return; }
         closeBraindump();
         toast('Registrado como pensamento — não virou tarefa.');
       });
@@ -1693,10 +1825,13 @@
       var algoPreenchido = row.energia || row.humor || row.ansiedade || row.clareza_mental ||
         row.qualidade_sono || row.horas_dormidas != null || row.estado || row.pensamento;
       if (!algoPreenchido) { toast('Marque ao menos alguma coisa antes de registrar.'); return; }
-      q('checkinSaveBtn').disabled = true;
-      sb.from('p30_checkins').insert(row).then(function (res) {
-        q('checkinSaveBtn').disabled = false;
-        if (res.error) { toast('Não consegui registrar o check-in.'); console.error(res.error); return; }
+      var checkinBtnEl = q('checkinSaveBtn');
+      if (checkinBtnEl.disabled) return;
+      checkinBtnEl.disabled = true;
+      withSaveTimeout([checkinBtnEl], sb.from('p30_checkins').insert(row)).then(function (res) {
+        if (!res) return;
+        checkinBtnEl.disabled = false;
+        if (res.error) { toast('Não consegui registrar o check-in.'); console.error('[30D] falha ao registrar check-in', res.error); return; }
         closeCheckin();
         toast('Check-in registrado.');
         loadTodayCheckin().then(renderInfoChips);
@@ -1710,13 +1845,18 @@
   // ============================================================
   function initEndDay() {
     q('endDayBtn').addEventListener('click', function () {
-      sb.from('p30_daily_scores').upsert({
+      var endDayBtnEl = q('endDayBtn');
+      if (endDayBtnEl.disabled) return;
+      endDayBtnEl.disabled = true;
+      withSaveTimeout([endDayBtnEl], sb.from('p30_daily_scores').upsert({
         user_id: state.user.id, data: state.today, pontos_total: state.score.pontos, pontos_cap: CAP,
         fechado: true, fechado_em: new Date().toISOString(),
         missoes_concluidas: state.missions.filter(function (m) { return m.done; }).length, missoes_total: state.missions.length,
         habitos_concluidos: state.habits.filter(function (h) { return h.done; }).length, habitos_total: state.habits.length
-      }, { onConflict: 'user_id,data' }).then(function (res) {
-        if (res.error) { toast('Não consegui encerrar o dia.'); console.error(res.error); return; }
+      }, { onConflict: 'user_id,data' })).then(function (res) {
+        if (!res) return;
+        endDayBtnEl.disabled = false;
+        if (res.error) { toast('Não consegui encerrar o dia.'); console.error('[30D] falha ao encerrar o dia', res.error); return; }
         toast('Dia encerrado. O modo noturno completo chega na Fase 3.');
       });
     });
@@ -1753,13 +1893,19 @@
     }
     q('newCycleBtn').addEventListener('click', function () {
       if (!window.confirm('Encerrar o ciclo atual e começar um novo de 30 dias a partir de hoje?')) return;
-      sb.from('p30_cycles').update({ ativo: false }).eq('id', state.cycle.id).then(function () {
+      var newCycleBtnEl = q('newCycleBtn');
+      if (newCycleBtnEl.disabled) return;
+      newCycleBtnEl.disabled = true;
+      withSaveTimeout([newCycleBtnEl], sb.from('p30_cycles').update({ ativo: false }).eq('id', state.cycle.id).then(function (resOff) {
+        if (resOff.error) return resOff;
         return sb.from('p30_cycles').insert({
           user_id: state.user.id, nome: 'Novo ciclo', data_inicio: state.today,
           data_fim: addDaysStr(state.today, CYCLE_LENGTH_DAYS - 1), timezone: state.tz, ativo: true
         }).select().single();
-      }).then(function (res) {
-        if (res.error) { toast('Não consegui iniciar o novo ciclo.'); console.error(res.error); return; }
+      })).then(function (res) {
+        if (!res) return;
+        newCycleBtnEl.disabled = false;
+        if (res.error) { toast('Não consegui iniciar o novo ciclo.'); console.error('[30D] falha ao iniciar novo ciclo', res.error); return; }
         state.cycle = res.data;
         renderSettingsCycle();
         renderHeader();
@@ -1794,14 +1940,20 @@
           btn.addEventListener('click', function () {
             var row = btn.closest('.mini-row'); var id = row.dataset.id;
             var newOn = !btn.classList.contains('on');
-            sb.from('p30_routines').update({ ativo: newOn }).eq('id', id).then(function () { renderRoutinesAdmin(); loadRoutinesToday().then(renderRoutinesToday); });
+            sb.from('p30_routines').update({ ativo: newOn }).eq('id', id).then(function (res) {
+              if (res.error) { toast('Não consegui salvar. Tente de novo.'); console.error('[30D] falha ao ativar/desativar rotina', res.error); return; }
+              renderRoutinesAdmin(); loadRoutinesToday().then(renderRoutinesToday);
+            });
           });
         });
         Array.prototype.forEach.call(el.routinesAdminList.querySelectorAll('[data-act=del]'), function (btn) {
           btn.addEventListener('click', function () {
             var row = btn.closest('.mini-row'); var id = row.dataset.id;
             if (!window.confirm('Excluir esta rotina?')) return;
-            sb.from('p30_routines').delete().eq('id', id).then(function () { renderRoutinesAdmin(); loadRoutinesToday().then(renderRoutinesToday); });
+            sb.from('p30_routines').delete().eq('id', id).then(function (res) {
+              if (res.error) { toast('Não consegui excluir. Tente de novo.'); console.error('[30D] falha ao excluir rotina', res.error); return; }
+              renderRoutinesAdmin(); loadRoutinesToday().then(renderRoutinesToday);
+            });
           });
         });
       });
@@ -1810,13 +1962,18 @@
       var titulo = q('routineTitulo').value.trim();
       if (!titulo) { toast('Dê um título para a rotina.'); return; }
       if (!routineDays.length) { toast('Escolha ao menos um dia da semana.'); return; }
+      var addRoutineBtnEl = q('addRoutineBtn');
+      if (addRoutineBtnEl.disabled) return;
       var row = {
         user_id: state.user.id, titulo: titulo, area: q('routineArea').value || null,
-        dias_semana: routineDays, horario: q('routineHorario').value || null,
+        dias_semana: routineDays, horario: normHorario(q('routineHorario').value),
         pontos: q('routinePontos').value ? +q('routinePontos').value : 10, ativo: true
       };
-      sb.from('p30_routines').insert(row).then(function (res) {
-        if (res.error) { toast('Não consegui salvar a rotina.'); console.error(res.error); return; }
+      addRoutineBtnEl.disabled = true;
+      withSaveTimeout([addRoutineBtnEl], sb.from('p30_routines').insert(row)).then(function (res) {
+        if (!res) return;
+        addRoutineBtnEl.disabled = false;
+        if (res.error) { toast('Não consegui salvar a rotina.'); console.error('[30D] falha ao criar rotina', res.error); return; }
         q('routineTitulo').value = ''; q('routineHorario').value = ''; q('routinePontos').value = '';
         renderRoutinesAdmin();
         loadRoutinesToday().then(function () { renderRoutinesToday(); renderScore(); });
@@ -1840,25 +1997,31 @@
     q('addGoalBtn').addEventListener('click', function () {
       var titulo = q('goalTitulo').value.trim();
       if (!titulo) { toast('Dê um título para a meta.'); return; }
+      var addGoalBtnEl = q('addGoalBtn');
+      if (addGoalBtnEl.disabled) return;
       var row = {
         user_id: state.user.id, cycle_id: state.cycle.id, titulo: titulo, area: q('goalArea').value || null,
         prazo_final: q('goalPrazo').value || null, medida_tipo: q('goalMedidaTipo').value,
         meta_valor: q('goalMetaValor').value ? +q('goalMetaValor').value : null, status: 'ativa'
       };
       var etapaTitulo = q('goalEtapaTitulo').value.trim();
-      sb.from('p30_goals').insert(row).select().single().then(function (res) {
-        if (res.error) { toast('Não consegui salvar a meta.'); console.error(res.error); return; }
+      addGoalBtnEl.disabled = true;
+      withSaveTimeout([addGoalBtnEl], sb.from('p30_goals').insert(row).select().single()).then(function (res) {
+        if (!res) return;
+        if (res.error) { addGoalBtnEl.disabled = false; toast('Não consegui salvar a meta.'); console.error('[30D] falha ao criar meta', res.error); return; }
         var goal = res.data;
         var after = etapaTitulo
           ? sb.from('p30_goal_milestones').insert({ goal_id: goal.id, user_id: state.user.id, titulo: etapaTitulo, tipo: 'etapa_semanal', prazo: q('goalEtapaPrazo').value || null })
-          : Promise.resolve();
-        after.then(function () {
+          : Promise.resolve({ error: null });
+        after.then(function (res2) {
+          addGoalBtnEl.disabled = false;
+          if (res2 && res2.error) { toast('Meta criada, mas a etapa não foi salva.'); console.error('[30D] falha ao criar etapa inicial da meta', res2.error); }
           q('goalTitulo').value = ''; q('goalPrazo').value = ''; q('goalMetaValor').value = ''; q('goalEtapaTitulo').value = ''; q('goalEtapaPrazo').value = '';
           loadGoals().then(function () {
             computeWeeklyMilestone(); computeDeadlineChip();
             renderGoalsAdmin(); renderWeeklyGoal(); renderInfoChips();
           });
-          toast('Meta criada.');
+          if (!(res2 && res2.error)) toast('Meta criada.');
         });
       });
     });
@@ -2058,7 +2221,12 @@
         btn.addEventListener('click', function (e) { e.stopPropagation(); toggleDiscard(btn.dataset.discard); });
       });
       Array.prototype.forEach.call(q('setupGroups').querySelectorAll('[data-confirm-group]'), function (btn) {
-        btn.addEventListener('click', function (e) { e.stopPropagation(); confirmGroup(btn.dataset.confirmGroup); });
+        btn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          if (btn.disabled) return;
+          btn.disabled = true;
+          confirmGroup(btn.dataset.confirmGroup).then(function () { btn.disabled = false; });
+        });
       });
     }
 
@@ -2102,17 +2270,18 @@
         var cb = q('setupGroups').querySelector('[data-check="' + d.slug + '"]');
         if (cb && cb.checked) checkedSlugs.push(d.slug);
       });
-      if (!checkedSlugs.length) { toast('Nada marcado pra confirmar neste bloco.'); return; }
+      if (!checkedSlugs.length) { toast('Nada marcado pra confirmar neste bloco.'); return Promise.resolve(); }
       checkedSlugs.sort(function (a, b) {
         var da = defBySlug(a).dependsOn ? 1 : 0, db = defBySlug(b).dependsOn ? 1 : 0;
         return da - db;
       });
       var chain = Promise.resolve();
+      var setupFailures = [];
       checkedSlugs.forEach(function (slug) {
-        chain = chain.then(function () { return confirmOne(slug); }).catch(function (err) { console.error('[30D setup]', slug, err); });
+        chain = chain.then(function () { return confirmOne(slug); }).catch(function (err) { console.error('[30D setup]', slug, err); setupFailures.push(slug); });
       });
-      chain.then(function () {
-        toast('Confirmado.');
+      return chain.then(function () {
+        toast(setupFailures.length ? 'Parte dos itens não foi confirmada. Tente de novo.' : 'Confirmado.');
         return loadProposals();
       }).then(function () {
         renderSetup();
@@ -2125,25 +2294,30 @@
 
     function undoSetup() {
       if (!window.confirm('Remover tudo que foi criado pela carga inicial? Isso não afeta o que você criou manualmente.')) return;
+      var undoBtnEl = q('undoSetupBtn');
+      if (undoBtnEl.disabled) return;
+      undoBtnEl.disabled = true;
       sb.from('p30_setup_proposals').select('*').eq('user_id', state.user.id).eq('status', 'confirmado').then(function (res) {
-        if (res.error) { toast('Não consegui verificar a carga inicial.'); console.error(res.error); return; }
+        if (res.error) { undoBtnEl.disabled = false; toast('Não consegui verificar a carga inicial.'); console.error(res.error); return; }
         var rows = res.data || [];
-        if (!rows.length) { toast('Não há nada confirmado pra desfazer.'); return; }
+        if (!rows.length) { undoBtnEl.disabled = false; toast('Não há nada confirmado pra desfazer.'); return; }
         rows.sort(function (a, b) {
           var da = defBySlug(a.slug), db = defBySlug(b.slug);
           var ra = (da && da.dependsOn) ? 0 : 1, rb = (db && db.dependsOn) ? 0 : 1;
           return ra - rb;
         });
         var chain = Promise.resolve();
+        var undoFailures = [];
         rows.forEach(function (p) {
           chain = chain.then(function () {
             return sb.from(p.created_target_table).delete().eq('id', p.created_target_id).then(function () {
               return sb.from('p30_setup_proposals').update({ status: 'sugerido', created_target_id: null, created_target_table: null }).eq('id', p.id);
             });
-          }).catch(function (err) { console.error('[30D setup undo]', p.slug, err); });
+          }).catch(function (err) { console.error('[30D setup undo]', p.slug, err); undoFailures.push(p.slug); });
         });
         chain.then(function () {
-          toast('Carga inicial desfeita.');
+          undoBtnEl.disabled = false;
+          toast(undoFailures.length ? 'Parte da carga inicial não foi desfeita. Tente de novo.' : 'Carga inicial desfeita.');
           loadEverything();
         });
       });
@@ -2169,12 +2343,14 @@
       if (!academiaDays.length) { toast('Escolha ao menos um dia.'); return; }
       var row = {
         user_id: state.user.id, titulo: 'Academia', area: 'corpo', dias_semana: academiaDays.slice(),
-        horario: q('academiaHorario').value || null, pontos: 20, ativo: true
+        horario: normHorario(q('academiaHorario').value), pontos: 20, ativo: true
       };
-      q('academiaSaveBtn').disabled = true;
-      sb.from('p30_routines').insert(row).then(function (res) {
-        q('academiaSaveBtn').disabled = false;
-        if (res.error) { toast('Não consegui salvar a rotina da academia.'); console.error(res.error); return; }
+      var academiaBtnEl = q('academiaSaveBtn');
+      academiaBtnEl.disabled = true;
+      withSaveTimeout([academiaBtnEl], sb.from('p30_routines').insert(row)).then(function (res) {
+        if (!res) return;
+        academiaBtnEl.disabled = false;
+        if (res.error) { toast('Não consegui salvar a rotina da academia.'); console.error('[30D] falha ao salvar rotina da academia', res.error); return; }
         toast('Rotina da academia confirmada.');
         Array.prototype.forEach.call(q('academiaDayChips').querySelectorAll('.chip'), function (c) { c.classList.remove('active'); });
         academiaDays = [];
