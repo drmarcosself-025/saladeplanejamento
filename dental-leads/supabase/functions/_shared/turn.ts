@@ -37,9 +37,26 @@ export interface BatchMessage {
   links: string[] | null;
 }
 
+export interface Batch {
+  messages: BatchMessage[];
+  /**
+   * Contador da conversa no exato momento em que este batch foi lido — na
+   * MESMA consulta que leu as mensagens, então os dois são sempre
+   * consistentes entre si (nunca uma mensagem "no batch mas com revisão
+   * velha"). É isto que o turno carrega como input_revision.
+   */
+  revision: number;
+}
+
 export interface ValidityResult {
   valid: boolean;
   reason: string;
+}
+
+export interface ReserveResult {
+  reserved: boolean;
+  reason: string;
+  messageId: string | null;
 }
 
 /** Identifica esta invocação do worker. É a posse do lease. */
@@ -107,23 +124,29 @@ export async function renewLease(
   return data === true;
 }
 
-/** Mensagens IN ainda elegíveis do lead, em ordem cronológica estável. */
-export async function fetchBatch(
-  supabase: SupabaseClient,
-  leadId: string,
-): Promise<BatchMessage[]> {
+/**
+ * Mensagens IN ainda elegíveis do lead, em ordem cronológica estável, mais a
+ * revisão da conversa lida na mesma consulta (ver comentário em Batch).
+ */
+export async function fetchBatch(supabase: SupabaseClient, leadId: string): Promise<Batch> {
   const { data, error } = await supabase.rpc("fetch_batch", { p_lead_id: leadId });
   if (error) throw new Error(`fetch_batch: ${error.message}`);
-  return (data ?? []) as BatchMessage[];
+  const rows = (data ?? []) as Array<BatchMessage & { conversation_revision: number }>;
+  return {
+    messages: rows.map(({ conversation_revision, ...message }) => message),
+    revision: Number(rows[0]?.conversation_revision ?? 0),
+  };
 }
 
 /**
- * A pergunta do item 53, em uma ida ao banco. Chamada pós-IA, antes da
- * primeira bolha e antes de cada bolha seguinte.
+ * Checkpoint de LEITURA — não escreve nada. Usado pós-IA e como filtro barato
+ * antes de gastar uma consulta de rate limit. Quem de fato PROTEGE o envio é
+ * reserveOutboundBubble: esta função só evita trabalho desperdiçado quando já
+ * dá para saber que o turno morreu.
  *
  * Verifica, nesta ordem: posse do lease · lead existe · human takeover ·
- * automação elegível para este tipo de envio · needs_human · mensagem nova
- * fora do batch.
+ * automação elegível para este tipo de envio · needs_human · revisão da
+ * conversa (O(1)) · mensagem nova fora do batch (defesa em profundidade).
  */
 export async function assertTurnStillValid(
   supabase: SupabaseClient,
@@ -132,6 +155,7 @@ export async function assertTurnStillValid(
     workerId: string;
     leadId: string;
     batchIds: string[];
+    inputRevision: number;
     purpose: SendPurpose;
   },
 ): Promise<ValidityResult> {
@@ -140,6 +164,7 @@ export async function assertTurnStillValid(
     p_worker_id: input.workerId,
     p_lead_id: input.leadId,
     p_batch_ids: input.batchIds,
+    p_input_revision: input.inputRevision,
     p_purpose: input.purpose,
   });
 
@@ -152,6 +177,55 @@ export async function assertTurnStillValid(
 
   const result = data as ValidityResult | null;
   return { valid: result?.valid === true, reason: result?.reason ?? "desconhecido" };
+}
+
+/**
+ * O portão atômico de verdade: checa posse do lease + revisão + takeover +
+ * duplicidade E grava a bolha, tudo numa única transação no banco (a linha do
+ * job fica travada por FOR UPDATE durante a função inteira). Fecha a janela
+ * que assertTurnStillValid sozinho não fecha — entre "confirmei que posso" e
+ * "gravei", não existe mais um intervalo em que outro worker possa assumir.
+ */
+export async function reserveOutboundBubble(
+  supabase: SupabaseClient,
+  input: {
+    jobId: number;
+    workerId: string;
+    leadId: string;
+    inputRevision: number;
+    batchIds: string[];
+    purpose: SendPurpose;
+    turnId: string;
+    sequence: number;
+    text: string;
+    contentHash: string;
+  },
+): Promise<ReserveResult> {
+  const { data, error } = await supabase.rpc("reserve_outbound_bubble", {
+    p_job_id: input.jobId,
+    p_worker_id: input.workerId,
+    p_lead_id: input.leadId,
+    p_input_revision: input.inputRevision,
+    p_batch_ids: input.batchIds,
+    p_purpose: input.purpose,
+    p_turn_id: input.turnId,
+    p_sequence: input.sequence,
+    p_text: input.text,
+    p_content_hash: input.contentHash,
+    p_dedupe_seconds: config.turn.outboxDedupeSeconds,
+  });
+
+  if (error) {
+    log("reserve_outbound_bubble_falhou", { jobId: input.jobId, erro: error.message });
+    return { reserved: false, reason: `checagem_indisponivel:${error.message}`, messageId: null };
+  }
+
+  const result = data as { reserved?: boolean; reason?: string; message_id?: string } | null;
+  return {
+    reserved: result?.reserved === true,
+    reason: result?.reason ?? "desconhecido",
+    messageId: result?.message_id ?? null,
+  };
 }
 
 /** Traduz o motivo da invalidação no desfecho que vai para a auditoria. */

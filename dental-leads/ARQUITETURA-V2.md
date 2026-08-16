@@ -526,10 +526,12 @@ local, porque lock e corrida não se testam com mock.
 
 ## Estado da implementação
 
-### Fase 1 — cronologia, debounce, lock por lead e batch ✅
+### Fase 1 — cronologia, debounce, lock por lead e batch ✅ (auditada)
 
 Entregue em `0003_turn_engine.sql` + `_shared/turn.ts` + reescrita do
-`lead-worker`. As emendas da revisão estão todas dentro:
+`lead-worker`. Auditada em seguida (ver seção abaixo); dois gaps reais foram
+encontrados e corrigidos em `0004_revision_and_fencing.sql` antes de a fase
+ser dada como sólida. As emendas da revisão original estão todas dentro:
 
 | Emenda | Onde ficou |
 |---|---|
@@ -578,6 +580,33 @@ Dois defeitos reais apareceram só quando o SQL rodou de verdade:
    parede, ficava marginalmente à frente do `now()` do claim e o turno nascia
    inelegível. Passou a ser `now()`; a espera da rajada é responsabilidade
    exclusiva do `run_after`.
+
+#### Auditoria pós-F1 → `0004_revision_and_fencing.sql`
+
+Uma auditoria dedicada (antes de iniciar F2) comparou a F1 entregue contra três
+exigências que a primeira aprovação não tinha deixado explícitas. Duas eram
+gaps reais, corrigidos; a terceira já estava coberta. Ver `AUDITORIA_F1.md`
+para o relatório completo (A–H).
+
+- **`conversation_revision` / `input_revision`** — a detecção de stale
+  dependia só de um `NOT EXISTS` (varredura). Adicionado contador monotônico
+  em `leads`, incrementado atomicamente em toda mensagem IN genuína
+  (`ingest_inbound_message`). `fetch_batch` devolve a revisão na MESMA
+  consulta que lê as mensagens — importa: se fosse lida em instrução separada,
+  uma mensagem chegando entre as duas faria o turno se descartar por engano
+  mesmo com o batch completo. O `NOT EXISTS` foi mantido como defesa em
+  profundidade, não removido.
+- **Fencing / posse do lease no momento da escrita** — `assert_turn_valid`
+  confirmava posse e a escrita da bolha acontecia numa chamada SEPARADA logo
+  depois: havia uma janela real (TOCTOU) entre as duas. Nova RPC
+  `reserve_outbound_bubble` faz a checagem completa (lease, revisão,
+  takeover, duplicidade) E o `INSERT` numa única transação, com a linha do
+  job travada por `FOR UPDATE` durante toda a função. Verificado sob
+  concorrência real (não só script serial): 10–12 processos simultâneos
+  disputando a mesma reserva, sempre exatamente 1 sucesso.
+- **`processed` boolean → `consumed_at` + `consumed_by_turn_id`** — a coluna
+  ambígua foi removida (não apenas deprecada). Toda auditoria de "qual turno
+  consumiu esta mensagem" responde por `consumed_by_turn_id`.
 
 ### Fases seguintes (desenho aprovado, ainda não implementado)
 

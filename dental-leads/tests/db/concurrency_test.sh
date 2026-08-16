@@ -82,10 +82,80 @@ begin
 end $$;
 SQL
 
-echo "== limpando"
+echo "== limpando cenário 1"
 $PSQL <<'SQL'
 delete from public.jobs where lead_id in (
   select id from public.leads where whatsapp_id like '55119999900%@s.whatsapp.net'
 );
 delete from public.leads where whatsapp_id like '55119999900%@s.whatsapp.net';
 SQL
+
+# ============================================================================
+# Cenário 2 — fencing sob concorrência REAL, não apenas em script serial.
+#
+# O teste transacional (turn_engine_test.sql) prova a LÓGICA de
+# reserve_outbound_bubble chamando-a em sequência. Aqui, N processos disputam
+# a MESMA reserva (mesmo job, mesmo worker, mesmo conteúdo) ao mesmo tempo de
+# verdade — é o FOR UPDATE na linha do job que precisa serializar isso.
+# Esperado: exatamente 1 "reserved":true, o resto "duplicado" (nunca duas
+# linhas de bolha idênticas, nunca dois workers pensando que reservaram).
+# ============================================================================
+echo "== preparando cenário 2 (fencing sob concorrência real)"
+LEAD_ID=$($PSQL -c "
+  select (public.ingest_inbound_message(
+    '5511999990020@s.whatsapp.net', '5511999990020', false, 'Fencing',
+    'FENCE-1', 'TEXT', 'Oi', '{}'::jsonb, now(), 'h-fence1', null, null, false, null, 5, 30)
+  )->>'lead_id';
+")
+LEAD_ID=$(echo "$LEAD_ID" | tr -d '[:space:]')
+
+$PSQL -c "update public.jobs set run_after = now() where lead_id = '$LEAD_ID' and status = 'PENDING';" > /dev/null
+CLAIM=$($PSQL -c "select job_id, turn_id from public.claim_lead_jobs('worker-fence', 1, 120);")
+JOB_ID=$(echo "$CLAIM" | awk -F'|' 'NR==1{gsub(/ /,"",$1); print $1}')
+TURN_ID=$(echo "$CLAIM" | awk -F'|' 'NR==1{gsub(/ /,"",$2); print $2}')
+
+echo "== $WORKERS chamadas simultâneas de reserve_outbound_bubble para o mesmo job/conteúdo"
+tmp2=$(mktemp -d)
+for i in $(seq 1 "$WORKERS"); do
+  (
+    $PSQL -c "
+      select (public.reserve_outbound_bubble(
+        p_job_id => $JOB_ID, p_worker_id => 'worker-fence', p_lead_id => '$LEAD_ID',
+        p_input_revision => 1, p_batch_ids => (select array_agg(id) from public.messages where lead_id = '$LEAD_ID' and direction = 'IN'),
+        p_purpose => 'AI_REPLY', p_turn_id => '$TURN_ID', p_sequence => 1,
+        p_text => 'Claro 😊', p_content_hash => 'hash-fence-bolha', p_dedupe_seconds => 120
+      ))->>'reserved';
+    " > "$tmp2/r$i.out" 2>&1
+  ) &
+done
+wait
+
+reserved_count=0
+for i in $(seq 1 "$WORKERS"); do
+  # ->>'reserved' extrai o booleano do jsonb como texto JSON ("true"/"false"),
+  # não como boolean do Postgres ("t"/"f") — são representações diferentes.
+  val=$(tr -d '[:space:]' < "$tmp2/r$i.out")
+  if [ "$val" = "true" ]; then reserved_count=$((reserved_count + 1)); fi
+done
+rm -rf "$tmp2"
+
+echo "reservas bem-sucedidas: $reserved_count (esperado: exatamente 1)"
+
+$PSQL -c "
+do \$\$
+declare v_count int;
+begin
+  select count(*) into v_count from public.messages
+   where lead_id = '$LEAD_ID' and direction = 'OUT' and content_hash = 'hash-fence-bolha';
+  if v_count <> 1 then
+    raise exception 'FALHOU: deveria existir exatamente 1 bolha gravada sob concorrência real, há %', v_count;
+  end if;
+  raise notice 'FENCING SOB CONCORRÊNCIA REAL OK: % chamada(s) simultânea(s), 1 única bolha gravada', $WORKERS;
+end \$\$;
+"
+
+echo "== limpando cenário 2"
+$PSQL -c "
+delete from public.jobs where lead_id = '$LEAD_ID';
+delete from public.leads where id = '$LEAD_ID';
+"

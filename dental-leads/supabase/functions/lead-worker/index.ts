@@ -32,6 +32,7 @@ import {
   outcomeForInvalidTurn,
   reclaimExpiredJobs,
   renewLease,
+  reserveOutboundBubble,
   type SendPurpose,
   sleep,
   type TurnOutcome,
@@ -53,6 +54,7 @@ interface DecisionInput {
   leadId: string;
   turnId: string;
   batchIds: string[];
+  inputRevision: number;
   intent?: string | null;
   risk?: "LOW" | "MEDIUM" | "HIGH" | null;
   confidence?: number | null;
@@ -164,7 +166,8 @@ async function runTurn(
 ): Promise<TurnResult> {
   const lead = await loadLead(supabase, turn.leadId);
 
-  const batch: BatchMessage[] = await fetchBatch(supabase, turn.leadId);
+  const { messages: batch, revision }: { messages: BatchMessage[]; revision: number } =
+    await fetchBatch(supabase, turn.leadId);
   const batchIds = batch.map((message) => message.id);
 
   // Turno sem trabalho: o takeover ou um turno anterior já consumiu as
@@ -207,6 +210,7 @@ async function runTurn(
         jobId: turn.jobId,
         workerId,
         batchIds,
+        revision,
         text: pre.handoffMessage,
         sequence: 1,
         purpose: "HANDOFF",
@@ -223,6 +227,7 @@ async function runTurn(
           leadId: lead.id,
           turnId: turn.turnId,
           batchIds,
+      inputRevision: revision,
           action: "IGNORE",
           stageBefore: lead.stage,
           stageAfter: lead.stage,
@@ -242,6 +247,7 @@ async function runTurn(
           leadId: lead.id,
           turnId: turn.turnId,
           batchIds,
+      inputRevision: revision,
           action: "HUMAN",
           stageBefore: lead.stage,
           stageAfter: lead.stage,
@@ -266,6 +272,7 @@ async function runTurn(
       leadId: lead.id,
       turnId: turn.turnId,
       batchIds,
+      inputRevision: revision,
       risk: pre.category === "RED" ? "HIGH" : pre.category === "YELLOW" ? "MEDIUM" : "LOW",
       action: pre.needsHuman ? "HUMAN" : "IGNORE",
       stageBefore: lead.stage,
@@ -320,6 +327,7 @@ async function runTurn(
       leadId: lead.id,
       turnId: turn.turnId,
       batchIds,
+      inputRevision: revision,
       action: "HUMAN",
       stageBefore: lead.stage,
       stageAfter: lead.stage,
@@ -354,6 +362,7 @@ async function runTurn(
       leadId: lead.id,
       turnId: turn.turnId,
       batchIds,
+      inputRevision: revision,
       intent: suggestion.intent,
       risk: suggestion.risk,
       confidence: suggestion.confidence,
@@ -376,6 +385,7 @@ async function runTurn(
     workerId,
     leadId: lead.id,
     batchIds,
+    inputRevision: revision,
     purpose,
   });
 
@@ -387,6 +397,7 @@ async function runTurn(
       leadId: lead.id,
       turnId: turn.turnId,
       batchIds,
+      inputRevision: revision,
       intent: suggestion.intent,
       risk: suggestion.risk,
       confidence: suggestion.confidence,
@@ -421,6 +432,7 @@ async function runTurn(
       leadId: lead.id,
       turnId: turn.turnId,
       batchIds,
+      inputRevision: revision,
       intent: suggestion.intent,
       risk: suggestion.risk,
       confidence: suggestion.confidence,
@@ -444,6 +456,7 @@ async function runTurn(
     jobId: turn.jobId,
     workerId,
     batchIds,
+    revision,
     text: textToSend,
     sequence: 1,
     purpose,
@@ -458,6 +471,7 @@ async function runTurn(
       leadId: lead.id,
       turnId: turn.turnId,
       batchIds,
+      inputRevision: revision,
       intent: suggestion.intent,
       risk: suggestion.risk,
       confidence: suggestion.confidence,
@@ -480,6 +494,7 @@ async function runTurn(
       leadId: lead.id,
       turnId: turn.turnId,
       batchIds,
+      inputRevision: revision,
       intent: suggestion.intent,
       risk: suggestion.risk,
       confidence: suggestion.confidence,
@@ -517,6 +532,7 @@ async function runTurn(
     leadId: lead.id,
     turnId: turn.turnId,
     batchIds,
+      inputRevision: revision,
     intent: suggestion.intent,
     risk: suggestion.risk,
     confidence: suggestion.confidence,
@@ -537,13 +553,14 @@ async function runTurn(
 // ---------------------------------------------------------------------------
 // Envio de uma bolha.
 //
-// Ordem obrigatória: delay natural → checagem de validade → reserva no outbox
-// → POST na Evolution → carimbo do id.
+// Ordem obrigatória: delay natural → reserva ATÔMICA (checa posse do lease +
+// revisão + takeover + duplicidade e grava, tudo numa transação só) → POST na
+// Evolution → carimbo do id.
 //
-// A reserva ANTES do envio resolve a corrida com o human takeover (a Evolution
-// às vezes entrega o eco `fromMe` da nossa mensagem antes de gravarmos o id).
-// A checagem imediatamente antes do POST é a última chance de cancelar uma
-// resposta que ficou velha.
+// reserveOutboundBubble fecha a janela que uma checagem-e-depois-grava em
+// duas chamadas separadas deixaria aberta: entre confirmar que ainda temos o
+// lead e efetivamente escrever a bolha, não existe mais intervalo em que um
+// worker que já perdeu a posse consiga gravar mesmo assim.
 // ---------------------------------------------------------------------------
 interface DeliverInput {
   lead: LeadRow;
@@ -551,6 +568,7 @@ interface DeliverInput {
   jobId: number;
   workerId: string;
   batchIds: string[];
+  revision: number;
   text: string;
   sequence: number;
   purpose: SendPurpose;
@@ -565,53 +583,30 @@ interface DeliverResult {
 async function deliver(supabase: SupabaseClient, input: DeliverInput): Promise<DeliverResult> {
   if (input.delayMs > 0) await sleep(input.delayMs);
 
-  // --- Checagem 2: depois do delay, imediatamente antes de falar ------
-  const valid = await assertTurnStillValid(supabase, {
+  const hash = await contentHash(input.text);
+
+  const reservation = await reserveOutboundBubble(supabase, {
     jobId: input.jobId,
     workerId: input.workerId,
     leadId: input.lead.id,
+    inputRevision: input.revision,
     batchIds: input.batchIds,
     purpose: input.purpose,
+    turnId: input.turnId,
+    sequence: input.sequence,
+    text: input.text,
+    contentHash: hash,
   });
-  if (!valid.valid) return { status: "STALE", reason: valid.reason };
 
-  const hash = await contentHash(input.text);
-
-  // Worker zumbi: se esta mesma bolha já saiu há pouco, não sai de novo.
-  const since = new Date(Date.now() - config.turn.outboxDedupeSeconds * 1000).toISOString();
-  const { data: duplicate } = await supabase
-    .from("messages")
-    .select("id")
-    .eq("lead_id", input.lead.id)
-    .eq("direction", "OUT")
-    .eq("content_hash", hash)
-    .gte("created_at", since)
-    .limit(1);
-
-  if (duplicate && duplicate.length > 0) {
-    log("bolha_duplicada_evitada", { leadId: input.lead.id, turnId: input.turnId });
-    return { status: "DUPLICATE" };
+  if (!reservation.reserved) {
+    if (reservation.reason === "duplicado") {
+      log("bolha_duplicada_evitada", { leadId: input.lead.id, turnId: input.turnId });
+      return { status: "DUPLICATE" };
+    }
+    return { status: "STALE", reason: reservation.reason };
   }
 
-  const { data: reserved, error: reserveError } = await supabase
-    .from("messages")
-    .insert({
-      lead_id: input.lead.id,
-      direction: "OUT",
-      sender_type: "AI",
-      message_type: "TEXT",
-      text: input.text,
-      processed: true,
-      content_hash: hash,
-      send_status: "PENDING",
-      turn_id: input.turnId,
-      bubble_sequence: input.sequence,
-      meta: { purpose: input.purpose },
-    })
-    .select("id")
-    .single();
-
-  if (reserveError || !reserved) throw new Error(`reserva_envio_falhou: ${reserveError?.message}`);
+  const messageId = reservation.messageId!;
 
   // Telefone real quando existe; senão o JID que a própria Evolution
   // entregou. Um código LID nunca é "convertido" em número aqui.
@@ -620,14 +615,14 @@ async function deliver(supabase: SupabaseClient, input: DeliverInput): Promise<D
   if (result.status === "FAILED") {
     // Recusa explícita: a mensagem não saiu. A linha vira registro de falha,
     // não fantasma de mensagem enviada.
-    await supabase.from("messages").update({ send_status: "FAILED" }).eq("id", reserved.id);
+    await supabase.from("messages").update({ send_status: "FAILED" }).eq("id", messageId);
     return { status: "FAILED", reason: result.error };
   }
 
   const { error: stampError } = await supabase
     .from("messages")
     .update({ send_status: result.status, provider_message_id: result.providerMessageId })
-    .eq("id", reserved.id);
+    .eq("id", messageId);
 
   // Acontece se o webhook já registrou esse id primeiro (eco do fromMe). A
   // mensagem foi entregue de qualquer forma — só o carimbo ficou redundante.
@@ -749,6 +744,7 @@ async function recordDecision(supabase: SupabaseClient, input: DecisionInput): P
     lead_id: input.leadId,
     turn_id: input.turnId,
     batch_message_ids: input.batchIds,
+    input_revision: input.inputRevision,
     message_id: input.batchIds[input.batchIds.length - 1] ?? null,
     intent: input.intent ?? null,
     risk: input.risk ?? null,
