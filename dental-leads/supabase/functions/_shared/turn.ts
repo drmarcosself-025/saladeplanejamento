@@ -402,8 +402,16 @@ export async function cancelReservedBubble(
   return data === true;
 }
 
+/**
+ * Bolha em SENDING órfã (worker sumiu) só vira UNKNOWN depois de
+ * config.turn.sendingStaleAfterMs — precisa ser maior que
+ * EVOLUTION_TIMEOUT_MS com folga, senão declara "sem confirmação" um envio
+ * que só está demorando dentro do normal. Ver AUDITORIA_F2_5.md.
+ */
 export async function reconcileStuckSendingBubbles(supabase: SupabaseClient): Promise<number> {
-  const { data, error } = await supabase.rpc("reconcile_stuck_sending_bubbles");
+  const { data, error } = await supabase.rpc("reconcile_stuck_sending_bubbles", {
+    p_stale_after_ms: config.turn.sendingStaleAfterMs,
+  });
   if (error) {
     log("reconcile_stuck_sending_falhou", { erro: error.message });
     return 0;
@@ -411,11 +419,80 @@ export async function reconcileStuckSendingBubbles(supabase: SupabaseClient): Pr
   return Number(data ?? 0);
 }
 
+export type FinalSendStatus = "SENT" | "FAILED" | "UNKNOWN";
+
+export interface FinalizeResult {
+  /** true = a escrita foi aplicada; a bolha realmente está no estado pedido. */
+  finalized: boolean;
+  /**
+   * true = o resultado chegou depois que o estado já tinha mudado por outra
+   * via (reconciliado enquanto o POST ainda estava em voo, por exemplo).
+   * Confirmação tardia de SENT é preservada em meta.late_confirmation, mas
+   * NUNCA sobrescreve o que já foi decidido — ver ponto 3 da validação
+   * pré-F3.
+   */
+  late: boolean;
+}
+
+/**
+ * A ÚNICA porta de escrita para o resultado final de uma bolha. Nunca faz
+ * update irrestrito: só transiciona SENDING → resultado se a bolha ainda
+ * pertence a este job/worker/turn_id E ainda está em SENDING. Um POST tardio
+ * que retorna depois da reconciliação não pode reverter um UNKNOWN em
+ * silêncio.
+ */
+export async function finalizeBubbleSend(
+  supabase: SupabaseClient,
+  input: {
+    messageId: string;
+    jobId: number;
+    workerId: string;
+    turnId: string;
+    result: FinalSendStatus;
+    providerMessageId?: string | null;
+  },
+): Promise<FinalizeResult> {
+  const { data, error } = await supabase.rpc("finalize_bubble_send", {
+    p_message_id: input.messageId,
+    p_job_id: input.jobId,
+    p_worker_id: input.workerId,
+    p_turn_id: input.turnId,
+    p_result: input.result,
+    p_provider_message_id: input.providerMessageId ?? null,
+  });
+
+  if (error) {
+    log("finalize_bubble_send_falhou", { messageId: input.messageId, erro: error.message });
+    // Sem confirmação de que a escrita foi aplicada, trata como "não
+    // finalizado" — o chamador não deve assumir sucesso silenciosamente.
+    return { finalized: false, late: false };
+  }
+
+  const result = data as { finalized?: boolean; late?: boolean } | null;
+  if (result?.late) {
+    log("finalize_bubble_send_tardio", { messageId: input.messageId, resultado: input.result });
+  }
+  return { finalized: result?.finalized === true, late: result?.late === true };
+}
+
 /** Traduz o motivo da invalidação no desfecho que vai para a auditoria. */
 export function outcomeForInvalidTurn(reason: TurnInvalidReason, bubblesSent: number): TurnOutcome {
   if (reason === "human_takeover") return "HUMAN_TAKEOVER";
   if (bubblesSent > 0) return "PARTIAL_STALE";
   return "STALE_BEFORE_SEND";
+}
+
+/**
+ * Item 4 da validação pré-F3: yield só é permitido antes da 1ª bolha SENT.
+ * Depois disso, o worker precisa terminar (COMPLETED) ou fechar
+ * PARTIAL_STALE — nunca devolver o turno pra reprocessamento do zero, que
+ * geraria uma segunda resposta pro que já foi dito.
+ *
+ * Função pura, isolada de propósito: é a regra mais fácil de testar sozinha,
+ * sem precisar simular o pipeline inteiro.
+ */
+export function shouldYieldOnBudgetExceeded(bubblesSent: number): boolean {
+  return bubblesSent === 0;
 }
 
 export async function closeTurn(

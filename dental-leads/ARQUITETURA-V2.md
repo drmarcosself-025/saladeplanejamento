@@ -633,6 +633,33 @@ schema novo + 3 cenários de concorrência com processos OS reais (incluindo
 sucesso) + suíte de classificação HTTP. Dois bugs pegos pelos próprios testes
 durante a implementação, documentados em `AUDITORIA_F2.md` seção C.
 
+### F2.5 — validação final pré-F3 ✅ (auditada, smoke test pendente)
+
+Quatro pontos de revisão antes de avançar para F3, três eram gaps reais:
+relatório completo em `AUDITORIA_F2_5.md`. Resumo: dedupe por `content_hash`
+passou a ser escopado por `reservation_revision` (não só janela de tempo) —
+texto idêntico em turnos genuinamente diferentes não é mais bloqueado, mas o
+retry do mesmo turno reclamado continua sendo; reconciliação de `fromMe`
+recusa candidato ambíguo (2+ bolhas plausíveis) em vez de escolher "a mais
+recente" às cegas; as 4 escritas finais de `send_status` no worker eram
+updates irrestritos — substituídas pela RPC `finalize_bubble_send`, a única
+porta de escrita, que nunca deixa um POST tardio reverter uma reconciliação
+em silêncio; `SENDING_STALE_AFTER_MS` (derivado de `EVOLUTION_TIMEOUT_MS`,
+não solto) define a margem antes de declarar uma bolha `SENDING` abandonada.
+Yield-só-antes-da-1ª-bolha já estava correto, ganhou função pura isolada e
+teste dedicado.
+
+Testado contra Postgres 16 real (`prerelease_validation_test.sql`), com
+regressão completa de F1+F2 e 3 cenários de concorrência — tudo PASS. Dois
+bugs de integração entre migrations pegos rodando de verdade (overload
+ambíguo de `reconcile_stuck_sending_bubbles`, testes antigos que passaram a
+precisar simular a margem de staleness).
+
+**Smoke test de integração real (Supabase + Evolution + WhatsApp) não foi
+executado** — sem credenciais/acesso de rede a essa infraestrutura neste
+ambiente. Runbook pronto em `SMOKE_TEST_RUNBOOK.md` para quem tiver acesso
+rodar; a lógica que ele exercitaria já está provada isoladamente.
+
 ### Fases seguintes (desenho aprovado, ainda não implementado)
 
 - **F3** — Structured Output V2 completo (temperatura, score de agendamento,

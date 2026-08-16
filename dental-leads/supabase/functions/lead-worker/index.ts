@@ -14,7 +14,7 @@
 // POST: entre pensar e falar, a conversa pode ter mudado.
 
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
-import { assertConfig, config } from "../_shared/config.ts";
+import { assertConfig, config, configWarnings } from "../_shared/config.ts";
 import { json, log, secretMatches } from "../_shared/http.ts";
 import { analyzeMessage, type AiSuggestion } from "../_shared/ai.ts";
 import { evaluatePostPolicy, evaluatePrePolicy } from "../_shared/policy.ts";
@@ -31,16 +31,18 @@ import {
   closeTurn,
   createWallBudget,
   fetchBatch,
+  finalizeBubbleSend,
   naturalDelayMs,
   newWorkerId,
   outcomeForInvalidTurn,
+  parseReason,
   reclaimExpiredJobs,
   reconcileStuckSendingBubbles,
   renewLease,
   reserveOutboundBubble,
   type SendPurpose,
+  shouldYieldOnBudgetExceeded,
   sleep,
-  type TurnInvalidReason,
   type TurnOutcome,
   type WallBudget,
   yieldTurn,
@@ -90,6 +92,7 @@ Deno.serve(async (req) => {
     log("config_incompleta", { faltando: missing });
     return json({ error: "config_incompleta" }, 500);
   }
+  for (const warning of configWarnings()) log("config_perigosa", { aviso: warning });
 
   if (!secretMatches(req.headers.get("x-worker-secret"), config.worker.secret)) {
     return json({ error: "nao_autorizado" }, 401);
@@ -599,10 +602,11 @@ async function sendBubbleSequence(
       : naturalDelayMs(config.turn.bubbleDelayMinMs, config.turn.bubbleDelayMaxMs);
 
     // Checkpoint de orçamento (item 7): nada enviado ainda → devolve o
-    // turno inteiro. Já enviamos alguma coisa → não se cede mais; encerra
-    // com o que já saiu.
+    // turno inteiro. Já enviamos alguma coisa → nunca mais se cede (regra
+    // testada isoladamente em shouldYieldOnBudgetExceeded); encerra com o
+    // que já saiu.
     if (input.wallBudget.exceeded()) {
-      if (sent === 0) {
+      if (shouldYieldOnBudgetExceeded(sent)) {
         const yielded = await yieldTurn(supabase, input.jobId, input.workerId);
         log("yield_no_meio_sem_envio", { jobId: input.jobId, yielded });
         return { kind: "yielded" };
@@ -662,11 +666,32 @@ async function sendBubbleSequence(
 
     const result = await sendText(input.lead.phone ?? input.lead.whatsapp_id, text);
 
+    // A ÚNICA porta de escrita do resultado final — nunca um update
+    // irrestrito. Se o reconciler já moveu esta bolha pra UNKNOWN enquanto
+    // o POST estava em voo (lease perdido no meio do caminho), a escrita
+    // não sobrescreve silenciosamente: "late" avisa que o resultado chegou
+    // tarde demais para valer.
+    async function finalize(status: "SENT" | "FAILED" | "UNKNOWN") {
+      return finalizeBubbleSend(supabase, {
+        messageId,
+        jobId: input.jobId,
+        workerId: input.workerId,
+        turnId: input.turnId,
+        result: status,
+        providerMessageId: result.providerMessageId,
+      });
+    }
+
     if (result.status === "SENT") {
-      await supabase
-        .from("messages")
-        .update({ send_status: "SENT", provider_message_id: result.providerMessageId })
-        .eq("id", messageId);
+      const outcome = await finalize("SENT");
+      if (outcome.late) {
+        // O sistema já não confia mais nesta bolha (foi reconciliada pra
+        // UNKNOWN enquanto o POST original ainda estava em voo). A entrega
+        // tardia fica registrada em meta.late_confirmation para auditoria,
+        // mas não conta como "enviada" para o desfecho deste turno — quem
+        // já foi chamado a olhar continua sendo chamado.
+        return closeSequence(sent, total, "late_confirmation_after_reconciliation");
+      }
       await supabase
         .from("leads")
         .update({ last_message_at: new Date().toISOString(), last_outbound_at: new Date().toISOString() })
@@ -678,7 +703,7 @@ async function sendBubbleSequence(
     if (result.status === "UNKNOWN") {
       // Nunca sabemos se chegou. Nunca reenviamos. Para a sequência aqui —
       // as bolhas seguintes nem chegam a ser reservadas.
-      await supabase.from("messages").update({ send_status: "UNKNOWN" }).eq("id", messageId);
+      await finalize("UNKNOWN");
       return {
         kind: "closed",
         bubblesSent: sent,
@@ -695,7 +720,7 @@ async function sendBubbleSequence(
       // Rejeição de verdade (número inválido, sem permissão, payload
       // rejeitado). Retentar por backoff não muda o resultado — vira caso
       // humano na hora, sem gastar tentativa de job.
-      await supabase.from("messages").update({ send_status: "FAILED" }).eq("id", messageId);
+      await finalize("FAILED");
       return {
         kind: "closed",
         bubblesSent: sent,
@@ -711,15 +736,15 @@ async function sendBubbleSequence(
     // RETRYABLE_FAILURE (429): a própria Evolution está pedindo para
     // esperar. Isso é exatamente o caso de uso do backoff exponencial que o
     // job já tem — lança e deixa o catch de runTurnSafely cuidar do retry.
-    await supabase.from("messages").update({ send_status: "FAILED" }).eq("id", messageId);
+    await finalize("FAILED");
     throw new Error(`bolha_retryable:${result.error ?? "429"}`);
   }
 
   return closeSequence(sent, total, "ok");
 }
 
-function closeSequence(sent: number, total: number, reason: TurnInvalidReason): BubbleSequenceResult {
-  const outcome = sent === total ? "COMPLETED" : outcomeForInvalidTurn(reason, sent);
+function closeSequence(sent: number, total: number, reason: string): BubbleSequenceResult {
+  const outcome = sent === total ? "COMPLETED" : outcomeForInvalidTurn(parseReason(reason), sent);
   return {
     kind: "closed",
     bubblesSent: sent,

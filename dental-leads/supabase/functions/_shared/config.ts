@@ -13,6 +13,12 @@ function num(name: string, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+// Lido antes do objeto principal porque SENDING_STALE_AFTER_MS deriva dele
+// por construção: reconciliar uma bolha em SENDING antes que o timeout real
+// do POST sequer tivesse chance de estourar declararia UNKNOWN algo que só
+// estava demorando dentro do normal.
+const evolutionTimeoutMs = num("EVOLUTION_TIMEOUT_MS", 15000);
+
 export const config = {
   supabase: {
     url: env("SUPABASE_URL"),
@@ -26,7 +32,7 @@ export const config = {
     // Delay que a própria Evolution aplica antes de entregar (simula digitação
     // e reduz o padrão robótico que leva a bloqueio de número).
     sendDelayMs: num("EVOLUTION_SEND_DELAY_MS", 1500),
-    timeoutMs: num("EVOLUTION_TIMEOUT_MS", 15000),
+    timeoutMs: evolutionTimeoutMs,
   },
 
   webhook: {
@@ -100,6 +106,11 @@ export const config = {
     // (esse é EVOLUTION_TIMEOUT_MS) — é uma estimativa conservadora para o
     // yield preventivo do item 7.
     bubbleSendMarginMs: num("BUBBLE_SEND_MARGIN_MS", 5000),
+    // Uma bolha em SENDING só é reconciliada para UNKNOWN depois de ficar
+    // parada por mais tempo que isto. Precisa ser MAIOR que EVOLUTION_TIMEOUT_MS
+    // com folga — por isso o default deriva dele em vez de ser um número
+    // solto. Ver regra completa em AUDITORIA_F2_5.md.
+    sendingStaleAfterMs: num("SENDING_STALE_AFTER_MS", evolutionTimeoutMs + 30000),
   },
 
   // Limites são por TURNO, não por mensagem: com resposta em bolhas, contar
@@ -143,4 +154,18 @@ export function assertConfig(scope: "webhook" | "worker"): string[] {
     if (!config.evolution.instance) missing.push("EVOLUTION_INSTANCE");
   }
   return missing;
+}
+
+// Avisos que não impedem o worker de rodar, mas indicam configuração
+// perigosa. Não fatal — só logado uma vez no início da invocação.
+export function configWarnings(): string[] {
+  const warnings: string[] = [];
+  if (config.turn.sendingStaleAfterMs <= config.evolution.timeoutMs) {
+    warnings.push(
+      `SENDING_STALE_AFTER_MS (${config.turn.sendingStaleAfterMs}ms) deveria ser maior que ` +
+        `EVOLUTION_TIMEOUT_MS (${config.evolution.timeoutMs}ms) — risco real de reconciliar como ` +
+        `UNKNOWN um envio que só está demorando dentro do normal.`,
+    );
+  }
+  return warnings;
 }

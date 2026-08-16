@@ -312,6 +312,14 @@ begin
   -- Worker morre (nunca mais renova) — simula lease vencido.
   update public.jobs set lease_expires_at = now() - interval '1 second' where id = v_job;
 
+  -- Desde a validação pré-F3 (SENDING_STALE_AFTER_MS): lease vencida sozinha
+  -- não basta — o reconciler também exige que já tenha passado a margem
+  -- desde sending_at (maior que o timeout normal do POST, pra não declarar
+  -- abandonado um envio que só está demorando dentro do esperado). Aqui
+  -- simulamos essa margem já vencida; o teste dedicado da margem em si está
+  -- em prerelease_validation_test.sql (PONTO 3).
+  update public.messages set sending_at = now() - interval '1 hour' where id = v_msg;
+
   if public.reconcile_stuck_sending_bubbles() < 1 then
     raise exception 'CASO 7b: bolha SENDING órfã deveria ser reconciliada';
   end if;
@@ -354,6 +362,7 @@ begin
   -- o UPDATE que gravaria send_status='SENT' e o provider_message_id)
 
   update public.jobs set lease_expires_at = now() - interval '1 second' where id = v_job2;
+  update public.messages set sending_at = now() - interval '1 hour' where id = v_msg2;
   perform public.reconcile_stuck_sending_bubbles();
 
   if (select send_status from public.messages where id = v_msg2) <> 'UNKNOWN' then

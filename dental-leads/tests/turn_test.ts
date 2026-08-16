@@ -1,12 +1,17 @@
 // deno test --allow-env dental-leads/tests/
 //
 // Peças puras do motor de turno. O que depende de Postgres (debounce, lock,
-// lease, stale) é testado em tests/db/turn_engine_test.sql — corrida não se
-// testa com mock.
+// lease, stale, corrida SENDING/reconciler) é testado em
+// tests/db/turn_engine_test.sql, tests/db/bubble_sequencing_test.sql e
+// tests/db/prerelease_validation_test.sql — corrida não se testa com mock.
 
 import { assertEquals } from "jsr:@std/assert@1";
 import { contentHash, extractLinks } from "../supabase/functions/_shared/normalize.ts";
-import { naturalDelayMs, outcomeForInvalidTurn } from "../supabase/functions/_shared/turn.ts";
+import {
+  naturalDelayMs,
+  outcomeForInvalidTurn,
+  shouldYieldOnBudgetExceeded,
+} from "../supabase/functions/_shared/turn.ts";
 
 Deno.test("links recebidos são preservados inteiros", () => {
   assertEquals(
@@ -51,4 +56,20 @@ Deno.test("stale antes de qualquer bolha ≠ stale no meio da sequência", () =>
 
 Deno.test("perder o lease impede envio, mesmo sem mensagem nova", () => {
   assertEquals(outcomeForInvalidTurn("lease_perdido", 0), "STALE_BEFORE_SEND");
+});
+
+// ---------------------------------------------------------------------------
+// Ponto 4 da validação pré-F3: yield só é permitido antes da 1ª bolha SENT.
+// Regra isolada de propósito — é o jeito mais direto de garantir que o
+// worker nunca devolve um turno que já produziu efeito colateral observável
+// (uma mensagem que o lead já recebeu) para ser recomeçado do zero.
+// ---------------------------------------------------------------------------
+Deno.test("yield permitido só quando nenhuma bolha foi enviada ainda", () => {
+  assertEquals(shouldYieldOnBudgetExceeded(0), true);
+});
+
+Deno.test("yield NUNCA permitido depois de pelo menos 1 bolha SENT", () => {
+  for (const sent of [1, 2, 3, 10]) {
+    assertEquals(shouldYieldOnBudgetExceeded(sent), false, `bubblesSent=${sent}`);
+  }
 });
