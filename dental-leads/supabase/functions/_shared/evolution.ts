@@ -1,0 +1,71 @@
+// Evolution API — usada exclusivamente como gateway de WhatsApp.
+//
+// Este projeto NÃO instala, configura nem altera a Evolution: só consome a
+// instância que já existe. Aqui há um único verbo: enviar texto.
+
+import { config } from "./config.ts";
+import { fetchWithTimeout, log } from "./http.ts";
+
+/**
+ * SENT    = a Evolution confirmou o envio.
+ * FAILED  = ela recusou explicitamente (4xx). Não foi entregue; pode retentar.
+ * UNKNOWN = timeout, erro de rede ou 5xx. Pode ou não ter sido entregue —
+ *           NUNCA reenviar automaticamente, sob pena de duplicar para o lead.
+ */
+export type SendStatus = "SENT" | "FAILED" | "UNKNOWN";
+
+export interface SendResult {
+  status: SendStatus;
+  providerMessageId: string | null;
+  error?: string;
+}
+
+/**
+ * @param destination telefone real quando conhecido; senão o próprio JID que a
+ *                    Evolution nos entregou (nunca um LID convertido "na mão").
+ */
+export async function sendText(destination: string, text: string): Promise<SendResult> {
+  const url = `${config.evolution.apiUrl}/message/sendText/${config.evolution.instance}`;
+  const startedAt = Date.now();
+
+  try {
+    const response = await fetchWithTimeout(
+      url,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", apikey: config.evolution.apiKey },
+        body: JSON.stringify({
+          number: destination,
+          text,
+          delay: config.evolution.sendDelayMs,
+        }),
+      },
+      config.evolution.timeoutMs,
+    );
+
+    const body = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      // 5xx pode ter entregue antes de falhar: trata-se como incerteza, não
+      // como falha, justamente para não reenviar.
+      const status: SendStatus = response.status >= 500 ? "UNKNOWN" : "FAILED";
+      log("evolution_envio_falhou", { httpStatus: response.status, status, ms: Date.now() - startedAt });
+      return { status, providerMessageId: null, error: `http_${response.status}` };
+    }
+
+    // O id devolvido aqui é o que permite distinguir depois "mensagem nossa"
+    // de "humano respondeu pelo celular" (human takeover).
+    const providerMessageId: string | null = body?.key?.id ?? body?.messageId ?? null;
+    log("evolution_envio_ok", {
+      ms: Date.now() - startedAt,
+      temId: Boolean(providerMessageId),
+      chars: text.length,
+    });
+    return { status: "SENT", providerMessageId };
+  } catch (error) {
+    // Timeout ou erro de rede: a mensagem pode ter chegado. Incerteza é
+    // registrada como tal e resolvida por uma pessoa.
+    log("evolution_envio_incerto", { erro: String(error), ms: Date.now() - startedAt });
+    return { status: "UNKNOWN", providerMessageId: null, error: String(error) };
+  }
+}

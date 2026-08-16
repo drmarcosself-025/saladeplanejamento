@@ -1,0 +1,12 @@
+# Projeto Supabase deste sistema (separado do CRM antigo que vive na raiz do
+# repositório). Rode a CLI a partir de dental-leads/.
+project_id = "dental-leads"
+
+[functions.wa-webhook]
+# Quem chama é a Evolution API, não um usuário logado. A proteção é o header
+# x-webhook-secret, validado dentro da function.
+verify_jwt = false
+
+[functions.lead-worker]
+# Chamado pelo wa-webhook e pelo pg_cron. Protegido por x-worker-secret.
+verify_jwt = false
