@@ -106,8 +106,10 @@ export function containsMoney(text: string): boolean {
 // Passagem 1 — antes da IA
 // ---------------------------------------------------------------------------
 export interface PrePolicyInput {
+  /** Texto de TODAS as mensagens do turno, já concatenado em ordem. */
   text: string;
-  messageType: MessageType;
+  /** Tipos das mensagens do turno (uma rajada pode misturar texto e mídia). */
+  messageTypes: MessageType[];
   automationStatus: string;
   needsHuman: boolean;
 }
@@ -136,17 +138,33 @@ export function evaluatePrePolicy(input: PrePolicyInput): PrePolicyResult {
     };
   }
 
+  // Figurinha sozinha não é conversa: não vale uma chamada de IA e não pede
+  // resposta. O turno fecha em silêncio e o sistema espera a próxima
+  // mensagem (item 34).
+  if (
+    input.messageTypes.length > 0 &&
+    input.messageTypes.every((type) => type === "STICKER") &&
+    !input.text.trim()
+  ) {
+    return { ...base, category: "GREEN", allowAi: false, needsHuman: false, reason: "sticker_isolado" };
+  }
+
   // Mídia sempre é humano na V1 (item 14). Sem download, sem transcrição,
   // sem visão computacional. Mesmo assim o lead recebe a resposta neutra
   // pré-autorizada — silêncio total é pior experiência do que "já te
   // respondo".
-  if (isMedia(input.messageType) || input.messageType === "LOCATION" || input.messageType === "CONTACT") {
+  // Figurinha não conta como mídia clínica — é enfeite de conversa, como um
+  // emoji. Foto, áudio, vídeo, documento, localização e contato, sim.
+  const midia = input.messageTypes.find(
+    (type) => type !== "STICKER" && (isMedia(type) || type === "LOCATION" || type === "CONTACT"),
+  );
+  if (midia) {
     return {
       ...base,
       category: "RED",
       allowAi: false,
       needsHuman: true,
-      reason: `midia_exige_humano:${input.messageType}`,
+      reason: `midia_exige_humano:${midia}`,
       handoffMessage: config.clinic.handoffMessage,
     };
   }

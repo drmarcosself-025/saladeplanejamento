@@ -36,7 +36,12 @@ export interface AiInput {
   treatmentInterest: string | null;
   conversationSummary: string | null;
   recentMessages: AiContextMessage[];
-  currentMessage: string;
+  /**
+   * A rajada atual: tudo que o lead escreveu desde a última resposta, em
+   * ordem. É UMA unidade conversacional, uma chamada de IA — não uma chamada
+   * por mensagem.
+   */
+  currentMessages: string[];
 }
 
 // Schema único, compartilhado pelos dois provedores.
@@ -117,6 +122,10 @@ function buildUserPrompt(input: AiInput): string {
     .map((m) => `${m.direction === "IN" ? "Lead" : "Clínica"}: ${m.text}`)
     .join("\n");
 
+  // A rajada chega como um bloco só: o lead terminou de escrever antes de a
+  // IA ser chamada, então ela responde à mensagem inteira, não a um pedaço.
+  const batch = input.currentMessages.map((text) => `- ${text}`).join("\n");
+
   return [
     `Lead: ${input.leadName ?? "(nome não informado)"}`,
     `Etapa atual: ${input.currentStage}`,
@@ -125,7 +134,9 @@ function buildUserPrompt(input: AiInput): string {
     "",
     history ? `Últimas mensagens:\n${history}` : "Sem mensagens anteriores.",
     "",
-    `Mensagem nova do lead: ${input.currentMessage}`,
+    input.currentMessages.length > 1
+      ? `Mensagens novas do lead (ele mandou várias seguidas — responda a tudo de uma vez):\n${batch}`
+      : `Mensagem nova do lead: ${input.currentMessages[0] ?? ""}`,
   ].join("\n");
 }
 

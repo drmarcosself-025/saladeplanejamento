@@ -39,9 +39,20 @@ export const config = {
 
   worker: {
     secret: env("WORKER_SECRET"),
-    batchSize: num("WORKER_BATCH_SIZE", 5),
+    // Turnos são processados em paralelo (leads distintos por construção), e
+    // cada turno gasta tempo de parede com delay natural + IA + envio. Lote
+    // pequeno mantém a invocação dentro do orçamento da plataforma.
+    batchSize: num("WORKER_BATCH_SIZE", 3),
     maxAttempts: num("WORKER_MAX_ATTEMPTS", 4),
     backoffBaseSeconds: num("WORKER_BACKOFF_BASE_SECONDS", 120),
+    // Lease do lock por lead. Precisa ser maior que o pior turno possível
+    // (delay + IA + bolhas), com folga — é renovado por heartbeat.
+    leaseSeconds: num("JOB_LEASE_SECONDS", 120),
+    // Teto de espera do worker acordado pelo webhook antes de tentar o claim.
+    maxWaitMs: num("WORKER_MAX_WAIT_MS", 9000),
+    // Teto de parede da invocação: acima disso o worker para de pegar turno
+    // novo e devolve o que sobrou para a fila.
+    wallBudgetMs: num("WORKER_WALL_BUDGET_MS", 60000),
     // Janela em que um evento fromMe com texto idêntico ao que acabamos de
     // enviar é tratado como eco da nossa mensagem, não como intervenção
     // humana. Ver ARQUITETURA.md seção G.
@@ -65,6 +76,28 @@ export const config = {
     maxReplyChars: num("AI_MAX_REPLY_CHARS", 600),
   },
 
+  // Uma rajada de mensagens do lead vira UM turno: uma chamada de IA e uma
+  // resposta. Estes são os tempos que fazem a automação parecer uma pessoa.
+  turn: {
+    // Silêncio necessário para considerar que o lead terminou de escrever.
+    debounceSeconds: num("MESSAGE_DEBOUNCE_SECONDS", 5),
+    // Teto medido desde o INÍCIO da rajada (nunca reiniciado por mensagem
+    // nova): quem digita sem parar ainda é respondido.
+    debounceMaxWaitSeconds: num("DEBOUNCE_MAX_WAIT_SECONDS", 30),
+    // Pausa antes de começar a responder — nem instantâneo, nem demorado.
+    responseDelayMinMs: num("RESPONSE_DELAY_MIN_MS", 2000),
+    responseDelayMaxMs: num("RESPONSE_DELAY_MAX_MS", 5000),
+    // Espaçamento entre bolhas da mesma resposta (Fase 2).
+    bubbleDelayMinMs: num("OUTBOUND_BUBBLE_DELAY_MIN_MS", 1500),
+    bubbleDelayMaxMs: num("OUTBOUND_BUBBLE_DELAY_MAX_MS", 3500),
+    maxBubbles: num("MAX_BUBBLES", 3),
+    // Janela em que uma bolha com o mesmo conteúdo é considerada reenvio
+    // (protege contra worker zumbi que voltou a si depois do lease expirar).
+    outboxDedupeSeconds: num("OUTBOX_DEDUPE_SECONDS", 120),
+  },
+
+  // Limites são por TURNO, não por mensagem: com resposta em bolhas, contar
+  // mensagens faria a bolha 2 ser bloqueada pelo intervalo mínimo da bolha 1.
   rateLimit: {
     minIntervalSeconds: num("RATE_LIMIT_MIN_INTERVAL", 20),
     hourly: num("RATE_LIMIT_HOURLY", 8),

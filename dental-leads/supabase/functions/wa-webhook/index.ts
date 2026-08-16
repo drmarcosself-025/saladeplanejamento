@@ -11,7 +11,12 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { config, assertConfig } from "../_shared/config.ts";
 import { fetchWithTimeout, json, log, secretMatches } from "../_shared/http.ts";
-import { isMedia, normalizeWhatsAppEvent, type NormalizedEvent } from "../_shared/normalize.ts";
+import {
+  contentHash,
+  isMedia,
+  normalizeWhatsAppEvent,
+  type NormalizedEvent,
+} from "../_shared/normalize.ts";
 
 declare const EdgeRuntime: { waitUntil?: (promise: Promise<unknown>) => void } | undefined;
 
@@ -48,7 +53,14 @@ async function mirrorToLegacy(rawBody: string): Promise<void> {
   }
 }
 
-/** Dispara o worker sem esperar. O pg_cron é a rede de segurança se falhar. */
+/**
+ * Dispara o worker sem esperar.
+ *
+ * O worker acordado aqui dorme a janela de debounce antes de tentar o claim.
+ * Numa rajada, cada mensagem acorda um worker, mas só o da ÚLTIMA encontra
+ * `run_after <= now()` — os outros voltam de mãos vazias. Resultado: uma
+ * rajada, um turno, uma chamada de IA. O pg_cron cobre a falha deste disparo.
+ */
 async function triggerWorker(): Promise<void> {
   if (!config.worker.secret) {
     log("worker_secret_ausente", { detalhe: "job ficará para o cron de segurança" });
@@ -151,10 +163,12 @@ async function handleInbound(
   event: NormalizedEvent,
 ): Promise<{ duplicate: boolean; enqueued: boolean }> {
   // Mídia nunca vai para a IA na V1 (item 14): marca pendência humana já na
-  // entrada, antes de qualquer custo.
-  const mediaNeedsHuman = isMedia(event.messageType) ||
-    event.messageType === "LOCATION" ||
-    event.messageType === "CONTACT";
+  // entrada, antes de qualquer custo. Figurinha é exceção — é enfeite de
+  // conversa, não conteúdo clínico.
+  const mediaNeedsHuman = event.messageType !== "STICKER" &&
+    (isMedia(event.messageType) ||
+      event.messageType === "LOCATION" ||
+      event.messageType === "CONTACT");
 
   const { data, error } = await supabase.rpc("ingest_inbound_message", {
     p_whatsapp_id: event.whatsappId,
@@ -165,9 +179,18 @@ async function handleInbound(
     p_message_type: event.messageType,
     p_text: event.text,
     p_meta: event.meta,
-    p_occurred_at: event.occurredAt,
+    // Relógio do WhatsApp vai para provider_timestamp; a ordem cronológica
+    // que o motor usa é o received_at gravado pelo próprio banco.
+    p_provider_timestamp: event.occurredAt,
+    p_content_hash: event.text ? await contentHash(event.text) : null,
+    p_reply_to_provider_id: event.replyToProviderId,
+    p_links: event.links.length > 0 ? event.links : null,
     p_needs_human: mediaNeedsHuman,
     p_human_reason: mediaNeedsHuman ? `mensagem de ${event.messageType.toLowerCase()} recebida` : null,
+    // O debounce vive na transação de entrada: cada mensagem empurra a janela,
+    // sem nunca ultrapassar o teto contado desde o início da rajada.
+    p_debounce_seconds: config.turn.debounceSeconds,
+    p_debounce_max_wait: config.turn.debounceMaxWaitSeconds,
   });
 
   if (error) throw new Error(`ingest_inbound_message: ${error.message}`);
@@ -191,6 +214,8 @@ async function handleOutbound(
     p_meta: event.meta,
     p_occurred_at: event.occurredAt,
     p_grace_seconds: config.worker.takeoverGraceSeconds,
+    // Casa o eco da nossa própria bolha por hash, não só por texto.
+    p_content_hash: event.text ? await contentHash(event.text) : null,
   });
 
   if (error) throw new Error(`ingest_outbound_event: ${error.message}`);

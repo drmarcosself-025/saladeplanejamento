@@ -13,7 +13,7 @@ import {
 import { canSendMessage } from "../supabase/functions/_shared/ratelimit.ts";
 import { resolveStage } from "../supabase/functions/_shared/funnel.ts";
 
-const semLimite = { last_out_at: null, last_out_text: null, hour_count: 0, day_count: 0 };
+const semLimite = { last_turn_at: null, last_out_text: null, turn_hour_count: 0, turn_day_count: 0 };
 
 Deno.test("sintoma clínico é VERMELHO", () => {
   for (const texto of [
@@ -52,7 +52,7 @@ Deno.test("fronteira de palavra: 'dor' não casa dentro de 'dormir'", () => {
 Deno.test("mídia nunca chega na IA na V1", () => {
   const result = evaluatePrePolicy({
     text: "",
-    messageType: "AUDIO",
+    messageTypes: ["AUDIO"],
     automationStatus: "ACTIVE",
     needsHuman: false,
   });
@@ -61,10 +61,44 @@ Deno.test("mídia nunca chega na IA na V1", () => {
   assertEquals(typeof result.handoffMessage, "string");
 });
 
+Deno.test("figurinha sozinha não vale uma chamada de IA nem resposta", () => {
+  const result = evaluatePrePolicy({
+    text: "",
+    messageTypes: ["STICKER"],
+    automationStatus: "ACTIVE",
+    needsHuman: false,
+  });
+  assertEquals(result.allowAi, false);
+  assertEquals(result.needsHuman, false);
+  assertEquals(result.handoffMessage, null);
+  assertEquals(result.reason, "sticker_isolado");
+});
+
+Deno.test("figurinha acompanhada de texto processa o texto", () => {
+  const result = evaluatePrePolicy({
+    text: "quero saber do clareamento",
+    messageTypes: ["STICKER", "TEXT"],
+    automationStatus: "ACTIVE",
+    needsHuman: false,
+  });
+  assertEquals(result.allowAi, true);
+});
+
+Deno.test("rajada com mídia no meio vira caso humano", () => {
+  const result = evaluatePrePolicy({
+    text: "olha como está meu dente",
+    messageTypes: ["TEXT", "IMAGE"],
+    automationStatus: "ACTIVE",
+    needsHuman: false,
+  });
+  assertEquals(result.allowAi, false);
+  assertEquals(result.needsHuman, true);
+});
+
 Deno.test("automação pausada não gasta IA", () => {
   const result = evaluatePrePolicy({
     text: "oi, quanto custa?",
-    messageType: "TEXT",
+    messageTypes: ["TEXT"],
     automationStatus: "PAUSED",
     needsHuman: false,
   });
@@ -123,10 +157,9 @@ Deno.test("resposta comercial aprovada passa nas duas passagens", () => {
 
 Deno.test("rate limit: intervalo mínimo bloqueia envio em rajada", () => {
   const result = canSendMessage({
-    stats: { ...semLimite, last_out_at: new Date().toISOString() },
+    stats: { ...semLimite, last_turn_at: new Date().toISOString() },
     automationStatus: "ACTIVE",
     needsHuman: false,
-    alreadyProcessed: false,
     replyText: "oi",
     purpose: "AI_REPLY",
   });
@@ -138,7 +171,6 @@ Deno.test("rate limit: resposta idêntica à anterior é anti-loop", () => {
     stats: { ...semLimite, last_out_text: "Claro 😊" },
     automationStatus: "ACTIVE",
     needsHuman: false,
-    alreadyProcessed: false,
     replyText: "claro 😊",
     purpose: "AI_REPLY",
   });
@@ -151,7 +183,6 @@ Deno.test("rate limit: takeover humano bloqueia até a mensagem neutra", () => {
       stats: semLimite,
       automationStatus: "HUMAN_TAKEOVER",
       needsHuman: true,
-      alreadyProcessed: false,
       replyText: "oi",
       purpose,
     });

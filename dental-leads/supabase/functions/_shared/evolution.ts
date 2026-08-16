@@ -6,8 +6,16 @@
 import { config } from "./config.ts";
 import { fetchWithTimeout, log } from "./http.ts";
 
+/**
+ * SENT    = a Evolution confirmou o envio.
+ * FAILED  = ela recusou explicitamente (4xx). Não foi entregue; pode retentar.
+ * UNKNOWN = timeout, erro de rede ou 5xx. Pode ou não ter sido entregue —
+ *           NUNCA reenviar automaticamente, sob pena de duplicar para o lead.
+ */
+export type SendStatus = "SENT" | "FAILED" | "UNKNOWN";
+
 export interface SendResult {
-  ok: boolean;
+  status: SendStatus;
   providerMessageId: string | null;
   error?: string;
 }
@@ -38,8 +46,11 @@ export async function sendText(destination: string, text: string): Promise<SendR
     const body = await response.json().catch(() => null);
 
     if (!response.ok) {
-      log("evolution_envio_falhou", { status: response.status, ms: Date.now() - startedAt });
-      return { ok: false, providerMessageId: null, error: `http_${response.status}` };
+      // 5xx pode ter entregue antes de falhar: trata-se como incerteza, não
+      // como falha, justamente para não reenviar.
+      const status: SendStatus = response.status >= 500 ? "UNKNOWN" : "FAILED";
+      log("evolution_envio_falhou", { httpStatus: response.status, status, ms: Date.now() - startedAt });
+      return { status, providerMessageId: null, error: `http_${response.status}` };
     }
 
     // O id devolvido aqui é o que permite distinguir depois "mensagem nossa"
@@ -50,9 +61,11 @@ export async function sendText(destination: string, text: string): Promise<SendR
       temId: Boolean(providerMessageId),
       chars: text.length,
     });
-    return { ok: true, providerMessageId };
+    return { status: "SENT", providerMessageId };
   } catch (error) {
-    log("evolution_envio_excecao", { erro: String(error), ms: Date.now() - startedAt });
-    return { ok: false, providerMessageId: null, error: String(error) };
+    // Timeout ou erro de rede: a mensagem pode ter chegado. Incerteza é
+    // registrada como tal e resolvida por uma pessoa.
+    log("evolution_envio_incerto", { erro: String(error), ms: Date.now() - startedAt });
+    return { status: "UNKNOWN", providerMessageId: null, error: String(error) };
   }
 }

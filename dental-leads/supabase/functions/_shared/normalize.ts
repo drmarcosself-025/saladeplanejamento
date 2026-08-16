@@ -37,8 +37,34 @@ export interface NormalizedEvent {
   providerMessageId: string;
   messageType: MessageType;
   text: string;
+  /**
+   * Relógio do WhatsApp. Pode vir adiantado, atrasado ou fora de ordem — serve
+   * para exibir e para desempate secundário, nunca para ordenar o batch.
+   * Quem manda na cronologia é o received_at gravado pelo banco.
+   */
   occurredAt: string;
+  /** URLs preservadas como o lead enviou (item 31: a IA não abre link). */
+  links: string[];
+  /** Mensagem citada, quando o lead responde uma bolha específica. */
+  replyToProviderId: string | null;
   meta: Record<string, unknown>;
+}
+
+/** URLs recebidas são preservadas inteiras — o painel as mostra clicáveis. */
+export function extractLinks(text: string): string[] {
+  const matches = (text ?? "").match(/https?:\/\/[^\s<>"']+|(?:^|\s)www\.[^\s<>"']+/gi);
+  if (!matches) return [];
+  return [...new Set(matches.map((url) => url.trim()))];
+}
+
+/**
+ * Hash do conteúdo, usado para (a) reconhecer o eco fromMe da nossa própria
+ * bolha e (b) impedir que um worker zumbi reenvie a mesma mensagem.
+ */
+export async function contentHash(text: string): Promise<string> {
+  const normalized = (text ?? "").normalize("NFC").trim().toLowerCase().replace(/\s+/g, " ");
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(normalized));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 const MEDIA_TYPES: MessageType[] = ["IMAGE", "VIDEO", "AUDIO", "DOCUMENT", "STICKER"];
@@ -190,6 +216,8 @@ function ignored(reason: string): NormalizedEvent {
     messageType: "OTHER",
     text: "",
     occurredAt: new Date().toISOString(),
+    links: [],
+    replyToProviderId: null,
     meta: {},
   };
 }
@@ -230,6 +258,11 @@ function normalizeItem(item: Record<string, any>): NormalizedEvent {
     messageType,
     text,
     occurredAt,
+    links: extractLinks(text),
+    replyToProviderId: message?.extendedTextMessage?.contextInfo?.stanzaId ??
+      message?.imageMessage?.contextInfo?.stanzaId ??
+      message?.videoMessage?.contextInfo?.stanzaId ??
+      null,
     meta: {
       remoteJid,
       remoteJidAlt: key.remoteJidAlt ?? null,

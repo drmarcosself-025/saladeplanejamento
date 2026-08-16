@@ -1,27 +1,46 @@
-// lead-worker — onde a decisão acontece.
+// lead-worker — orquestrador de TURNO.
 //
-// Pipeline por mensagem elegível:
-//   Policy Engine (pré) → IA (1 chamada) → Policy Engine (pós) →
-//   canSendMessage() → Evolution sendText → funil + auditoria
+// Um turno é tudo que o lead falou desde a última resposta. O pipeline:
 //
-// Nada aqui confia na IA: ela sugere, o código decide. Toda saída deste
-// arquivo passa por evaluatePostPolicy() e canSendMessage(), sem exceção.
+//   claim (lock por lead) → batch cronológico → Policy Engine (pré) →
+//   1 chamada de IA → Policy Engine (pós) → assertTurnStillValid →
+//   rate limit → delay natural → assertTurnStillValid → envio →
+//   funil + resumo → decisão auditável → close_turn
+//
+// Nada aqui confia na IA, e nada sai sem que o turno seja validado de novo
+// imediatamente antes do envio: entre pensar e falar, a conversa pode ter
+// mudado.
 
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { assertConfig, config } from "../_shared/config.ts";
 import { json, log, secretMatches } from "../_shared/http.ts";
 import { analyzeMessage, type AiSuggestion } from "../_shared/ai.ts";
-import { evaluatePostPolicy, evaluatePrePolicy, type PolicyCategory } from "../_shared/policy.ts";
-import { canSendMessage, type SendStats } from "../_shared/ratelimit.ts";
+import { evaluatePostPolicy, evaluatePrePolicy } from "../_shared/policy.ts";
+import { canSendMessage, type TurnStats } from "../_shared/ratelimit.ts";
 import { resolveStage, type Stage } from "../_shared/funnel.ts";
 import { sendText } from "../_shared/evolution.ts";
-import type { MessageType } from "../_shared/normalize.ts";
+import { contentHash, type MessageType } from "../_shared/normalize.ts";
+import {
+  assertTurnStillValid,
+  type BatchMessage,
+  type ClaimedTurn,
+  claimTurns,
+  closeTurn,
+  fetchBatch,
+  naturalDelayMs,
+  newWorkerId,
+  outcomeForInvalidTurn,
+  reclaimExpiredJobs,
+  renewLease,
+  type SendPurpose,
+  sleep,
+  type TurnOutcome,
+} from "../_shared/turn.ts";
 
 interface LeadRow {
   id: string;
   whatsapp_id: string;
   phone: string | null;
-  is_lid: boolean;
   name: string | null;
   stage: Stage;
   treatment_interest: string | null;
@@ -30,16 +49,10 @@ interface LeadRow {
   conversation_summary: string | null;
 }
 
-interface MessageRow {
-  id: string;
-  text: string | null;
-  message_type: string;
-  processed: boolean;
-}
-
 interface DecisionInput {
   leadId: string;
-  messageId: string;
+  turnId: string;
+  batchIds: string[];
   intent?: string | null;
   risk?: "LOW" | "MEDIUM" | "HIGH" | null;
   confidence?: number | null;
@@ -48,7 +61,14 @@ interface DecisionInput {
   stageAfter: Stage;
   reason: string;
   replySent: boolean;
+  bubblesSent: number;
+  outcome: TurnOutcome;
   aiRaw?: unknown;
+}
+
+interface TurnResult {
+  outcome: TurnOutcome;
+  replied: boolean;
 }
 
 Deno.serve(async (req) => {
@@ -64,151 +84,229 @@ Deno.serve(async (req) => {
     return json({ error: "nao_autorizado" }, 401);
   }
 
+  const startedAt = Date.now();
+  const workerId = newWorkerId();
+  const body = await req.json().catch(() => ({}));
+  const source = String((body as Record<string, unknown>)?.source ?? "desconhecido");
+
   const supabase = createClient(config.supabase.url, config.supabase.serviceRoleKey, {
     auth: { persistSession: false },
   });
 
-  const { data: jobs, error } = await supabase.rpc("claim_jobs", { p_limit: config.worker.batchSize });
-  if (error) {
-    log("claim_jobs_falhou", { erro: error.message });
-    return json({ error: "claim_jobs_falhou" }, 500);
+  // Acordado pelo webhook: espera a janela de debounce antes de tentar pegar
+  // o turno. Numa rajada, só o worker da última mensagem encontra trabalho —
+  // os outros voltam vazios, e isso é o comportamento desejado.
+  if (source === "webhook") {
+    const waitMs = Math.min(
+      config.turn.debounceSeconds * 1000 + 500,
+      config.worker.maxWaitMs,
+    );
+    await sleep(waitMs);
   }
 
-  const claimed = (jobs ?? []) as Array<{ job_id: number; lead_id: string; message_id: string }>;
-  let processed = 0;
-  let replied = 0;
+  // Worker morto (deploy, timeout, crash) devolve o turno para a fila.
+  await reclaimExpiredJobs(supabase);
 
-  for (const job of claimed) {
-    try {
-      const outcome = await processJob(supabase, job.lead_id, job.message_id);
-      if (outcome.replied) replied++;
-      processed++;
-      await supabase.rpc("finish_job", {
-        p_job_id: job.job_id,
-        p_ok: true,
-        p_error: null,
-        p_max_attempts: config.worker.maxAttempts,
-        p_backoff_base: config.worker.backoffBaseSeconds,
-      });
-    } catch (jobError) {
-      // Erro transitório (rede, IA fora do ar, timeout): volta para a fila com
-      // backoff. Esgotadas as tentativas, o lead vira HUMAN_REQUIRED — nenhum
-      // lead morre em silêncio dentro da fila.
-      log("job_falhou", { jobId: job.job_id, erro: String(jobError) });
-      await supabase.rpc("finish_job", {
-        p_job_id: job.job_id,
-        p_ok: false,
-        p_error: String(jobError).slice(0, 500),
-        p_max_attempts: config.worker.maxAttempts,
-        p_backoff_base: config.worker.backoffBaseSeconds,
-      });
-    }
+  let turns: ClaimedTurn[];
+  try {
+    turns = await claimTurns(supabase, workerId);
+  } catch (error) {
+    log("claim_falhou", { erro: String(error) });
+    return json({ error: "claim_falhou" }, 500);
   }
 
-  return json({ ok: true, claimed: claimed.length, processed, replied });
+  if (turns.length === 0) {
+    return json({ ok: true, claimed: 0, source });
+  }
+
+  // Turnos claimados são de leads distintos por construção (lock por lead),
+  // então rodam em paralelo sem risco de cruzar conversa.
+  const results = await Promise.all(
+    turns.map((turn) => runTurnSafely(supabase, workerId, turn)),
+  );
+
+  const summary = results.reduce<Record<string, number>>((acc, result) => {
+    acc[result.outcome] = (acc[result.outcome] ?? 0) + 1;
+    return acc;
+  }, {});
+
+  log("worker_ok", { source, claimed: turns.length, ms: Date.now() - startedAt, ...summary });
+  return json({ ok: true, claimed: turns.length, outcomes: summary });
 });
 
-async function processJob(
+async function runTurnSafely(
   supabase: SupabaseClient,
-  leadId: string,
-  messageId: string,
-): Promise<{ replied: boolean }> {
-  const { data: lead, error: leadError } = await supabase
-    .from("leads")
-    .select("id, whatsapp_id, phone, is_lid, name, stage, treatment_interest, automation_status, needs_human, conversation_summary")
-    .eq("id", leadId)
-    .single();
-  if (leadError || !lead) throw new Error(`lead_nao_encontrado: ${leadError?.message}`);
+  workerId: string,
+  turn: ClaimedTurn,
+): Promise<TurnResult> {
+  try {
+    return await runTurn(supabase, workerId, turn);
+  } catch (error) {
+    // Erro transitório: volta para a fila com backoff. O batch permanece não
+    // processado, então o próximo turno reúne tudo de novo.
+    log("turno_falhou", { jobId: turn.jobId, erro: String(error) });
+    await closeTurn(supabase, {
+      jobId: turn.jobId,
+      workerId,
+      outcome: "FAILED",
+      batchIds: [],
+      markProcessed: false,
+      error: String(error).slice(0, 500),
+    });
+    return { outcome: "FAILED", replied: false };
+  }
+}
 
-  const { data: message, error: messageError } = await supabase
-    .from("messages")
-    .select("id, text, message_type, processed")
-    .eq("id", messageId)
-    .single();
-  if (messageError || !message) throw new Error(`mensagem_nao_encontrada: ${messageError?.message}`);
+async function runTurn(
+  supabase: SupabaseClient,
+  workerId: string,
+  turn: ClaimedTurn,
+): Promise<TurnResult> {
+  const lead = await loadLead(supabase, turn.leadId);
 
-  const leadRow = lead as LeadRow;
-  const messageRow = message as MessageRow;
+  const batch: BatchMessage[] = await fetchBatch(supabase, turn.leadId);
+  const batchIds = batch.map((message) => message.id);
 
-  // Idempotência final: se esta mensagem já foi processada, o job é um eco.
-  if (messageRow.processed) {
-    log("mensagem_ja_processada", { messageId });
-    return { replied: false };
+  // Turno sem trabalho: o takeover ou um turno anterior já consumiu as
+  // mensagens. Fecha sem tocar em nada.
+  if (batch.length === 0) {
+    await closeTurn(supabase, {
+      jobId: turn.jobId,
+      workerId,
+      outcome: "NO_REPLY",
+      batchIds: [],
+      markProcessed: false,
+    });
+    return { outcome: "NO_REPLY", replied: false };
   }
 
+  const batchText = batch
+    .map((message) => (message.text ?? "").trim())
+    .filter(Boolean)
+    .join("\n");
+  const batchTypes = batch.map((message) => message.message_type as MessageType);
+
   const pre = evaluatePrePolicy({
-    text: messageRow.text ?? "",
-    messageType: messageRow.message_type as MessageType,
-    automationStatus: leadRow.automation_status,
-    needsHuman: leadRow.needs_human,
+    text: batchText,
+    messageTypes: batchTypes,
+    automationStatus: lead.automation_status,
+    needsHuman: lead.needs_human,
   });
 
-  // ---------------------------------------------------------------------
-  // Caminho sem IA: bloqueio determinístico (mídia, termo vermelho, pausa).
-  // ---------------------------------------------------------------------
+  // -------------------------------------------------------------------
+  // Caminho sem IA: bloqueio determinístico (figurinha solta, mídia,
+  // termo vermelho, automação pausada).
+  // -------------------------------------------------------------------
   if (!pre.allowAi) {
-    let handoffSent = false;
+    let bubblesSent = 0;
 
     if (pre.handoffMessage) {
-      const stats = await loadStats(supabase, leadRow.id);
-      const gate = canSendMessage({
-        stats,
-        automationStatus: leadRow.automation_status,
-        needsHuman: leadRow.needs_human,
-        alreadyProcessed: false,
-        replyText: pre.handoffMessage,
+      const delivered = await deliver(supabase, {
+        lead,
+        turnId: turn.turnId,
+        jobId: turn.jobId,
+        workerId,
+        batchIds,
+        text: pre.handoffMessage,
+        sequence: 1,
         purpose: "HANDOFF",
+        // Handoff clínico não espera: quem está com dor não pode ficar
+        // olhando para o silêncio por 5 segundos.
+        delayMs: 0,
       });
-      if (gate.allowed) {
-        handoffSent = await deliver(supabase, leadRow, pre.handoffMessage);
-      } else {
-        log("handoff_bloqueado", { motivo: gate.reason, leadId: leadRow.id });
+      if (delivered.status === "SENT") bubblesSent = 1;
+
+      if (delivered.status === "STALE") {
+        // Nada saiu: o batch volta inteiro para o próximo turno.
+        const outcome = outcomeForInvalidTurn(delivered.reason ?? "stale", 0);
+        await recordDecision(supabase, {
+          leadId: lead.id,
+          turnId: turn.turnId,
+          batchIds,
+          action: "IGNORE",
+          stageBefore: lead.stage,
+          stageAfter: lead.stage,
+          reason: `handoff_descartado:${delivered.reason}`,
+          replySent: false,
+          bubblesSent: 0,
+          outcome,
+        });
+        await finish(supabase, workerId, turn, batchIds, outcome, false);
+        return { outcome, replied: false };
+      }
+
+      if (delivered.status === "UNKNOWN") {
+        await markUnknownSend(supabase, lead.id);
+        await finish(supabase, workerId, turn, batchIds, "SEND_UNKNOWN", true);
+        await recordDecision(supabase, {
+          leadId: lead.id,
+          turnId: turn.turnId,
+          batchIds,
+          action: "HUMAN",
+          stageBefore: lead.stage,
+          stageAfter: lead.stage,
+          reason: `${pre.reason} | envio_incerto`,
+          replySent: false,
+          bubblesSent: 0,
+          outcome: "SEND_UNKNOWN",
+        });
+        return { outcome: "SEND_UNKNOWN", replied: false };
       }
     }
 
     if (pre.needsHuman) {
       await supabase
         .from("leads")
-        .update({
-          needs_human: true,
-          automation_status: "HUMAN_REQUIRED",
-          human_reason: pre.reason,
-        })
-        .eq("id", leadRow.id);
+        .update({ needs_human: true, automation_status: "HUMAN_REQUIRED", human_reason: pre.reason })
+        .eq("id", lead.id);
     }
 
+    const outcome: TurnOutcome = bubblesSent > 0 ? "COMPLETED" : "NO_REPLY";
     await recordDecision(supabase, {
-      leadId: leadRow.id,
-      messageId: messageRow.id,
+      leadId: lead.id,
+      turnId: turn.turnId,
+      batchIds,
       risk: pre.category === "RED" ? "HIGH" : pre.category === "YELLOW" ? "MEDIUM" : "LOW",
       action: pre.needsHuman ? "HUMAN" : "IGNORE",
-      stageBefore: leadRow.stage,
-      stageAfter: leadRow.stage,
+      stageBefore: lead.stage,
+      stageAfter: lead.stage,
       reason: pre.reason,
-      replySent: handoffSent,
+      replySent: bubblesSent > 0,
+      bubblesSent,
+      outcome,
     });
 
-    return { replied: handoffSent };
+    // Mesmo sem resposta, o batch foi decidido: marcá-lo como processado
+    // evita reprocessar a mesma figurinha/mídia para sempre.
+    await finish(supabase, workerId, turn, batchIds, outcome, true);
+    return { outcome, replied: bubblesSent > 0 };
   }
 
-  // ---------------------------------------------------------------------
-  // Caminho com IA: UMA chamada, saída estruturada.
-  // ---------------------------------------------------------------------
-  const recent = await loadRecentMessages(supabase, leadRow.id, messageRow.id);
+  // -------------------------------------------------------------------
+  // Caminho com IA: UMA chamada para a rajada inteira.
+  // -------------------------------------------------------------------
+  const history = await loadHistory(supabase, lead.id, batchIds);
 
   const analysis = await analyzeMessage({
-    category: pre.category as PolicyCategory,
-    leadName: leadRow.name,
-    currentStage: leadRow.stage,
-    treatmentInterest: leadRow.treatment_interest,
-    conversationSummary: leadRow.conversation_summary,
-    recentMessages: recent,
-    currentMessage: messageRow.text ?? "",
+    category: pre.category,
+    leadName: lead.name,
+    currentStage: lead.stage,
+    treatmentInterest: lead.treatment_interest,
+    conversationSummary: lead.conversation_summary,
+    recentMessages: history,
+    currentMessages: batch.map((message) => (message.text ?? "").trim()).filter(Boolean),
   });
 
+  // Heartbeat depois da operação mais longa do turno.
+  if (!await renewLease(supabase, turn.jobId, workerId)) {
+    log("lease_perdido_pos_ia", { jobId: turn.jobId });
+    await finish(supabase, workerId, turn, batchIds, "STALE_BEFORE_SEND", false);
+    return { outcome: "STALE_BEFORE_SEND", replied: false };
+  }
+
   if (!analysis.ok) {
-    // Falha de rede/timeout merece retry; JSON fora do contrato, não — repetir
-    // a mesma pergunta ao mesmo modelo tende ao mesmo resultado.
+    // Rede/timeout merece retry; JSON fora do contrato não — repetir a mesma
+    // pergunta ao mesmo modelo tende ao mesmo resultado.
     if (analysis.error.startsWith("chamada_falhou")) {
       throw new Error(analysis.error);
     }
@@ -216,19 +314,23 @@ async function processJob(
     await supabase
       .from("leads")
       .update({ needs_human: true, automation_status: "HUMAN_REQUIRED", human_reason: "resposta da IA inválida" })
-      .eq("id", leadRow.id);
+      .eq("id", lead.id);
 
     await recordDecision(supabase, {
-      leadId: leadRow.id,
-      messageId: messageRow.id,
+      leadId: lead.id,
+      turnId: turn.turnId,
+      batchIds,
       action: "HUMAN",
-      stageBefore: leadRow.stage,
-      stageAfter: leadRow.stage,
+      stageBefore: lead.stage,
+      stageAfter: lead.stage,
       reason: analysis.error,
       replySent: false,
+      bubblesSent: 0,
+      outcome: "NO_REPLY",
       aiRaw: analysis.raw,
     });
-    return { replied: false };
+    await finish(supabase, workerId, turn, batchIds, "NO_REPLY", true);
+    return { outcome: "NO_REPLY", replied: false };
   }
 
   const suggestion: AiSuggestion = analysis.value;
@@ -241,174 +343,413 @@ async function processJob(
     needsHuman: suggestion.needs_human,
   });
 
-  // Duas coisas diferentes que a auditoria não pode confundir: a IA ter
-  // respondido de verdade, e o lead ter recebido só a frase neutra.
-  let aiReplySent = false;
-  let handoffSent = false;
-  let blockReason = post.reason;
+  const purpose: SendPurpose = post.allowSend ? "AI_REPLY" : "HANDOFF";
+  const textToSend = post.allowSend ? suggestion.reply : config.clinic.handoffMessage;
 
-  if (post.allowSend) {
-    const stats = await loadStats(supabase, leadRow.id);
-    const gate = canSendMessage({
-      stats,
-      automationStatus: leadRow.automation_status,
-      needsHuman: leadRow.needs_human,
-      alreadyProcessed: false,
-      replyText: suggestion.reply,
-      purpose: "AI_REPLY",
+  // Nada será enviado neste turno: a IA pediu para ignorar e não há motivo
+  // para frase neutra.
+  if (!post.allowSend && !post.needsHuman) {
+    await applyLeadUpdate(supabase, lead, suggestion, lead.stage, post.needsHuman, post.reason);
+    await recordDecision(supabase, {
+      leadId: lead.id,
+      turnId: turn.turnId,
+      batchIds,
+      intent: suggestion.intent,
+      risk: suggestion.risk,
+      confidence: suggestion.confidence,
+      action: "IGNORE",
+      stageBefore: lead.stage,
+      stageAfter: lead.stage,
+      reason: post.reason,
+      replySent: false,
+      bubblesSent: 0,
+      outcome: "NO_REPLY",
+      aiRaw: analysis.raw,
     });
-
-    if (gate.allowed) {
-      aiReplySent = await deliver(supabase, leadRow, suggestion.reply);
-      blockReason = aiReplySent ? post.reason : "envio_falhou_na_evolution";
-    } else {
-      blockReason = `rate_limit:${gate.reason}`;
-    }
-  } else if (post.needsHuman) {
-    // A IA quis responder algo que a política não autoriza (preço inventado,
-    // conteúdo clínico, confiança baixa): ninguém recebe nada automático.
-    const handoff = config.clinic.handoffMessage;
-    const stats = await loadStats(supabase, leadRow.id);
-    const gate = canSendMessage({
-      stats,
-      automationStatus: leadRow.automation_status,
-      needsHuman: leadRow.needs_human,
-      alreadyProcessed: false,
-      replyText: handoff,
-      purpose: "HANDOFF",
-    });
-    if (gate.allowed) {
-      handoffSent = await deliver(supabase, leadRow, handoff);
-    }
+    await finish(supabase, workerId, turn, batchIds, "NO_REPLY", true);
+    return { outcome: "NO_REPLY", replied: false };
   }
 
-  // O funil só anda quando a automação de fato conduziu a conversa. Uma frase
-  // de "a equipe vai te responder" não é progresso comercial.
-  const stageDecision = resolveStage(leadRow.stage, suggestion.stage, aiReplySent);
+  // --- Checagem 1: a resposta recém-gerada ainda vale? -----------------
+  const afterAi = await assertTurnStillValid(supabase, {
+    jobId: turn.jobId,
+    workerId,
+    leadId: lead.id,
+    batchIds,
+    purpose,
+  });
 
-  const leadUpdate: Record<string, unknown> = {
-    stage: stageDecision.stage,
-    conversation_summary: suggestion.summary ?? leadRow.conversation_summary,
-    treatment_interest: suggestion.treatment_interest ?? leadRow.treatment_interest,
-  };
-
-  if (post.needsHuman) {
-    leadUpdate.needs_human = true;
-    leadUpdate.automation_status = "HUMAN_REQUIRED";
-    leadUpdate.human_reason = suggestion.human_reason ?? post.reason;
+  if (!afterAi.valid) {
+    // Nenhuma bolha saiu: o batch NÃO é marcado como processado, então o
+    // próximo turno junta mensagens antigas e novas e responde uma vez só.
+    const outcome = outcomeForInvalidTurn(afterAi.reason, 0);
+    await recordDecision(supabase, {
+      leadId: lead.id,
+      turnId: turn.turnId,
+      batchIds,
+      intent: suggestion.intent,
+      risk: suggestion.risk,
+      confidence: suggestion.confidence,
+      action: "IGNORE",
+      stageBefore: lead.stage,
+      stageAfter: lead.stage,
+      // Decisão obsoleta não é aplicada: resumo, etapa e interesse ficam como
+      // estavam. O próximo turno recalcula a partir do histórico real.
+      reason: `descartada_pos_ia:${afterAi.reason}`,
+      replySent: false,
+      bubblesSent: 0,
+      outcome,
+      aiRaw: analysis.raw,
+    });
+    await finish(supabase, workerId, turn, batchIds, outcome, false);
+    return { outcome, replied: false };
   }
 
-  await supabase.from("leads").update(leadUpdate).eq("id", leadRow.id);
+  // --- Rate limit (por turno, nunca por bolha) -------------------------
+  const stats = await loadTurnStats(supabase, lead.id);
+  const gate = canSendMessage({
+    stats,
+    automationStatus: lead.automation_status,
+    needsHuman: lead.needs_human,
+    replyText: textToSend,
+    purpose,
+  });
+
+  if (!gate.allowed) {
+    if (post.needsHuman) await markNeedsHuman(supabase, lead.id, suggestion.human_reason ?? post.reason);
+    await recordDecision(supabase, {
+      leadId: lead.id,
+      turnId: turn.turnId,
+      batchIds,
+      intent: suggestion.intent,
+      risk: suggestion.risk,
+      confidence: suggestion.confidence,
+      action: post.needsHuman ? "HUMAN" : "IGNORE",
+      stageBefore: lead.stage,
+      stageAfter: lead.stage,
+      reason: `rate_limit:${gate.reason}`,
+      replySent: false,
+      bubblesSent: 0,
+      outcome: "NO_REPLY",
+      aiRaw: analysis.raw,
+    });
+    await finish(supabase, workerId, turn, batchIds, "NO_REPLY", true);
+    return { outcome: "NO_REPLY", replied: false };
+  }
+
+  // --- Envio (delay natural + checagem 2 dentro do deliver) ------------
+  const delivered = await deliver(supabase, {
+    lead,
+    turnId: turn.turnId,
+    jobId: turn.jobId,
+    workerId,
+    batchIds,
+    text: textToSend,
+    sequence: 1,
+    purpose,
+    delayMs: purpose === "HANDOFF"
+      ? 0
+      : naturalDelayMs(config.turn.responseDelayMinMs, config.turn.responseDelayMaxMs),
+  });
+
+  if (delivered.status === "STALE") {
+    const outcome = outcomeForInvalidTurn(delivered.reason ?? "stale", 0);
+    await recordDecision(supabase, {
+      leadId: lead.id,
+      turnId: turn.turnId,
+      batchIds,
+      intent: suggestion.intent,
+      risk: suggestion.risk,
+      confidence: suggestion.confidence,
+      action: "IGNORE",
+      stageBefore: lead.stage,
+      stageAfter: lead.stage,
+      reason: `descartada_antes_do_envio:${delivered.reason}`,
+      replySent: false,
+      bubblesSent: 0,
+      outcome,
+      aiRaw: analysis.raw,
+    });
+    await finish(supabase, workerId, turn, batchIds, outcome, false);
+    return { outcome, replied: false };
+  }
+
+  if (delivered.status === "UNKNOWN") {
+    await markUnknownSend(supabase, lead.id);
+    await recordDecision(supabase, {
+      leadId: lead.id,
+      turnId: turn.turnId,
+      batchIds,
+      intent: suggestion.intent,
+      risk: suggestion.risk,
+      confidence: suggestion.confidence,
+      action: "HUMAN",
+      stageBefore: lead.stage,
+      stageAfter: lead.stage,
+      reason: "envio_incerto:nunca_reenviar_automaticamente",
+      replySent: false,
+      bubblesSent: 0,
+      outcome: "SEND_UNKNOWN",
+      aiRaw: analysis.raw,
+    });
+    await finish(supabase, workerId, turn, batchIds, "SEND_UNKNOWN", true);
+    return { outcome: "SEND_UNKNOWN", replied: false };
+  }
+
+  const sent = delivered.status === "SENT";
+  const aiReplySent = sent && purpose === "AI_REPLY";
+
+  // O funil só anda quando a automação de fato conduziu a conversa. Frase
+  // neutra de "a equipe vai te responder" não é progresso comercial.
+  const stageDecision = resolveStage(lead.stage, suggestion.stage, aiReplySent);
+
+  await applyLeadUpdate(
+    supabase,
+    lead,
+    suggestion,
+    stageDecision.stage,
+    post.needsHuman,
+    suggestion.human_reason ?? post.reason,
+    sent,
+  );
 
   await recordDecision(supabase, {
-    leadId: leadRow.id,
-    messageId: messageRow.id,
+    leadId: lead.id,
+    turnId: turn.turnId,
+    batchIds,
     intent: suggestion.intent,
     risk: suggestion.risk,
     confidence: suggestion.confidence,
     action: aiReplySent ? "AUTO_REPLY" : post.needsHuman ? "HUMAN" : "IGNORE",
-    stageBefore: leadRow.stage,
+    stageBefore: lead.stage,
     stageAfter: stageDecision.stage,
-    reason: `${blockReason} | funil:${stageDecision.reason}${handoffSent ? " | frase_neutra_enviada" : ""}`,
-    replySent: aiReplySent || handoffSent,
+    reason: `${post.reason} | funil:${stageDecision.reason}`,
+    replySent: sent,
+    bubblesSent: sent ? 1 : 0,
+    outcome: sent ? "COMPLETED" : "NO_REPLY",
     aiRaw: analysis.raw,
   });
 
-  return { replied: aiReplySent || handoffSent };
+  await finish(supabase, workerId, turn, batchIds, sent ? "COMPLETED" : "NO_REPLY", true);
+  return { outcome: sent ? "COMPLETED" : "NO_REPLY", replied: sent };
 }
 
 // ---------------------------------------------------------------------------
-// Envio: reserva → envia → carimba o id.
+// Envio de uma bolha.
 //
-// A reserva ANTES do envio existe por causa da corrida com o human takeover:
-// a Evolution pode entregar o eco `fromMe` da nossa própria mensagem antes de
-// gravarmos o id devolvido. Com a linha já reservada, ingest_outbound_event
-// reconhece o texto e vincula, em vez de declarar intervenção humana.
+// Ordem obrigatória: delay natural → checagem de validade → reserva no outbox
+// → POST na Evolution → carimbo do id.
+//
+// A reserva ANTES do envio resolve a corrida com o human takeover (a Evolution
+// às vezes entrega o eco `fromMe` da nossa mensagem antes de gravarmos o id).
+// A checagem imediatamente antes do POST é a última chance de cancelar uma
+// resposta que ficou velha.
 // ---------------------------------------------------------------------------
-async function deliver(supabase: SupabaseClient, lead: LeadRow, text: string): Promise<boolean> {
+interface DeliverInput {
+  lead: LeadRow;
+  turnId: string;
+  jobId: number;
+  workerId: string;
+  batchIds: string[];
+  text: string;
+  sequence: number;
+  purpose: SendPurpose;
+  delayMs: number;
+}
+
+interface DeliverResult {
+  status: "SENT" | "FAILED" | "UNKNOWN" | "STALE" | "DUPLICATE";
+  reason?: string;
+}
+
+async function deliver(supabase: SupabaseClient, input: DeliverInput): Promise<DeliverResult> {
+  if (input.delayMs > 0) await sleep(input.delayMs);
+
+  // --- Checagem 2: depois do delay, imediatamente antes de falar ------
+  const valid = await assertTurnStillValid(supabase, {
+    jobId: input.jobId,
+    workerId: input.workerId,
+    leadId: input.lead.id,
+    batchIds: input.batchIds,
+    purpose: input.purpose,
+  });
+  if (!valid.valid) return { status: "STALE", reason: valid.reason };
+
+  const hash = await contentHash(input.text);
+
+  // Worker zumbi: se esta mesma bolha já saiu há pouco, não sai de novo.
+  const since = new Date(Date.now() - config.turn.outboxDedupeSeconds * 1000).toISOString();
+  const { data: duplicate } = await supabase
+    .from("messages")
+    .select("id")
+    .eq("lead_id", input.lead.id)
+    .eq("direction", "OUT")
+    .eq("content_hash", hash)
+    .gte("created_at", since)
+    .limit(1);
+
+  if (duplicate && duplicate.length > 0) {
+    log("bolha_duplicada_evitada", { leadId: input.lead.id, turnId: input.turnId });
+    return { status: "DUPLICATE" };
+  }
+
   const { data: reserved, error: reserveError } = await supabase
     .from("messages")
     .insert({
-      lead_id: lead.id,
+      lead_id: input.lead.id,
       direction: "OUT",
       sender_type: "AI",
       message_type: "TEXT",
-      text,
+      text: input.text,
       processed: true,
-      meta: { status: "SENDING" },
+      content_hash: hash,
+      send_status: "PENDING",
+      turn_id: input.turnId,
+      bubble_sequence: input.sequence,
+      meta: { purpose: input.purpose },
     })
     .select("id")
     .single();
 
   if (reserveError || !reserved) throw new Error(`reserva_envio_falhou: ${reserveError?.message}`);
 
-  // Telefone real quando existe; senão o JID que a própria Evolution entregou.
-  // Um código LID nunca é "convertido" em número aqui.
-  const destination = lead.phone ?? lead.whatsapp_id;
-  const result = await sendText(destination, text);
+  // Telefone real quando existe; senão o JID que a própria Evolution
+  // entregou. Um código LID nunca é "convertido" em número aqui.
+  const result = await sendText(input.lead.phone ?? input.lead.whatsapp_id, input.text);
 
-  if (!result.ok) {
-    await supabase.from("messages").delete().eq("id", reserved.id);
-    return false;
+  if (result.status === "FAILED") {
+    // Recusa explícita: a mensagem não saiu. A linha vira registro de falha,
+    // não fantasma de mensagem enviada.
+    await supabase.from("messages").update({ send_status: "FAILED" }).eq("id", reserved.id);
+    return { status: "FAILED", reason: result.error };
   }
 
   const { error: stampError } = await supabase
     .from("messages")
-    .update({ provider_message_id: result.providerMessageId, meta: { status: "SENT" } })
+    .update({ send_status: result.status, provider_message_id: result.providerMessageId })
     .eq("id", reserved.id);
 
-  if (stampError) {
-    // Acontece se o webhook já tiver registrado esse id primeiro. A mensagem
-    // foi entregue de qualquer forma — só o carimbo ficou redundante.
-    log("carimbo_id_falhou", { erro: stampError.message });
+  // Acontece se o webhook já registrou esse id primeiro (eco do fromMe). A
+  // mensagem foi entregue de qualquer forma — só o carimbo ficou redundante.
+  if (stampError) log("carimbo_id_falhou", { erro: stampError.message });
+
+  if (result.status === "SENT") {
+    await supabase
+      .from("leads")
+      .update({ last_message_at: new Date().toISOString(), last_outbound_at: new Date().toISOString() })
+      .eq("id", input.lead.id);
   }
 
-  await supabase
-    .from("leads")
-    .update({ last_message_at: new Date().toISOString() })
-    .eq("id", lead.id);
-
-  return true;
+  return { status: result.status, reason: result.error };
 }
 
-async function loadStats(supabase: SupabaseClient, leadId: string): Promise<SendStats> {
-  const { data, error } = await supabase.rpc("get_send_stats", { p_lead_id: leadId });
-  if (error) throw new Error(`get_send_stats: ${error.message}`);
-  const stats = data as Partial<SendStats> | null;
-  return {
-    last_out_at: stats?.last_out_at ?? null,
-    last_out_text: stats?.last_out_text ?? null,
-    hour_count: Number(stats?.hour_count ?? 0),
-    day_count: Number(stats?.day_count ?? 0),
-  };
+// ---------------------------------------------------------------------------
+// Apoio
+// ---------------------------------------------------------------------------
+async function loadLead(supabase: SupabaseClient, leadId: string): Promise<LeadRow> {
+  const { data, error } = await supabase
+    .from("leads")
+    .select("id, whatsapp_id, phone, name, stage, treatment_interest, automation_status, needs_human, conversation_summary")
+    .eq("id", leadId)
+    .single();
+  if (error || !data) throw new Error(`lead_nao_encontrado: ${error?.message}`);
+  return data as LeadRow;
 }
 
 /** Contexto barato: resumo + últimas N mensagens. Sem embeddings, sem RAG. */
-async function loadRecentMessages(
+async function loadHistory(
   supabase: SupabaseClient,
   leadId: string,
-  currentMessageId: string,
+  batchIds: string[],
 ): Promise<Array<{ direction: "IN" | "OUT"; text: string }>> {
   const { data, error } = await supabase
     .from("messages")
-    .select("direction, text, created_at")
+    .select("direction, text, received_at, id")
     .eq("lead_id", leadId)
-    .neq("id", currentMessageId)
     .not("text", "is", null)
-    .order("created_at", { ascending: false })
-    .limit(config.ai.contextMessages);
+    // Bolhas canceladas nunca chegaram ao lead: não podem virar memória.
+    // (mensagens recebidas têm send_status nulo — o `or` preserva elas)
+    .or("send_status.is.null,send_status.neq.CANCELLED")
+    .order("received_at", { ascending: false })
+    .limit(config.ai.contextMessages + batchIds.length);
 
   if (error) throw new Error(`historico_falhou: ${error.message}`);
 
-  return ((data ?? []) as Array<{ direction: "IN" | "OUT"; text: string }>)
+  return ((data ?? []) as Array<{ direction: "IN" | "OUT"; text: string; id: string }>)
+    .filter((row) => !batchIds.includes(row.id))
+    .slice(0, config.ai.contextMessages)
     .reverse()
     .map((row) => ({ direction: row.direction, text: row.text }));
+}
+
+async function loadTurnStats(supabase: SupabaseClient, leadId: string): Promise<TurnStats> {
+  const { data, error } = await supabase.rpc("get_turn_stats", { p_lead_id: leadId });
+  if (error) throw new Error(`get_turn_stats: ${error.message}`);
+  const stats = data as Partial<TurnStats> | null;
+  return {
+    last_turn_at: stats?.last_turn_at ?? null,
+    last_out_text: stats?.last_out_text ?? null,
+    turn_hour_count: Number(stats?.turn_hour_count ?? 0),
+    turn_day_count: Number(stats?.turn_day_count ?? 0),
+  };
+}
+
+async function applyLeadUpdate(
+  supabase: SupabaseClient,
+  lead: LeadRow,
+  suggestion: AiSuggestion,
+  stage: Stage,
+  needsHuman: boolean,
+  humanReason: string,
+  sent = false,
+): Promise<void> {
+  const update: Record<string, unknown> = {
+    stage,
+    conversation_summary: suggestion.summary ?? lead.conversation_summary,
+    treatment_interest: suggestion.treatment_interest ?? lead.treatment_interest,
+  };
+
+  if (needsHuman) {
+    update.needs_human = true;
+    update.automation_status = "HUMAN_REQUIRED";
+    update.human_reason = humanReason;
+  }
+
+  if (sent) update.last_outbound_at = new Date().toISOString();
+
+  await supabase.from("leads").update(update).eq("id", lead.id);
+}
+
+async function markNeedsHuman(supabase: SupabaseClient, leadId: string, reason: string): Promise<void> {
+  await supabase
+    .from("leads")
+    .update({ needs_human: true, automation_status: "HUMAN_REQUIRED", human_reason: reason })
+    .eq("id", leadId);
+}
+
+async function markUnknownSend(supabase: SupabaseClient, leadId: string): Promise<void> {
+  // Envio incerto nunca é reenviado automaticamente: quem decide é uma
+  // pessoa, olhando o WhatsApp.
+  await markNeedsHuman(supabase, leadId, "envio sem confirmação da Evolution — conferir no WhatsApp");
+}
+
+async function finish(
+  supabase: SupabaseClient,
+  workerId: string,
+  turn: ClaimedTurn,
+  batchIds: string[],
+  outcome: TurnOutcome,
+  markProcessed: boolean,
+): Promise<void> {
+  await closeTurn(supabase, { jobId: turn.jobId, workerId, outcome, batchIds, markProcessed });
 }
 
 async function recordDecision(supabase: SupabaseClient, input: DecisionInput): Promise<void> {
   const { error } = await supabase.from("automation_decisions").insert({
     lead_id: input.leadId,
-    message_id: input.messageId,
+    turn_id: input.turnId,
+    batch_message_ids: input.batchIds,
+    message_id: input.batchIds[input.batchIds.length - 1] ?? null,
     intent: input.intent ?? null,
     risk: input.risk ?? null,
     confidence: input.confidence ?? null,
@@ -417,6 +758,8 @@ async function recordDecision(supabase: SupabaseClient, input: DecisionInput): P
     stage_after: input.stageAfter,
     reason: input.reason,
     reply_sent: input.replySent,
+    bubbles_sent: input.bubblesSent,
+    outcome: input.outcome,
     ai_raw: input.aiRaw ?? null,
   });
 

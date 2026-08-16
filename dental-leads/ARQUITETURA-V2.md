@@ -1,9 +1,9 @@
-# V2 — Automação conversacional comercial (desenho para aprovação)
+# V2 — Automação conversacional comercial
 
-> **Status: proposta. Nada disto foi implementado.**
-> Este documento responde aos 12 pontos do item 55 e passa a ser a fonte de
-> verdade do projeto quando aprovado. `ARQUITETURA.md` (V1) continua válido em
-> tudo que não for contrariado aqui.
+> **Status: aprovado. Fase 1 implementada** (migration `0003_turn_engine.sql`).
+> Fases 2 a 5 seguem como desenho. Este documento é a fonte de verdade do
+> projeto; `ARQUITETURA.md` (V1) continua válido no que não for contrariado
+> aqui. O estado de cada fase está no fim do documento.
 
 Mudança de eixo, em uma frase: a V1 responde **mensagem por mensagem**; a V2
 responde **turno por turno** — espera a pessoa terminar de escrever, decide uma
@@ -45,6 +45,15 @@ Nada é jogado fora. As RPCs `ingest_outbound_event`, `finish_job`,
 ## 2. Migrations necessárias
 
 Duas, separadas de propósito — a segunda pode ser aprovada depois.
+
+> **Ajuste na execução:** a migration foi entregue dividida por fase, não em
+> bloco. `0003_turn_engine.sql` (Fase 1, já aplicada) traz só o que o motor de
+> turno usa: cronologia, outbox, `turn_id`, desfechos e o novo modelo de `jobs`.
+> As colunas comerciais desta seção (`lead_temperature`, `booking_intent_score`,
+> `service_category`, `scheduling_preference`, objeção, sinal de compra e
+> notificação) entram junto da Fase 3, quando passam a ser preenchidas —
+> coluna que ninguém escreve é dívida, não fundação. `followup_step` fica
+> adiado com o motor de cadência, conforme decidido.
 
 ### `0003_conversation_engine.sql`
 
@@ -512,3 +521,74 @@ local, porque lock e corrida não se testam com mock.
    **F5** ordenação e visual do Kanban.
    Assim o motor conversacional entra antes do comercial, e cada fase é
    revisável sozinha.
+
+---
+
+## Estado da implementação
+
+### Fase 1 — cronologia, debounce, lock por lead e batch ✅
+
+Entregue em `0003_turn_engine.sql` + `_shared/turn.ts` + reescrita do
+`lead-worker`. As emendas da revisão estão todas dentro:
+
+| Emenda | Onde ficou |
+|---|---|
+| job por lead + índice parcial único `PENDING` | `jobs_one_pending_per_lead` |
+| `debounce_started_at` com teto medido desde o início da rajada | `ingest_inbound_message`, nunca reescrito no `ON CONFLICT` |
+| lease com heartbeat + reclaim | `renew_lease`, `reclaim_expired_jobs` |
+| `assertTurnStillValid()` nos três pontos | `assert_turn_valid` (RPC) + `_shared/turn.ts` |
+| job é sinal, não dono de mensagem; batch montado no claim | `fetch_batch` |
+| desfechos explícitos | enum `turn_outcome` |
+| `turn_id` em todas as bolhas e na decisão | `messages.turn_id`, `automation_decisions.turn_id` |
+| outbox por bolha com `sequence` e `send_status` | `messages.bubble_sequence` / `send_status` |
+| rate limit por turno | `get_turn_stats` + `canSendMessage` |
+| cadência adiada, só `last_inbound_at`/`last_outbound_at` | `leads` |
+
+**Quando o lease é renovado** (`renew_lease`): logo após a chamada de IA — a
+operação mais longa do turno — e, na Fase 2, antes da primeira bolha e depois
+de cada bolha enviada. Se a renovação falhar, o worker perdeu a posse do lead e
+**aborta sem enviar nada**: outro worker já assumiu.
+
+**Regra que decide o resto:** o batch só é marcado como processado quando
+alguma bolha saiu. Turno abortado antes de qualquer envio devolve as mensagens
+para o próximo batch — assim o lead recebe uma resposta coerente, e não duas
+parciais.
+
+#### O que foi verificado de verdade
+
+`tests/db/turn_engine_test.sql` roda contra Postgres real (13 casos, todos
+passando): debounce agrupando a rajada, teto de espera, reentrega da Evolution,
+claim respeitando janela e lock, batch em ordem cronológica, `assert_turn_valid`
+nos seus seis motivos de recusa, `close_turn` com e sem envio, retry com
+backoff, esgotamento de tentativas virando caso humano, reclaim de lease
+expirado, renovação só pelo dono, dois leads em paralelo, takeover cancelando
+turno e eco da própria bolha **não** virando takeover.
+
+`tests/db/concurrency_test.sh` sobe 8 workers simultâneos disputando 2 leads:
+resultado exato de 2 turnos claimados, um por lead. É o teste que o script
+transacional não consegue fazer.
+
+Dois defeitos reais apareceram só quando o SQL rodou de verdade:
+
+1. **`now()` vs `clock_timestamp()`** — `now()` é o horário de início da
+   transação. Mensagens gravadas na mesma transação recebiam `received_at`
+   idêntico, empatando a ordem cronológica e neutralizando o empurrão da janela
+   de debounce. A cronologia agora usa `clock_timestamp()`.
+2. **`next_attempt_at` nascendo no futuro** — quando vinha do relógio de
+   parede, ficava marginalmente à frente do `now()` do claim e o turno nascia
+   inelegível. Passou a ser `now()`; a espera da rajada é responsabilidade
+   exclusiva do `run_after`.
+
+### Fases seguintes (desenho aprovado, ainda não implementado)
+
+- **F2** — `reply_messages[]` em bolhas, `assertTurnStillValid` entre cada
+  bolha, `PARTIAL_STALE` registrando quais bolhas saíram e cancelando o resto
+  sem aplicar resumo/etapa da decisão obsoleta, outbox `CANCELLED`.
+- **F3** — Structured Output V2 completo (temperatura, score de agendamento,
+  objeção, objetivo comercial), playbook por serviço, política contextual
+  (“vocês fazem canal?” ≠ “meu dente dói, será canal?”), links por chave
+  autorizada, horário/expediente no prompt.
+- **F4** — push (`web-push` testado no Supabase antes de fixar a
+  implementação), `push_subscriptions` como tabela de infraestrutura, PWA com
+  deep link para o card.
+- **F5** — Kanban com temperatura, prioridade visual e ordenação por urgência.

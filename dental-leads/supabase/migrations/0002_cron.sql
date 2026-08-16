@@ -1,10 +1,10 @@
 -- ============================================================================
 -- Rede de segurança da fila (opcional, porém recomendada).
 --
--- O caminho primário é o wa-webhook chamando o lead-worker logo após gravar a
--- mensagem. Este cron existe só para o caso de esse disparo falhar (rede,
--- cold start, deploy no meio do caminho) — ele varre jobs pendentes e jobs em
--- retry por backoff.
+-- O caminho primário é o wa-webhook chamando o lead-worker, que espera a
+-- janela de debounce e então pega o turno. Este cron existe só para o caso de
+-- esse disparo falhar (rede, cold start, deploy no meio do caminho) — ele
+-- varre turnos maduros e jobs em retry por backoff.
 --
 -- ANTES DE RODAR: substitua os dois placeholders abaixo.
 --   <PROJECT_REF>   ref do projeto Supabase (ex.: abcdefghijklmnop)
@@ -34,8 +34,12 @@ select cron.schedule(
     timeout_milliseconds := 55000
   )
   where exists (
+    -- run_after respeita a janela de debounce: o cron nunca "atropela" um
+    -- lead que ainda está escrevendo.
     select 1 from public.jobs
-     where status = 'PENDING' and next_attempt_at <= now()
+     where status = 'PENDING'
+       and run_after <= now()
+       and next_attempt_at <= now()
   );
   $$
 );
