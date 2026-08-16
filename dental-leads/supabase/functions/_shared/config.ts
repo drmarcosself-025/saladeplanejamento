@@ -94,6 +94,12 @@ export const config = {
     // Janela em que uma bolha com o mesmo conteúdo é considerada reenvio
     // (protege contra worker zumbi que voltou a si depois do lease expirar).
     outboxDedupeSeconds: num("OUTBOX_DEDUPE_SECONDS", 120),
+    // Margem estimada por bolha (POST + idas ao banco) usada SÓ para decidir,
+    // antes de mandar a primeira bolha, se o orçamento de parede restante
+    // ainda comporta a sequência inteira. Não é o timeout real do envio
+    // (esse é EVOLUTION_TIMEOUT_MS) — é uma estimativa conservadora para o
+    // yield preventivo do item 7.
+    bubbleSendMarginMs: num("BUBBLE_SEND_MARGIN_MS", 5000),
   },
 
   // Limites são por TURNO, não por mensagem: com resposta em bolhas, contar

@@ -17,9 +17,8 @@ PSQL="psql -X -q -A -t -v ON_ERROR_STOP=1"
 
 echo "== preparando cenário"
 $PSQL <<'SQL'
-delete from public.jobs where lead_id in (
-  select id from public.leads where whatsapp_id like '55119999900%@s.whatsapp.net'
-);
+-- Apagar o lead cascateia pra jobs/messages/automation_decisions — não dá
+-- pra apagar jobs antes por causa do FK messages.reserved_job_id.
 delete from public.leads where whatsapp_id like '55119999900%@s.whatsapp.net';
 
 select public.ingest_inbound_message(
@@ -84,9 +83,6 @@ SQL
 
 echo "== limpando cenário 1"
 $PSQL <<'SQL'
-delete from public.jobs where lead_id in (
-  select id from public.leads where whatsapp_id like '55119999900%@s.whatsapp.net'
-);
 delete from public.leads where whatsapp_id like '55119999900%@s.whatsapp.net';
 SQL
 
@@ -155,7 +151,75 @@ end \$\$;
 "
 
 echo "== limpando cenário 2"
+$PSQL -c "delete from public.leads where id = '$LEAD_ID';"
+
+# ============================================================================
+# Cenário 3 — duas (ou N) tentativas concorrentes da MESMA posição de
+# sequência (mesmo turn_id + bubble_sequence), com CONTEÚDO DIFERENTE em cada
+# uma. Isola a proteção da UNIQUE (turn_id, bubble_sequence) do dedupe por
+# content_hash do cenário 2 (que só entra em ação para texto idêntico já
+# CONFIRMADO SENT) — aqui nenhuma delas foi enviada ainda, então só o índice
+# único pode impedir duas bolhas ocuparem a posição 1 do mesmo turno.
+# Esperado: exatamente 1 sucesso; o resto recusado por violação do índice
+# único (23505); nunca duas linhas com o mesmo (turn_id, bubble_sequence).
+# ============================================================================
+echo "== preparando cenário 3 (duas tentativas concorrentes da mesma sequência)"
+LEAD_ID3=$($PSQL -c "
+  select (public.ingest_inbound_message(
+    '5511999990021@s.whatsapp.net', '5511999990021', false, 'Sequencia',
+    'SEQ-1', 'TEXT', 'Oi', '{}'::jsonb, now(), 'h-seq1', null, null, false, null, 5, 30)
+  )->>'lead_id';
+")
+LEAD_ID3=$(echo "$LEAD_ID3" | tr -d '[:space:]')
+
+$PSQL -c "update public.jobs set run_after = now() where lead_id = '$LEAD_ID3' and status = 'PENDING';" > /dev/null
+CLAIM3=$($PSQL -c "select job_id, turn_id from public.claim_lead_jobs('worker-seq', 1, 120);")
+JOB_ID3=$(echo "$CLAIM3" | awk -F'|' 'NR==1{gsub(/ /,"",$1); print $1}')
+TURN_ID3=$(echo "$CLAIM3" | awk -F'|' 'NR==1{gsub(/ /,"",$2); print $2}')
+
+echo "== $WORKERS chamadas simultâneas para (turn_id, bubble_sequence)=1, cada uma com texto diferente"
+tmp3=$(mktemp -d)
+for i in $(seq 1 "$WORKERS"); do
+  (
+    $PSQL -c "
+      select (public.reserve_outbound_bubble(
+        p_job_id => $JOB_ID3, p_worker_id => 'worker-seq', p_lead_id => '$LEAD_ID3',
+        p_input_revision => 1, p_batch_ids => (select array_agg(id) from public.messages where lead_id = '$LEAD_ID3' and direction = 'IN'),
+        p_purpose => 'AI_REPLY', p_turn_id => '$TURN_ID3', p_sequence => 1,
+        p_text => 'tentativa numero $i', p_content_hash => 'hash-seq-tentativa-$i', p_dedupe_seconds => 120
+      ))->>'reserved';
+    " > "$tmp3/s$i.out" 2>&1
+  ) &
+done
+wait
+
+seq_success=0
+seq_unique_violation=0
+for i in $(seq 1 "$WORKERS"); do
+  out=$(cat "$tmp3/s$i.out")
+  val=$(echo "$out" | tr -d '[:space:]')
+  if [ "$val" = "true" ]; then
+    seq_success=$((seq_success + 1))
+  elif echo "$out" | grep -qi "duplicate key\|23505\|unique constraint"; then
+    seq_unique_violation=$((seq_unique_violation + 1))
+  fi
+done
+rm -rf "$tmp3"
+
+echo "sucessos: $seq_success (esperado: 1) | recusados por índice único: $seq_unique_violation (esperado: $((WORKERS - 1)))"
+
 $PSQL -c "
-delete from public.jobs where lead_id = '$LEAD_ID';
-delete from public.leads where id = '$LEAD_ID';
+do \$\$
+declare v_count int;
+begin
+  select count(*) into v_count from public.messages
+   where lead_id = '$LEAD_ID3' and turn_id = '$TURN_ID3' and bubble_sequence = 1;
+  if v_count <> 1 then
+    raise exception 'FALHOU: deveria existir exatamente 1 bolha na posição (turn_id, sequence=1), há %', v_count;
+  end if;
+  raise notice 'SEQUÊNCIA SOB CONCORRÊNCIA REAL OK: % tentativas simultâneas, 1 única bolha ocupou a posição', $WORKERS;
+end \$\$;
 "
+
+echo "== limpando cenário 3"
+$PSQL -c "delete from public.leads where id = '$LEAD_ID3';"

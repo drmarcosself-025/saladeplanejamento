@@ -3,13 +3,15 @@
 // Um turno é tudo que o lead falou desde a última resposta. O pipeline:
 //
 //   claim (lock por lead) → batch cronológico → Policy Engine (pré) →
-//   1 chamada de IA → Policy Engine (pós) → assertTurnStillValid →
-//   rate limit → delay natural → assertTurnStillValid → envio →
-//   funil + resumo → decisão auditável → close_turn
+//   [checkpoint: orçamento de parede] → 1 chamada de IA → Policy Engine (pós)
+//   → assertTurnStillValid → rate limit → [checkpoint: orçamento] →
+//   POR BOLHA: delay natural → [checkpoint: orçamento] → reserva atômica →
+//   advance-to-SENDING atômico (revalida tudo de novo) → POST na Evolution →
+//   SENT/UNKNOWN/FAILED → funil + resumo (só se completo) → decisão
+//   auditável → close_turn
 //
-// Nada aqui confia na IA, e nada sai sem que o turno seja validado de novo
-// imediatamente antes do envio: entre pensar e falar, a conversa pode ter
-// mudado.
+// Nada aqui confia na IA, e nada sai sem revalidação imediatamente antes do
+// POST: entre pensar e falar, a conversa pode ter mudado.
 
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { assertConfig, config } from "../_shared/config.ts";
@@ -21,21 +23,27 @@ import { resolveStage, type Stage } from "../_shared/funnel.ts";
 import { sendText } from "../_shared/evolution.ts";
 import { contentHash, type MessageType } from "../_shared/normalize.ts";
 import {
+  advanceBubbleToSending,
   assertTurnStillValid,
   type BatchMessage,
   type ClaimedTurn,
   claimTurns,
   closeTurn,
+  createWallBudget,
   fetchBatch,
   naturalDelayMs,
   newWorkerId,
   outcomeForInvalidTurn,
   reclaimExpiredJobs,
+  reconcileStuckSendingBubbles,
   renewLease,
   reserveOutboundBubble,
   type SendPurpose,
   sleep,
+  type TurnInvalidReason,
   type TurnOutcome,
+  type WallBudget,
+  yieldTurn,
 } from "../_shared/turn.ts";
 
 interface LeadRow {
@@ -64,6 +72,7 @@ interface DecisionInput {
   reason: string;
   replySent: boolean;
   bubblesSent: number;
+  bubblesPlanned: number;
   outcome: TurnOutcome;
   aiRaw?: unknown;
 }
@@ -87,6 +96,10 @@ Deno.serve(async (req) => {
   }
 
   const startedAt = Date.now();
+  // Orçamento de parede da INVOCAÇÃO inteira (todos os turnos claimados
+  // juntos), não de um turno isolado — é o tempo de execução da Edge
+  // Function que precisa caber no limite da plataforma.
+  const wallBudget = createWallBudget(startedAt, config.worker.wallBudgetMs);
   const workerId = newWorkerId();
   const body = await req.json().catch(() => ({}));
   const source = String((body as Record<string, unknown>)?.source ?? "desconhecido");
@@ -106,7 +119,11 @@ Deno.serve(async (req) => {
     await sleep(waitMs);
   }
 
-  // Worker morto (deploy, timeout, crash) devolve o turno para a fila.
+  // Reconciliação antes de qualquer claim novo: bolha travada em SENDING
+  // (worker morreu entre o POST aceito e a gravação do resultado) vira
+  // UNKNOWN, nunca PENDING. Job com lease vencido volta pra fila, ou é
+  // encerrado como SUPERSEDED se já existe turno mais novo do mesmo lead.
+  await reconcileStuckSendingBubbles(supabase);
   await reclaimExpiredJobs(supabase);
 
   let turns: ClaimedTurn[];
@@ -124,7 +141,7 @@ Deno.serve(async (req) => {
   // Turnos claimados são de leads distintos por construção (lock por lead),
   // então rodam em paralelo sem risco de cruzar conversa.
   const results = await Promise.all(
-    turns.map((turn) => runTurnSafely(supabase, workerId, turn)),
+    turns.map((turn) => runTurnSafely(supabase, workerId, turn, wallBudget)),
   );
 
   const summary = results.reduce<Record<string, number>>((acc, result) => {
@@ -140,12 +157,14 @@ async function runTurnSafely(
   supabase: SupabaseClient,
   workerId: string,
   turn: ClaimedTurn,
+  wallBudget: WallBudget,
 ): Promise<TurnResult> {
   try {
-    return await runTurn(supabase, workerId, turn);
+    return await runTurn(supabase, workerId, turn, wallBudget);
   } catch (error) {
-    // Erro transitório: volta para a fila com backoff. O batch permanece não
-    // processado, então o próximo turno reúne tudo de novo.
+    // Erro transitório (rede, IA fora do ar, 429 da Evolution): volta para a
+    // fila com backoff. O batch permanece não processado, então o próximo
+    // turno reúne tudo de novo.
     log("turno_falhou", { jobId: turn.jobId, erro: String(error) });
     await closeTurn(supabase, {
       jobId: turn.jobId,
@@ -163,6 +182,7 @@ async function runTurn(
   supabase: SupabaseClient,
   workerId: string,
   turn: ClaimedTurn,
+  wallBudget: WallBudget,
 ): Promise<TurnResult> {
   const lead = await loadLead(supabase, turn.leadId);
 
@@ -198,95 +218,74 @@ async function runTurn(
 
   // -------------------------------------------------------------------
   // Caminho sem IA: bloqueio determinístico (figurinha solta, mídia,
-  // termo vermelho, automação pausada).
+  // termo vermelho, automação pausada). A frase neutra, quando existe,
+  // passa pelo MESMO motor de sequência de bolhas — não é um caminho
+  // paralelo com menos proteção.
   // -------------------------------------------------------------------
   if (!pre.allowAi) {
-    let bubblesSent = 0;
-
-    if (pre.handoffMessage) {
-      const delivered = await deliver(supabase, {
+    const messages = pre.handoffMessage ? [pre.handoffMessage] : [];
+    const sequence = messages.length > 0
+      ? await sendBubbleSequence(supabase, {
         lead,
-        turnId: turn.turnId,
         jobId: turn.jobId,
+        turnId: turn.turnId,
         workerId,
         batchIds,
         revision,
-        text: pre.handoffMessage,
-        sequence: 1,
         purpose: "HANDOFF",
+        messages,
         // Handoff clínico não espera: quem está com dor não pode ficar
-        // olhando para o silêncio por 5 segundos.
-        delayMs: 0,
-      });
-      if (delivered.status === "SENT") bubblesSent = 1;
+        // olhando pro silêncio por segundos enquanto o sistema "pensa".
+        firstDelayMs: 0,
+        wallBudget,
+      })
+      : null;
 
-      if (delivered.status === "STALE") {
-        // Nada saiu: o batch volta inteiro para o próximo turno.
-        const outcome = outcomeForInvalidTurn(delivered.reason ?? "stale", 0);
-        await recordDecision(supabase, {
-          leadId: lead.id,
-          turnId: turn.turnId,
-          batchIds,
-      inputRevision: revision,
-          action: "IGNORE",
-          stageBefore: lead.stage,
-          stageAfter: lead.stage,
-          reason: `handoff_descartado:${delivered.reason}`,
-          replySent: false,
-          bubblesSent: 0,
-          outcome,
-        });
-        await finish(supabase, workerId, turn, batchIds, outcome, false);
-        return { outcome, replied: false };
-      }
-
-      if (delivered.status === "UNKNOWN") {
-        await markUnknownSend(supabase, lead.id);
-        await finish(supabase, workerId, turn, batchIds, "SEND_UNKNOWN", true);
-        await recordDecision(supabase, {
-          leadId: lead.id,
-          turnId: turn.turnId,
-          batchIds,
-      inputRevision: revision,
-          action: "HUMAN",
-          stageBefore: lead.stage,
-          stageAfter: lead.stage,
-          reason: `${pre.reason} | envio_incerto`,
-          replySent: false,
-          bubblesSent: 0,
-          outcome: "SEND_UNKNOWN",
-        });
-        return { outcome: "SEND_UNKNOWN", replied: false };
-      }
+    if (sequence?.kind === "yielded") {
+      // Sem enviar nada ainda: devolve o turno, nada de tentativa gasta.
+      return { outcome: "YIELDED", replied: false };
     }
+
+    const bubblesSent = sequence?.kind === "closed" ? sequence.bubblesSent : 0;
+    const markProcessed = sequence?.kind === "closed" ? sequence.markProcessed : true;
+    const outcome: TurnOutcome = sequence?.kind === "closed" ? sequence.outcome : "NO_REPLY";
 
     if (pre.needsHuman) {
       await supabase
         .from("leads")
         .update({ needs_human: true, automation_status: "HUMAN_REQUIRED", human_reason: pre.reason })
         .eq("id", lead.id);
+    } else if (sequence?.kind === "closed" && sequence.needsHuman) {
+      await markNeedsHuman(supabase, lead.id, sequence.humanReason ?? "envio incerto");
     }
 
-    const outcome: TurnOutcome = bubblesSent > 0 ? "COMPLETED" : "NO_REPLY";
     await recordDecision(supabase, {
       leadId: lead.id,
       turnId: turn.turnId,
       batchIds,
       inputRevision: revision,
       risk: pre.category === "RED" ? "HIGH" : pre.category === "YELLOW" ? "MEDIUM" : "LOW",
-      action: pre.needsHuman ? "HUMAN" : "IGNORE",
+      action: bubblesSent > 0 ? "HUMAN" : pre.needsHuman ? "HUMAN" : "IGNORE",
       stageBefore: lead.stage,
       stageAfter: lead.stage,
-      reason: pre.reason,
+      reason: sequence?.kind === "closed" ? `${pre.reason} | ${sequence.lastReason}` : pre.reason,
       replySent: bubblesSent > 0,
       bubblesSent,
+      bubblesPlanned: messages.length,
       outcome,
     });
 
     // Mesmo sem resposta, o batch foi decidido: marcá-lo como processado
     // evita reprocessar a mesma figurinha/mídia para sempre.
-    await finish(supabase, workerId, turn, batchIds, outcome, true);
+    await finish(supabase, workerId, turn, batchIds, outcome, markProcessed);
     return { outcome, replied: bubblesSent > 0 };
+  }
+
+  // Checkpoint de orçamento — antes de gastar a chamada de IA (item 7).
+  if (wallBudget.exceeded()) {
+    const yielded = await yieldTurn(supabase, turn.jobId, workerId);
+    log("yield_pre_ia", { jobId: turn.jobId, yielded });
+    return { outcome: "YIELDED", replied: false };
   }
 
   // -------------------------------------------------------------------
@@ -334,6 +333,7 @@ async function runTurn(
       reason: analysis.error,
       replySent: false,
       bubblesSent: 0,
+      bubblesPlanned: 0,
       outcome: "NO_REPLY",
       aiRaw: analysis.raw,
     });
@@ -345,14 +345,14 @@ async function runTurn(
 
   const post = evaluatePostPolicy({
     category: pre.category,
-    reply: suggestion.reply,
+    replyMessages: suggestion.reply_messages,
     action: suggestion.action,
     confidence: suggestion.confidence,
     needsHuman: suggestion.needs_human,
   });
 
   const purpose: SendPurpose = post.allowSend ? "AI_REPLY" : "HANDOFF";
-  const textToSend = post.allowSend ? suggestion.reply : config.clinic.handoffMessage;
+  const messagesToSend = post.allowSend ? suggestion.reply_messages : [config.clinic.handoffMessage];
 
   // Nada será enviado neste turno: a IA pediu para ignorar e não há motivo
   // para frase neutra.
@@ -372,6 +372,7 @@ async function runTurn(
       reason: post.reason,
       replySent: false,
       bubblesSent: 0,
+      bubblesPlanned: 0,
       outcome: "NO_REPLY",
       aiRaw: analysis.raw,
     });
@@ -379,10 +380,12 @@ async function runTurn(
     return { outcome: "NO_REPLY", replied: false };
   }
 
-  // --- Checagem 1: a resposta recém-gerada ainda vale? -----------------
+  // --- Checkpoint barato: a resposta recém-gerada ainda vale a pena? ----
+  // (Evita reservar e cancelar quando já dá pra saber que o turno morreu.)
   const afterAi = await assertTurnStillValid(supabase, {
     jobId: turn.jobId,
     workerId,
+    turnId: turn.turnId,
     leadId: lead.id,
     batchIds,
     inputRevision: revision,
@@ -390,8 +393,6 @@ async function runTurn(
   });
 
   if (!afterAi.valid) {
-    // Nenhuma bolha saiu: o batch NÃO é marcado como processado, então o
-    // próximo turno junta mensagens antigas e novas e responde uma vez só.
     const outcome = outcomeForInvalidTurn(afterAi.reason, 0);
     await recordDecision(supabase, {
       leadId: lead.id,
@@ -409,6 +410,7 @@ async function runTurn(
       reason: `descartada_pos_ia:${afterAi.reason}`,
       replySent: false,
       bubblesSent: 0,
+      bubblesPlanned: messagesToSend.length,
       outcome,
       aiRaw: analysis.raw,
     });
@@ -422,7 +424,7 @@ async function runTurn(
     stats,
     automationStatus: lead.automation_status,
     needsHuman: lead.needs_human,
-    replyText: textToSend,
+    replyText: messagesToSend.join(" "),
     purpose,
   });
 
@@ -442,6 +444,7 @@ async function runTurn(
       reason: `rate_limit:${gate.reason}`,
       replySent: false,
       bubblesSent: 0,
+      bubblesPlanned: messagesToSend.length,
       outcome: "NO_REPLY",
       aiRaw: analysis.raw,
     });
@@ -449,193 +452,285 @@ async function runTurn(
     return { outcome: "NO_REPLY", replied: false };
   }
 
-  // --- Envio (delay natural + checagem 2 dentro do deliver) ------------
-  const delivered = await deliver(supabase, {
+  // --- A sequência de bolhas propriamente dita --------------------------
+  const sequence = await sendBubbleSequence(supabase, {
     lead,
-    turnId: turn.turnId,
     jobId: turn.jobId,
+    turnId: turn.turnId,
     workerId,
     batchIds,
     revision,
-    text: textToSend,
-    sequence: 1,
     purpose,
-    delayMs: purpose === "HANDOFF"
+    messages: messagesToSend,
+    firstDelayMs: purpose === "HANDOFF"
       ? 0
       : naturalDelayMs(config.turn.responseDelayMinMs, config.turn.responseDelayMaxMs),
+    wallBudget,
   });
 
-  if (delivered.status === "STALE") {
-    const outcome = outcomeForInvalidTurn(delivered.reason ?? "stale", 0);
-    await recordDecision(supabase, {
-      leadId: lead.id,
-      turnId: turn.turnId,
-      batchIds,
-      inputRevision: revision,
-      intent: suggestion.intent,
-      risk: suggestion.risk,
-      confidence: suggestion.confidence,
-      action: "IGNORE",
-      stageBefore: lead.stage,
-      stageAfter: lead.stage,
-      reason: `descartada_antes_do_envio:${delivered.reason}`,
-      replySent: false,
-      bubblesSent: 0,
-      outcome,
-      aiRaw: analysis.raw,
-    });
-    await finish(supabase, workerId, turn, batchIds, outcome, false);
-    return { outcome, replied: false };
+  if (sequence.kind === "yielded") {
+    return { outcome: "YIELDED", replied: false };
   }
 
-  if (delivered.status === "UNKNOWN") {
-    await markUnknownSend(supabase, lead.id);
-    await recordDecision(supabase, {
-      leadId: lead.id,
-      turnId: turn.turnId,
-      batchIds,
-      inputRevision: revision,
-      intent: suggestion.intent,
-      risk: suggestion.risk,
-      confidence: suggestion.confidence,
-      action: "HUMAN",
-      stageBefore: lead.stage,
-      stageAfter: lead.stage,
-      reason: "envio_incerto:nunca_reenviar_automaticamente",
-      replySent: false,
-      bubblesSent: 0,
-      outcome: "SEND_UNKNOWN",
-      aiRaw: analysis.raw,
-    });
-    await finish(supabase, workerId, turn, batchIds, "SEND_UNKNOWN", true);
-    return { outcome: "SEND_UNKNOWN", replied: false };
+  const aiReplySent = sequence.bubblesSent > 0 && purpose === "AI_REPLY" && sequence.outcome === "COMPLETED";
+
+  // O funil e o resumo só andam quando o turno COMPLETOU de verdade. Uma
+  // sequência parcial (PARTIAL_STALE) não aplica a decisão da IA — ela foi
+  // calculada para uma resposta que não terminou de sair; o próximo turno
+  // recalcula do histórico real.
+  const stageDecision = sequence.outcome === "COMPLETED"
+    ? resolveStage(lead.stage, suggestion.stage, aiReplySent)
+    : { stage: lead.stage, changed: false, reason: "turno_incompleto_nao_aplica_funil" };
+
+  if (sequence.outcome === "COMPLETED") {
+    await applyLeadUpdate(
+      supabase,
+      lead,
+      suggestion,
+      stageDecision.stage,
+      post.needsHuman || sequence.needsHuman,
+      suggestion.human_reason ?? sequence.humanReason ?? post.reason,
+      sequence.bubblesSent > 0,
+    );
+  } else if (sequence.needsHuman) {
+    await markNeedsHuman(supabase, lead.id, sequence.humanReason ?? "envio incerto");
   }
-
-  const sent = delivered.status === "SENT";
-  const aiReplySent = sent && purpose === "AI_REPLY";
-
-  // O funil só anda quando a automação de fato conduziu a conversa. Frase
-  // neutra de "a equipe vai te responder" não é progresso comercial.
-  const stageDecision = resolveStage(lead.stage, suggestion.stage, aiReplySent);
-
-  await applyLeadUpdate(
-    supabase,
-    lead,
-    suggestion,
-    stageDecision.stage,
-    post.needsHuman,
-    suggestion.human_reason ?? post.reason,
-    sent,
-  );
 
   await recordDecision(supabase, {
     leadId: lead.id,
     turnId: turn.turnId,
     batchIds,
-      inputRevision: revision,
+    inputRevision: revision,
     intent: suggestion.intent,
     risk: suggestion.risk,
     confidence: suggestion.confidence,
-    action: aiReplySent ? "AUTO_REPLY" : post.needsHuman ? "HUMAN" : "IGNORE",
+    action: aiReplySent ? "AUTO_REPLY" : (sequence.needsHuman || post.needsHuman) ? "HUMAN" : "IGNORE",
     stageBefore: lead.stage,
     stageAfter: stageDecision.stage,
-    reason: `${post.reason} | funil:${stageDecision.reason}`,
-    replySent: sent,
-    bubblesSent: sent ? 1 : 0,
-    outcome: sent ? "COMPLETED" : "NO_REPLY",
+    reason: `${post.reason} | ${sequence.lastReason} | funil:${stageDecision.reason}`,
+    replySent: sequence.bubblesSent > 0,
+    bubblesSent: sequence.bubblesSent,
+    bubblesPlanned: sequence.bubblesPlanned,
+    outcome: sequence.outcome,
     aiRaw: analysis.raw,
   });
 
-  await finish(supabase, workerId, turn, batchIds, sent ? "COMPLETED" : "NO_REPLY", true);
-  return { outcome: sent ? "COMPLETED" : "NO_REPLY", replied: sent };
+  await finish(supabase, workerId, turn, batchIds, sequence.outcome, sequence.markProcessed);
+  return { outcome: sequence.outcome, replied: sequence.bubblesSent > 0 };
 }
 
 // ---------------------------------------------------------------------------
-// Envio de uma bolha.
+// O motor de sequência de bolhas.
 //
-// Ordem obrigatória: delay natural → reserva ATÔMICA (checa posse do lease +
-// revisão + takeover + duplicidade e grava, tudo numa transação só) → POST na
-// Evolution → carimbo do id.
+// Por bolha, sempre nesta ordem:
+//   1. checkpoint de orçamento de parede (yield se nada saiu ainda, para se
+//      já saiu alguma);
+//   2. delay natural;
+//   3. reserva atômica (PENDING) — lease + revisão + takeover + duplicidade;
+//   4. avanço atômico para SENDING — revalida TUDO de novo (é aqui que a
+//      corrida "perdi o lease entre reservar e mandar" é fechada: se
+//      inválido, a própria função já cancela a bolha, PENDING → CANCELLED);
+//   5. só agora o POST na Evolution;
+//   6. SENT seguimos; UNKNOWN paramos (nunca reenviamos); FAILED permanente
+//      paramos sem gastar tentativa de job; FAILED retryable (429) lança
+//      exceção pro job tentar de novo com backoff.
 //
-// reserveOutboundBubble fecha a janela que uma checagem-e-depois-grava em
-// duas chamadas separadas deixaria aberta: entre confirmar que ainda temos o
-// lead e efetivamente escrever a bolha, não existe mais intervalo em que um
-// worker que já perdeu a posse consiga gravar mesmo assim.
+// PARTIAL_STALE é o desfecho de qualquer interrupção com bubblesSent > 0:
+// as bolhas que já saíram, saíram; as que não chegaram a ser reservadas nem
+// existem como linha. Nenhuma atualização semântica (stage/summary/interesse)
+// é aplicada pelo chamador quando o outcome não é COMPLETED.
 // ---------------------------------------------------------------------------
-interface DeliverInput {
+interface BubbleSequenceInput {
   lead: LeadRow;
-  turnId: string;
   jobId: number;
+  turnId: string;
   workerId: string;
   batchIds: string[];
   revision: number;
-  text: string;
-  sequence: number;
   purpose: SendPurpose;
-  delayMs: number;
+  messages: string[];
+  firstDelayMs: number;
+  wallBudget: WallBudget;
 }
 
-interface DeliverResult {
-  status: "SENT" | "FAILED" | "UNKNOWN" | "STALE" | "DUPLICATE";
-  reason?: string;
-}
+type BubbleSequenceResult =
+  | { kind: "yielded" }
+  | {
+    kind: "closed";
+    bubblesSent: number;
+    bubblesPlanned: number;
+    outcome: TurnOutcome;
+    markProcessed: boolean;
+    needsHuman: boolean;
+    humanReason?: string;
+    /** Motivo de auditoria. Para reserva/avanço recusados é um TurnInvalidReason
+     *  de verdade; para SEND_UNKNOWN/SEND_FAILED é uma descrição própria —
+     *  o campo é texto livre no banco, não um enum, então não força um
+     *  motivo de stale a descrever um problema de envio. */
+    lastReason: string;
+  };
 
-async function deliver(supabase: SupabaseClient, input: DeliverInput): Promise<DeliverResult> {
-  if (input.delayMs > 0) await sleep(input.delayMs);
+async function sendBubbleSequence(
+  supabase: SupabaseClient,
+  input: BubbleSequenceInput,
+): Promise<BubbleSequenceResult> {
+  const total = input.messages.length;
+  let sent = 0;
 
-  const hash = await contentHash(input.text);
+  // Estimativa proativa: antes de reservar a 1ª bolha, confere se o
+  // orçamento restante comporta a sequência inteira. É melhor devolver o
+  // turno limpo agora do que descobrir no meio (depois de já ter mandado
+  // bolha 1) que não dava tempo — depois da 1ª SENT não se pode mais ceder
+  // (item 7).
+  const estimatedMs = input.firstDelayMs +
+    Math.max(total - 1, 0) * config.turn.bubbleDelayMaxMs +
+    total * config.turn.bubbleSendMarginMs;
 
-  const reservation = await reserveOutboundBubble(supabase, {
-    jobId: input.jobId,
-    workerId: input.workerId,
-    leadId: input.lead.id,
-    inputRevision: input.revision,
-    batchIds: input.batchIds,
-    purpose: input.purpose,
-    turnId: input.turnId,
-    sequence: input.sequence,
-    text: input.text,
-    contentHash: hash,
-  });
+  if (input.wallBudget.remainingMs() < estimatedMs) {
+    const yielded = await yieldTurn(supabase, input.jobId, input.workerId);
+    log("yield_pre_sequencia", { jobId: input.jobId, estimatedMs, yielded });
+    return { kind: "yielded" };
+  }
 
-  if (!reservation.reserved) {
-    if (reservation.reason === "duplicado") {
-      log("bolha_duplicada_evitada", { leadId: input.lead.id, turnId: input.turnId });
-      return { status: "DUPLICATE" };
+  for (let i = 0; i < total; i++) {
+    const isFirst = i === 0;
+    const delayMs = isFirst
+      ? input.firstDelayMs
+      : naturalDelayMs(config.turn.bubbleDelayMinMs, config.turn.bubbleDelayMaxMs);
+
+    // Checkpoint de orçamento (item 7): nada enviado ainda → devolve o
+    // turno inteiro. Já enviamos alguma coisa → não se cede mais; encerra
+    // com o que já saiu.
+    if (input.wallBudget.exceeded()) {
+      if (sent === 0) {
+        const yielded = await yieldTurn(supabase, input.jobId, input.workerId);
+        log("yield_no_meio_sem_envio", { jobId: input.jobId, yielded });
+        return { kind: "yielded" };
+      }
+      return closeSequence(sent, total, "wall_budget_exceeded");
     }
-    return { status: "STALE", reason: reservation.reason };
-  }
 
-  const messageId = reservation.messageId!;
+    if (delayMs > 0) await sleep(delayMs);
 
-  // Telefone real quando existe; senão o JID que a própria Evolution
-  // entregou. Um código LID nunca é "convertido" em número aqui.
-  const result = await sendText(input.lead.phone ?? input.lead.whatsapp_id, input.text);
+    const text = input.messages[i];
+    const hash = await contentHash(text);
 
-  if (result.status === "FAILED") {
-    // Recusa explícita: a mensagem não saiu. A linha vira registro de falha,
-    // não fantasma de mensagem enviada.
+    const reservation = await reserveOutboundBubble(supabase, {
+      jobId: input.jobId,
+      workerId: input.workerId,
+      leadId: input.lead.id,
+      inputRevision: input.revision,
+      batchIds: input.batchIds,
+      purpose: input.purpose,
+      turnId: input.turnId,
+      sequence: i + 1,
+      text,
+      contentHash: hash,
+    });
+
+    if (!reservation.reserved) {
+      if (reservation.reason === "duplicado") {
+        // Já foi confirmada SENT numa tentativa anterior deste mesmo turno
+        // (worker retomado após yield/reclaim gerou texto idêntico). Não
+        // reenvia — conta como entregue e segue para a próxima bolha.
+        log("bolha_ja_enviada_antes", { leadId: input.lead.id, turnId: input.turnId, sequence: i + 1 });
+        sent++;
+        continue;
+      }
+      return closeSequence(sent, total, reservation.reason);
+    }
+
+    const messageId = reservation.messageId!;
+
+    // O portão atômico: revalida tudo de novo e só transiciona pra SENDING
+    // se ainda estiver tudo certo. Se não, a própria função já cancela a
+    // bolha (PENDING → CANCELLED) — nunca fica solta pra alguém reenviar.
+    const advance = await advanceBubbleToSending(supabase, {
+      messageId,
+      jobId: input.jobId,
+      workerId: input.workerId,
+      turnId: input.turnId,
+      leadId: input.lead.id,
+      inputRevision: input.revision,
+      batchIds: input.batchIds,
+      purpose: input.purpose,
+    });
+
+    if (!advance.advanced) {
+      return closeSequence(sent, total, advance.reason);
+    }
+
+    const result = await sendText(input.lead.phone ?? input.lead.whatsapp_id, text);
+
+    if (result.status === "SENT") {
+      await supabase
+        .from("messages")
+        .update({ send_status: "SENT", provider_message_id: result.providerMessageId })
+        .eq("id", messageId);
+      await supabase
+        .from("leads")
+        .update({ last_message_at: new Date().toISOString(), last_outbound_at: new Date().toISOString() })
+        .eq("id", input.lead.id);
+      sent++;
+      continue;
+    }
+
+    if (result.status === "UNKNOWN") {
+      // Nunca sabemos se chegou. Nunca reenviamos. Para a sequência aqui —
+      // as bolhas seguintes nem chegam a ser reservadas.
+      await supabase.from("messages").update({ send_status: "UNKNOWN" }).eq("id", messageId);
+      return {
+        kind: "closed",
+        bubblesSent: sent,
+        bubblesPlanned: total,
+        outcome: "SEND_UNKNOWN",
+        markProcessed: true,
+        needsHuman: true,
+        humanReason: "envio sem confirmação da Evolution — conferir no WhatsApp",
+        lastReason: "send_unknown",
+      };
+    }
+
+    if (result.status === "PERMANENT_FAILURE") {
+      // Rejeição de verdade (número inválido, sem permissão, payload
+      // rejeitado). Retentar por backoff não muda o resultado — vira caso
+      // humano na hora, sem gastar tentativa de job.
+      await supabase.from("messages").update({ send_status: "FAILED" }).eq("id", messageId);
+      return {
+        kind: "closed",
+        bubblesSent: sent,
+        bubblesPlanned: total,
+        outcome: "SEND_FAILED",
+        markProcessed: true,
+        needsHuman: true,
+        humanReason: `envio recusado pela Evolution (${result.error ?? "motivo desconhecido"}) — conferir manualmente`,
+        lastReason: `send_permanent_failure:${result.error ?? "desconhecido"}`,
+      };
+    }
+
+    // RETRYABLE_FAILURE (429): a própria Evolution está pedindo para
+    // esperar. Isso é exatamente o caso de uso do backoff exponencial que o
+    // job já tem — lança e deixa o catch de runTurnSafely cuidar do retry.
     await supabase.from("messages").update({ send_status: "FAILED" }).eq("id", messageId);
-    return { status: "FAILED", reason: result.error };
+    throw new Error(`bolha_retryable:${result.error ?? "429"}`);
   }
 
-  const { error: stampError } = await supabase
-    .from("messages")
-    .update({ send_status: result.status, provider_message_id: result.providerMessageId })
-    .eq("id", messageId);
+  return closeSequence(sent, total, "ok");
+}
 
-  // Acontece se o webhook já registrou esse id primeiro (eco do fromMe). A
-  // mensagem foi entregue de qualquer forma — só o carimbo ficou redundante.
-  if (stampError) log("carimbo_id_falhou", { erro: stampError.message });
-
-  if (result.status === "SENT") {
-    await supabase
-      .from("leads")
-      .update({ last_message_at: new Date().toISOString(), last_outbound_at: new Date().toISOString() })
-      .eq("id", input.lead.id);
-  }
-
-  return { status: result.status, reason: result.error };
+function closeSequence(sent: number, total: number, reason: TurnInvalidReason): BubbleSequenceResult {
+  const outcome = sent === total ? "COMPLETED" : outcomeForInvalidTurn(reason, sent);
+  return {
+    kind: "closed",
+    bubblesSent: sent,
+    bubblesPlanned: total,
+    outcome,
+    // Só marca o batch como processado quando pelo menos uma bolha saiu —
+    // turno sem nenhum envio devolve as mensagens inteiras para o próximo.
+    markProcessed: sent > 0,
+    needsHuman: false,
+    lastReason: reason,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -722,12 +817,6 @@ async function markNeedsHuman(supabase: SupabaseClient, leadId: string, reason: 
     .eq("id", leadId);
 }
 
-async function markUnknownSend(supabase: SupabaseClient, leadId: string): Promise<void> {
-  // Envio incerto nunca é reenviado automaticamente: quem decide é uma
-  // pessoa, olhando o WhatsApp.
-  await markNeedsHuman(supabase, leadId, "envio sem confirmação da Evolution — conferir no WhatsApp");
-}
-
 async function finish(
   supabase: SupabaseClient,
   workerId: string,
@@ -755,6 +844,7 @@ async function recordDecision(supabase: SupabaseClient, input: DecisionInput): P
     reason: input.reason,
     reply_sent: input.replySent,
     bubbles_sent: input.bubblesSent,
+    bubbles_planned: input.bubblesPlanned,
     outcome: input.outcome,
     ai_raw: input.aiRaw ?? null,
   });

@@ -166,44 +166,51 @@ begin
   end if;
 
   -- ---------------------------------------------------------------------
-  -- 7. assert_turn_valid — checkpoint de leitura, agora com revisão
+  -- 7. assert_turn_valid — checkpoint de leitura, com revisão e (desde a
+  --    revisão de F2) fencing por turn_id.
   -- ---------------------------------------------------------------------
-  v_result := public.assert_turn_valid(v_job, 'worker-A', v_lead, array[v_msg1, v_msg2, v_msg3], 3, 'AI_REPLY');
+  v_result := public.assert_turn_valid(p_job_id=>v_job, p_worker_id=>'worker-A', p_turn_id=>v_turn, p_lead_id=>v_lead, p_batch_ids=>array[v_msg1, v_msg2, v_msg3], p_input_revision=>3, p_purpose=>'AI_REPLY');
   if not (v_result->>'valid')::boolean then
     raise exception 'CASO 7a: turno íntegro deveria ser válido (%)', v_result->>'reason';
   end if;
 
-  v_result := public.assert_turn_valid(v_job, 'worker-B', v_lead, array[v_msg1, v_msg2, v_msg3], 3, 'AI_REPLY');
+  v_result := public.assert_turn_valid(p_job_id=>v_job, p_worker_id=>'worker-B', p_turn_id=>v_turn, p_lead_id=>v_lead, p_batch_ids=>array[v_msg1, v_msg2, v_msg3], p_input_revision=>3, p_purpose=>'AI_REPLY');
   if (v_result->>'reason') <> 'lease_perdido' then
     raise exception 'CASO 7b: worker sem posse do lease deveria ser barrado, veio %', v_result->>'reason';
   end if;
 
+  -- fencing: turn_id errado barra mesmo com worker_id certo
+  v_result := public.assert_turn_valid(p_job_id=>v_job, p_worker_id=>'worker-A', p_turn_id=>gen_random_uuid(), p_lead_id=>v_lead, p_batch_ids=>array[v_msg1, v_msg2, v_msg3], p_input_revision=>3, p_purpose=>'AI_REPLY');
+  if (v_result->>'reason') <> 'stale_turn_token' then
+    raise exception 'CASO 7b2: turn_id errado deveria ser barrado por stale_turn_token, veio %', v_result->>'reason';
+  end if;
+
   -- revisão desatualizada = turno obsoleto, mesmo que o conjunto de ids
   -- pareça completo (é a checagem O(1) fazendo o trabalho sozinha)
-  v_result := public.assert_turn_valid(v_job, 'worker-A', v_lead, array[v_msg1, v_msg2, v_msg3], 2, 'AI_REPLY');
+  v_result := public.assert_turn_valid(p_job_id=>v_job, p_worker_id=>'worker-A', p_turn_id=>v_turn, p_lead_id=>v_lead, p_batch_ids=>array[v_msg1, v_msg2, v_msg3], p_input_revision=>2, p_purpose=>'AI_REPLY');
   if (v_result->>'reason') <> 'stale_revision_mismatch' then
     raise exception 'CASO 7c: revisão desatualizada deveria invalidar o turno, veio %', v_result->>'reason';
   end if;
 
   -- defesa em profundidade: revisão bate, mas falta mensagem no conjunto
-  v_result := public.assert_turn_valid(v_job, 'worker-A', v_lead, array[v_msg1, v_msg2], 3, 'AI_REPLY');
+  v_result := public.assert_turn_valid(p_job_id=>v_job, p_worker_id=>'worker-A', p_turn_id=>v_turn, p_lead_id=>v_lead, p_batch_ids=>array[v_msg1, v_msg2], p_input_revision=>3, p_purpose=>'AI_REPLY');
   if (v_result->>'reason') <> 'stale_nova_mensagem' then
     raise exception 'CASO 7d: conjunto incompleto deveria invalidar o turno, veio %', v_result->>'reason';
   end if;
 
   update public.leads set automation_status = 'HUMAN_TAKEOVER' where id = v_lead;
-  v_result := public.assert_turn_valid(v_job, 'worker-A', v_lead, array[v_msg1, v_msg2, v_msg3], 3, 'AI_REPLY');
+  v_result := public.assert_turn_valid(p_job_id=>v_job, p_worker_id=>'worker-A', p_turn_id=>v_turn, p_lead_id=>v_lead, p_batch_ids=>array[v_msg1, v_msg2, v_msg3], p_input_revision=>3, p_purpose=>'AI_REPLY');
   if (v_result->>'reason') <> 'human_takeover' then
     raise exception 'CASO 7e: takeover humano deveria interromper o turno, veio %', v_result->>'reason';
   end if;
 
   update public.leads set automation_status = 'HUMAN_REQUIRED', needs_human = true where id = v_lead;
-  v_result := public.assert_turn_valid(v_job, 'worker-A', v_lead, array[v_msg1, v_msg2, v_msg3], 3, 'AI_REPLY');
+  v_result := public.assert_turn_valid(p_job_id=>v_job, p_worker_id=>'worker-A', p_turn_id=>v_turn, p_lead_id=>v_lead, p_batch_ids=>array[v_msg1, v_msg2, v_msg3], p_input_revision=>3, p_purpose=>'AI_REPLY');
   if (v_result->>'valid')::boolean then
     raise exception 'CASO 7f: resposta da IA não pode sair com lead aguardando humano';
   end if;
 
-  v_result := public.assert_turn_valid(v_job, 'worker-A', v_lead, array[v_msg1, v_msg2, v_msg3], 3, 'HANDOFF');
+  v_result := public.assert_turn_valid(p_job_id=>v_job, p_worker_id=>'worker-A', p_turn_id=>v_turn, p_lead_id=>v_lead, p_batch_ids=>array[v_msg1, v_msg2, v_msg3], p_input_revision=>3, p_purpose=>'HANDOFF');
   if not (v_result->>'valid')::boolean then
     raise exception 'CASO 7g: a frase neutra PODE sair em HUMAN_REQUIRED (%)', v_result->>'reason';
   end if;
@@ -251,15 +258,24 @@ begin
     raise exception 'CASO 8c: dono do lease com revisão e batch corretos deveria reservar (%)', v_result->>'reason';
   end if;
 
-  -- 8d. a mesma bolha (mesmo hash) não é reservada de novo dentro da janela
-  --     de dedupe — protege contra worker zumbi reenviando
+  -- Dedupe (desde a revisão de F2) só considera duplicata um envio
+  -- CONFIRMADO (send_status = SENT) — uma reserva PENDING de um worker que
+  -- nunca terminou não pode encalhar a bolha para sempre. Para testar o
+  -- dedupe de verdade, a bolha precisa estar SENT.
+  update public.messages
+     set send_status = 'SENT', provider_message_id = 'EVO-CASO-8'
+   where id = (v_result->>'message_id')::uuid;
+
+  -- 8d. a mesma bolha (mesmo hash), já CONFIRMADA SENT, não é reservada de
+  --     novo dentro da janela de dedupe — protege contra worker zumbi
+  --     reenviando.
   v_result := public.reserve_outbound_bubble(
     p_job_id => v_job, p_worker_id => 'worker-A', p_lead_id => v_lead,
     p_input_revision => 3, p_batch_ids => array[v_msg1, v_msg2, v_msg3],
-    p_purpose => 'AI_REPLY', p_turn_id => v_turn, p_sequence => 1,
+    p_purpose => 'AI_REPLY', p_turn_id => v_turn, p_sequence => 2,
     p_text => 'Claro 😊', p_content_hash => 'hash-bolha-1', p_dedupe_seconds => 120);
   if (v_result->>'reserved')::boolean then
-    raise exception 'CASO 8d: bolha idêntica recente deveria ser recusada como duplicata';
+    raise exception 'CASO 8d: bolha idêntica recente (já SENT) deveria ser recusada como duplicata';
   end if;
   if (v_result->>'reason') <> 'duplicado' then
     raise exception 'CASO 8d: motivo esperado duplicado, veio %', v_result->>'reason';
@@ -309,11 +325,20 @@ begin
     raise exception 'CASO 9a: deveria existir um job PENDING novo (Job B) para o lead';
   end if;
 
-  -- reclaim: A não pode voltar para PENDING (B já existe) — A é encerrado
+  -- reclaim: A não pode voltar para PENDING (B já existe) — A é encerrado.
+  -- Desde a revisão de F2 (item 1): SUPERSEDED, não FAILED — não houve erro
+  -- nenhum, só uma corrida que o índice parcial único já resolveu. status
+  -- vira DONE (terminal, sem retry), nunca marca o lead como needs_human.
   perform public.reclaim_expired_jobs();
 
-  if (select status from public.jobs where id = v_job) <> 'FAILED' then
-    raise exception 'CASO 9b: Job A (lease vencido, B já pendente) deveria ser encerrado como FAILED, não reaberto';
+  if (select status from public.jobs where id = v_job) <> 'DONE' then
+    raise exception 'CASO 9b: Job A (lease vencido, B já pendente) deveria estar DONE';
+  end if;
+  if (select outcome from public.jobs where id = v_job) <> 'SUPERSEDED' then
+    raise exception 'CASO 9b2: outcome deveria ser SUPERSEDED (não é erro), veio %', (select outcome from public.jobs where id = v_job);
+  end if;
+  if (select needs_human from public.leads where id = v_lead) then
+    raise exception 'CASO 9b3: reclaim de job superado NUNCA pode marcar o lead como needs_human';
   end if;
 
   if (select status from public.jobs where id = v_job2) <> 'PENDING' then

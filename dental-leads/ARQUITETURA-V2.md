@@ -608,11 +608,33 @@ para o relatório completo (A–H).
   ambígua foi removida (não apenas deprecada). Toda auditoria de "qual turno
   consumiu esta mensagem" responde por `consumed_by_turn_id`.
 
+### Fase 2 — stale + reply_messages + outbox por bolha + envio sequencial seguro ✅ (auditada)
+
+Entregue em `0005_bubble_sequencing.sql` + reescrita de `_shared/turn.ts`,
+`_shared/ai.ts`, `_shared/policy.ts`, `_shared/evolution.ts` e
+`lead-worker/index.ts`. Relatório completo, com os 11 ajustes obrigatórios da
+revisão e todos os cenários de teste pedidos, em `AUDITORIA_F2.md`.
+
+Resumo do que mudou: `reply_messages[]` no lugar de `reply` (a IA continua
+com o mesmo schema V1, só a forma da resposta virou bolhas); estado
+intermediário `SENDING` entre `PENDING` e `SENT`/`FAILED`/`UNKNOWN`;
+`turn_id` formalizado como token de fencing (comparado em toda checagem
+crítica, não só armazenado); `advance_bubble_to_sending` como portão atômico
+imediatamente antes do POST; `reconcile_stuck_sending_bubbles` cobrindo o
+crash entre "Evolution aceitou" e "gravamos o resultado"; `SUPERSEDED` e
+`YIELDED` como desfechos honestos (não `FAILED`); orçamento de parede
+aplicado de verdade com checkpoints antes da IA, de cada delay e de cada
+bolha; classificação de falha HTTP diferenciando 429 (retryable) de 4xx
+permanente de 5xx/timeout (incerto, nunca reenviado).
+
+Testado contra Postgres 16 real: 24 casos novos + 15 de regressão da F1 sob o
+schema novo + 3 cenários de concorrência com processos OS reais (incluindo
+"duas tentativas concorrentes da mesma sequência", sempre exatamente 1
+sucesso) + suíte de classificação HTTP. Dois bugs pegos pelos próprios testes
+durante a implementação, documentados em `AUDITORIA_F2.md` seção C.
+
 ### Fases seguintes (desenho aprovado, ainda não implementado)
 
-- **F2** — `reply_messages[]` em bolhas, `assertTurnStillValid` entre cada
-  bolha, `PARTIAL_STALE` registrando quais bolhas saíram e cancelando o resto
-  sem aplicar resumo/etapa da decisão obsoleta, outbox `CANCELLED`.
 - **F3** — Structured Output V2 completo (temperatura, score de agendamento,
   objeção, objetivo comercial), playbook por serviço, política contextual
   (“vocês fazem canal?” ≠ “meu dente dói, será canal?”), links por chave
