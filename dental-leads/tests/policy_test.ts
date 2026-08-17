@@ -106,14 +106,14 @@ Deno.test("automação pausada não gasta IA", () => {
   assertEquals(result.handoffMessage, null);
 });
 
-Deno.test("resposta com valor monetário é bloqueada", () => {
+Deno.test("resposta com valor monetário é bloqueada, mesmo escondida numa bolha só", () => {
   assertEquals(containsMoney("fica R$ 3.500 à vista"), true);
   assertEquals(containsMoney("dá pra fazer em 12x de 300"), true);
   assertEquals(containsMoney("a avaliação é gratuita"), false);
 
   const result = evaluatePostPolicy({
     category: "YELLOW",
-    reply: "O Invisalign fica R$ 15.000",
+    replyMessages: ["Vai depender do planejamento", "Mas fica R$ 15.000"],
     action: "AUTO_REPLY",
     confidence: 0.99,
     needsHuman: false,
@@ -125,7 +125,7 @@ Deno.test("resposta com valor monetário é bloqueada", () => {
 Deno.test("resposta com conteúdo clínico é bloqueada mesmo com confiança alta", () => {
   const result = evaluatePostPolicy({
     category: "GREEN",
-    reply: "Pelo que você descreveu, provavelmente é um caso de canal.",
+    replyMessages: ["Pelo que você descreveu, provavelmente é um caso de canal."],
     action: "AUTO_REPLY",
     confidence: 0.98,
     needsHuman: false,
@@ -136,7 +136,7 @@ Deno.test("resposta com conteúdo clínico é bloqueada mesmo com confiança alt
 Deno.test("confiança baixa não vira envio automático", () => {
   const result = evaluatePostPolicy({
     category: "GREEN",
-    reply: "Claro, posso te ajudar 😊",
+    replyMessages: ["Claro, posso te ajudar 😊"],
     action: "AUTO_REPLY",
     confidence: 0.2,
     needsHuman: false,
@@ -144,15 +144,38 @@ Deno.test("confiança baixa não vira envio automático", () => {
   assertEquals(result.allowSend, false);
 });
 
-Deno.test("resposta comercial aprovada passa nas duas passagens", () => {
+Deno.test("resposta comercial em bolhas aprovada passa nas duas passagens", () => {
   const result = evaluatePostPolicy({
     category: "GREEN",
-    reply: "Claro 😊 Você já usou aparelho antes ou seria o primeiro tratamento?",
+    replyMessages: ["Claro 😊", "Você já usou aparelho antes ou seria o primeiro tratamento?"],
     action: "AUTO_REPLY",
     confidence: 0.93,
     needsHuman: false,
   });
   assertEquals(result.allowSend, true);
+});
+
+Deno.test("nenhuma bolha é reprovado como resposta vazia", () => {
+  const result = evaluatePostPolicy({
+    category: "GREEN",
+    replyMessages: [],
+    action: "AUTO_REPLY",
+    confidence: 0.9,
+    needsHuman: false,
+  });
+  assertEquals(result.allowSend, false);
+  assertEquals(result.reason, "resposta_vazia");
+});
+
+Deno.test("mais bolhas que MAX_BUBBLES é reprovado", () => {
+  const result = evaluatePostPolicy({
+    category: "GREEN",
+    replyMessages: ["a", "b", "c", "d"],
+    action: "AUTO_REPLY",
+    confidence: 0.9,
+    needsHuman: false,
+  });
+  assertEquals(result.allowSend, false);
 });
 
 Deno.test("rate limit: intervalo mínimo bloqueia envio em rajada", () => {

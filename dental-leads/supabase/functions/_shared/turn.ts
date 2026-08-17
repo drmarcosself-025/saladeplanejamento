@@ -17,7 +17,57 @@ export type TurnOutcome =
   | "HUMAN_TAKEOVER"
   | "SEND_UNKNOWN"
   | "NO_REPLY"
-  | "FAILED";
+  | "FAILED"
+  /** Lease vencido, mas já existia um turno mais novo para o mesmo lead.
+   *  Não é erro — nunca deve disparar alerta de falha. */
+  | "SUPERSEDED"
+  /** O worker devolveu o turno por orçamento de parede (WORKER_WALL_BUDGET_MS)
+   *  antes de qualquer envio. Também não é erro. */
+  | "YIELDED";
+
+/**
+ * Motivos de invalidação de assert_turn_valid / reserve_outbound_bubble,
+ * centralizados aqui (item 6 da revisão de F2). O SQL devolve texto livre
+ * por natureza (é mais barato que manter um enum de Postgres para códigos
+ * só de diagnóstico), mas o lado TypeScript trata como união fechada: um
+ * motivo fora desta lista é tratado como desconhecido e logado, nunca
+ * assumido como seguro.
+ */
+export type TurnInvalidReason =
+  | "lease_perdido"
+  /** turn_id não bate com o turn_id atual do job — o fencing token da vez. */
+  | "stale_turn_token"
+  | "lead_inexistente"
+  | "human_takeover"
+  | "lead_aguarda_humano"
+  | "stale_revision_mismatch"
+  | "stale_nova_mensagem"
+  | "wall_budget_exceeded"
+  | "duplicado"
+  /** advance_bubble_to_sending recusou porque a linha não é desta reserva
+   *  exata (id/job/worker/turn_id não batem, ou já saiu de PENDING). */
+  | "bolha_nao_pertence_a_este_worker"
+  | "ok"
+  | `automacao_inativa:${string}`
+  | `checagem_indisponivel:${string}`
+  | "desconhecido";
+
+const KNOWN_REASON_PREFIXES = ["automacao_inativa:", "checagem_indisponivel:"];
+const KNOWN_REASONS = new Set<string>([
+  "lease_perdido", "stale_turn_token", "lead_inexistente", "human_takeover",
+  "lead_aguarda_humano", "stale_revision_mismatch", "stale_nova_mensagem",
+  "wall_budget_exceeded", "duplicado", "bolha_nao_pertence_a_este_worker", "ok",
+]);
+
+/** Nunca confia cegamente num texto vindo do banco: valida contra a união conhecida. */
+export function parseReason(raw: string | undefined | null): TurnInvalidReason {
+  const value = raw ?? "desconhecido";
+  if (KNOWN_REASONS.has(value)) return value as TurnInvalidReason;
+  if (KNOWN_REASON_PREFIXES.some((prefix) => value.startsWith(prefix))) {
+    return value as TurnInvalidReason;
+  }
+  return "desconhecido";
+}
 
 export type SendPurpose = "AI_REPLY" | "HANDOFF";
 
@@ -50,13 +100,34 @@ export interface Batch {
 
 export interface ValidityResult {
   valid: boolean;
-  reason: string;
+  reason: TurnInvalidReason;
 }
 
 export interface ReserveResult {
   reserved: boolean;
-  reason: string;
+  reason: TurnInvalidReason;
   messageId: string | null;
+}
+
+export interface AdvanceResult {
+  advanced: boolean;
+  reason: TurnInvalidReason;
+}
+
+/**
+ * Orçamento de parede da invocação inteira (todos os turnos claimados juntos
+ * num Promise.all, não por turno) — é o tempo de execução da própria Edge
+ * Function que importa, não o de uma conversa isolada. Checado antes de
+ * chamar a IA, antes de cada delay e antes de cada bolha (item 7).
+ */
+export interface WallBudget {
+  exceeded(): boolean;
+  remainingMs(): number;
+}
+
+export function createWallBudget(startedAt: number, budgetMs: number): WallBudget {
+  const remainingMs = () => Math.max(budgetMs - (Date.now() - startedAt), 0);
+  return { exceeded: () => remainingMs() <= 0, remainingMs };
 }
 
 /** Identifica esta invocação do worker. É a posse do lease. */
@@ -153,6 +224,8 @@ export async function assertTurnStillValid(
   input: {
     jobId: number;
     workerId: string;
+    /** Token de fencing: o turn_id da concessão de lease que gerou esta chamada. */
+    turnId: string;
     leadId: string;
     batchIds: string[];
     inputRevision: number;
@@ -162,6 +235,7 @@ export async function assertTurnStillValid(
   const { data, error } = await supabase.rpc("assert_turn_valid", {
     p_job_id: input.jobId,
     p_worker_id: input.workerId,
+    p_turn_id: input.turnId,
     p_lead_id: input.leadId,
     p_batch_ids: input.batchIds,
     p_input_revision: input.inputRevision,
@@ -172,11 +246,15 @@ export async function assertTurnStillValid(
     // Sem confirmação, não se envia. O silêncio é recuperável; a mensagem
     // errada não é.
     log("assert_turn_valid_falhou", { jobId: input.jobId, erro: error.message });
-    return { valid: false, reason: `checagem_indisponivel:${error.message}` };
+    return { valid: false, reason: parseReason(`checagem_indisponivel:${error.message}`) };
   }
 
-  const result = data as ValidityResult | null;
-  return { valid: result?.valid === true, reason: result?.reason ?? "desconhecido" };
+  const result = data as { valid?: boolean; reason?: string } | null;
+  const reason = parseReason(result?.reason);
+  if (reason === "desconhecido" && result?.reason) {
+    log("assert_turn_valid_motivo_nao_reconhecido", { jobId: input.jobId, motivoBruto: result.reason });
+  }
+  return { valid: result?.valid === true, reason };
 }
 
 /**
@@ -217,22 +295,204 @@ export async function reserveOutboundBubble(
 
   if (error) {
     log("reserve_outbound_bubble_falhou", { jobId: input.jobId, erro: error.message });
-    return { reserved: false, reason: `checagem_indisponivel:${error.message}`, messageId: null };
+    return { reserved: false, reason: parseReason(`checagem_indisponivel:${error.message}`), messageId: null };
   }
 
   const result = data as { reserved?: boolean; reason?: string; message_id?: string } | null;
+  const reason = parseReason(result?.reason);
+  if (reason === "desconhecido" && result?.reason) {
+    log("reserve_outbound_bubble_motivo_nao_reconhecido", { jobId: input.jobId, motivoBruto: result.reason });
+  }
   return {
     reserved: result?.reserved === true,
-    reason: result?.reason ?? "desconhecido",
+    reason,
     messageId: result?.message_id ?? null,
   };
 }
 
+/**
+ * O portão atômico imediatamente antes do POST. Revalida TUDO de novo (lease,
+ * fencing por turn_id, takeover, automação, revisão, conjunto de mensagens) e,
+ * se ainda válido, transiciona PENDING → SENDING na mesma transação. Se
+ * inválido, cancela a bolha ali mesmo (PENDING → CANCELLED) — nunca deixa a
+ * linha solta em PENDING para alguém tentar de novo.
+ *
+ * "advanced: true" é a única condição em que é seguro chamar a Evolution.
+ */
+export async function advanceBubbleToSending(
+  supabase: SupabaseClient,
+  input: {
+    messageId: string;
+    jobId: number;
+    workerId: string;
+    turnId: string;
+    leadId: string;
+    inputRevision: number;
+    batchIds: string[];
+    purpose: SendPurpose;
+  },
+): Promise<AdvanceResult> {
+  const { data, error } = await supabase.rpc("advance_bubble_to_sending", {
+    p_message_id: input.messageId,
+    p_job_id: input.jobId,
+    p_worker_id: input.workerId,
+    p_turn_id: input.turnId,
+    p_lead_id: input.leadId,
+    p_input_revision: input.inputRevision,
+    p_batch_ids: input.batchIds,
+    p_purpose: input.purpose,
+  });
+
+  if (error) {
+    log("advance_bubble_to_sending_falhou", { messageId: input.messageId, erro: error.message });
+    return { advanced: false, reason: parseReason(`checagem_indisponivel:${error.message}`) };
+  }
+
+  const result = data as { advanced?: boolean; reason?: string } | null;
+  const reason = parseReason(result?.reason);
+  if (reason === "desconhecido" && result?.reason) {
+    log("advance_bubble_motivo_nao_reconhecido", { messageId: input.messageId, motivoBruto: result.reason });
+  }
+  return { advanced: result?.advanced === true, reason };
+}
+
+/**
+ * O worker devolve o turno por orçamento de parede — não é falha, não gasta
+ * tentativa, não mexe em needs_human. Só quem tem o lease consegue ceder.
+ * Só deve ser chamado ANTES de qualquer bolha ter sido SENT (ver item 7):
+ * depois da primeira confirmada, o turno tem que terminar (COMPLETED ou
+ * PARTIAL_STALE), nunca ser devolvido para recomeçar do zero.
+ */
+export async function yieldTurn(
+  supabase: SupabaseClient,
+  jobId: number,
+  workerId: string,
+): Promise<boolean> {
+  const { data, error } = await supabase.rpc("yield_turn", { p_job_id: jobId, p_worker_id: workerId });
+  if (error) {
+    log("yield_turn_falhou", { jobId, erro: error.message });
+    return false;
+  }
+  return data === true;
+}
+
+/**
+ * Cancela uma bolha já reservada (PENDING) sem passar pela revalidação
+ * completa — usado quando o CHAMADOR já decidiu parar por outro motivo (ex.:
+ * orçamento de parede estourou logo após reservar, antes de tentar avançar
+ * para SENDING). Nunca chama a Evolution. Idempotente: a segunda chamada não
+ * encontra mais PENDING e devolve false sem erro. Exige job + worker +
+ * turn_id batendo — não é só "quem tem o worker_id".
+ */
+export async function cancelReservedBubble(
+  supabase: SupabaseClient,
+  input: { messageId: string; jobId: number; workerId: string; turnId: string; reason: TurnInvalidReason },
+): Promise<boolean> {
+  const { data, error } = await supabase.rpc("cancel_reserved_bubble", {
+    p_message_id: input.messageId,
+    p_job_id: input.jobId,
+    p_worker_id: input.workerId,
+    p_turn_id: input.turnId,
+    p_reason: input.reason,
+  });
+  if (error) {
+    log("cancel_reserved_bubble_falhou", { messageId: input.messageId, erro: error.message });
+    return false;
+  }
+  return data === true;
+}
+
+/**
+ * Bolha em SENDING órfã (worker sumiu) só vira UNKNOWN depois de
+ * config.turn.sendingStaleAfterMs — precisa ser maior que
+ * EVOLUTION_TIMEOUT_MS com folga, senão declara "sem confirmação" um envio
+ * que só está demorando dentro do normal. Ver AUDITORIA_F2_5.md.
+ */
+export async function reconcileStuckSendingBubbles(supabase: SupabaseClient): Promise<number> {
+  const { data, error } = await supabase.rpc("reconcile_stuck_sending_bubbles", {
+    p_stale_after_ms: config.turn.sendingStaleAfterMs,
+  });
+  if (error) {
+    log("reconcile_stuck_sending_falhou", { erro: error.message });
+    return 0;
+  }
+  return Number(data ?? 0);
+}
+
+export type FinalSendStatus = "SENT" | "FAILED" | "UNKNOWN";
+
+export interface FinalizeResult {
+  /** true = a escrita foi aplicada; a bolha realmente está no estado pedido. */
+  finalized: boolean;
+  /**
+   * true = o resultado chegou depois que o estado já tinha mudado por outra
+   * via (reconciliado enquanto o POST ainda estava em voo, por exemplo).
+   * Confirmação tardia de SENT é preservada em meta.late_confirmation, mas
+   * NUNCA sobrescreve o que já foi decidido — ver ponto 3 da validação
+   * pré-F3.
+   */
+  late: boolean;
+}
+
+/**
+ * A ÚNICA porta de escrita para o resultado final de uma bolha. Nunca faz
+ * update irrestrito: só transiciona SENDING → resultado se a bolha ainda
+ * pertence a este job/worker/turn_id E ainda está em SENDING. Um POST tardio
+ * que retorna depois da reconciliação não pode reverter um UNKNOWN em
+ * silêncio.
+ */
+export async function finalizeBubbleSend(
+  supabase: SupabaseClient,
+  input: {
+    messageId: string;
+    jobId: number;
+    workerId: string;
+    turnId: string;
+    result: FinalSendStatus;
+    providerMessageId?: string | null;
+  },
+): Promise<FinalizeResult> {
+  const { data, error } = await supabase.rpc("finalize_bubble_send", {
+    p_message_id: input.messageId,
+    p_job_id: input.jobId,
+    p_worker_id: input.workerId,
+    p_turn_id: input.turnId,
+    p_result: input.result,
+    p_provider_message_id: input.providerMessageId ?? null,
+  });
+
+  if (error) {
+    log("finalize_bubble_send_falhou", { messageId: input.messageId, erro: error.message });
+    // Sem confirmação de que a escrita foi aplicada, trata como "não
+    // finalizado" — o chamador não deve assumir sucesso silenciosamente.
+    return { finalized: false, late: false };
+  }
+
+  const result = data as { finalized?: boolean; late?: boolean } | null;
+  if (result?.late) {
+    log("finalize_bubble_send_tardio", { messageId: input.messageId, resultado: input.result });
+  }
+  return { finalized: result?.finalized === true, late: result?.late === true };
+}
+
 /** Traduz o motivo da invalidação no desfecho que vai para a auditoria. */
-export function outcomeForInvalidTurn(reason: string, bubblesSent: number): TurnOutcome {
+export function outcomeForInvalidTurn(reason: TurnInvalidReason, bubblesSent: number): TurnOutcome {
   if (reason === "human_takeover") return "HUMAN_TAKEOVER";
   if (bubblesSent > 0) return "PARTIAL_STALE";
   return "STALE_BEFORE_SEND";
+}
+
+/**
+ * Item 4 da validação pré-F3: yield só é permitido antes da 1ª bolha SENT.
+ * Depois disso, o worker precisa terminar (COMPLETED) ou fechar
+ * PARTIAL_STALE — nunca devolver o turno pra reprocessamento do zero, que
+ * geraria uma segunda resposta pro que já foi dito.
+ *
+ * Função pura, isolada de propósito: é a regra mais fácil de testar sozinha,
+ * sem precisar simular o pipeline inteiro.
+ */
+export function shouldYieldOnBudgetExceeded(bubblesSent: number): boolean {
+  return bubblesSent === 0;
 }
 
 export async function closeTurn(

@@ -20,7 +20,13 @@ export interface AiSuggestion {
   confidence: number;
   needs_human: boolean;
   human_reason: string | null;
-  reply: string;
+  /**
+   * 1 a MAX_BUBBLES mensagens curtas, na ordem em que devem sair. Vazio
+   * quando action != AUTO_REPLY. É o que sustenta o envio sequencial em
+   * bolhas — o conteúdo comercial (playbook, objeções, temperatura) fica
+   * para a Fase 3; aqui só muda a FORMA da resposta.
+   */
+  reply_messages: string[];
   summary: string | null;
 }
 
@@ -59,7 +65,14 @@ const OUTPUT_SCHEMA = {
     confidence: { type: "number", minimum: 0, maximum: 1 },
     needs_human: { type: "boolean" },
     human_reason: { type: ["string", "null"] },
-    reply: { type: "string", description: "Mensagem curta para enviar ao lead. Vazia se action != AUTO_REPLY." },
+    reply_messages: {
+      type: "array",
+      items: { type: "string" },
+      minItems: 0,
+      maxItems: 3,
+      description:
+        "1 a 3 mensagens curtas, na ordem em que devem ser enviadas (como bolhas separadas do WhatsApp). Lista vazia se action != AUTO_REPLY.",
+    },
     summary: {
       type: ["string", "null"],
       description: "Resumo atualizado da conversa em até 2 frases. É a memória do lead.",
@@ -67,7 +80,7 @@ const OUTPUT_SCHEMA = {
   },
   required: [
     "intent", "treatment_interest", "stage", "action", "risk",
-    "confidence", "needs_human", "human_reason", "reply", "summary",
+    "confidence", "needs_human", "human_reason", "reply_messages", "summary",
   ],
   additionalProperties: false,
 } as const;
@@ -88,9 +101,9 @@ ${location ? `- Localização: ${location}\n` : ""}${clinic.hours ? `- Horário 
 Seu objetivo: acolher, entender o interesse, tirar dúvidas comerciais simples e conduzir naturalmente até uma avaliação — sem pressão.
 
 Como você escreve:
-- Mensagens curtas, de 1 a 3 frases. Nada de blocos longos.
-- Linguagem humana, calorosa e brasileira. Um emoji no máximo, quando couber.
-- Uma pergunta por vez.
+- A resposta sai em 1 a 3 mensagens curtas separadas (bolhas de WhatsApp), não um texto único. Cada bolha é curta — uma ideia por vez.
+- Linguagem humana, calorosa e brasileira. Um emoji no máximo por bolha, quando couber.
+- Uma pergunta por vez, na última bolha.
 - Nunca soa como robô, formulário ou script.
 
 O que você NUNCA faz:
@@ -101,7 +114,7 @@ O que você NUNCA faz:
 - inventar preço, prazo, promoção ou informação que não está aqui;
 - fingir ser dentista ou dar qualquer orientação clínica.
 
-Se a mensagem pedir qualquer uma dessas coisas, ou se a pessoa pedir para falar com alguém da equipe: action = "HUMAN", needs_human = true e reply = "".
+Se a mensagem pedir qualquer uma dessas coisas, ou se a pessoa pedir para falar com alguém da equipe: action = "HUMAN", needs_human = true e reply_messages = [].
 
 ${categoryRule}
 
@@ -247,11 +260,19 @@ export function validateSuggestion(raw: unknown): { ok: true; value: AiSuggestio
     return { ok: false, error: `stage_invalida:${stage}` };
   }
 
-  const reply = typeof data.reply === "string" ? data.reply.trim() : "";
-  if (action === "AUTO_REPLY" && !reply) {
+  const rawMessages = Array.isArray(data.reply_messages) ? data.reply_messages : [];
+  const replyMessages = rawMessages
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  if (action === "AUTO_REPLY" && replyMessages.length === 0) {
     return { ok: false, error: "auto_reply_sem_texto" };
   }
-  if (reply.length > config.ai.maxReplyChars) {
+  if (replyMessages.length > config.turn.maxBubbles) {
+    return { ok: false, error: `reply_messages_excede_limite:${replyMessages.length}` };
+  }
+  if (replyMessages.some((message) => message.length > config.ai.maxReplyChars)) {
     return { ok: false, error: "reply_excede_tamanho" };
   }
 
@@ -269,7 +290,7 @@ export function validateSuggestion(raw: unknown): { ok: true; value: AiSuggestio
       confidence,
       needs_human: data.needs_human === true,
       human_reason: asText(data.human_reason),
-      reply,
+      reply_messages: replyMessages,
       summary: asText(data.summary),
     },
   };

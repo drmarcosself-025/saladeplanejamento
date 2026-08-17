@@ -205,7 +205,8 @@ export function evaluatePrePolicy(input: PrePolicyInput): PrePolicyResult {
 // ---------------------------------------------------------------------------
 export interface PostPolicyInput {
   category: PolicyCategory;
-  reply: string;
+  /** 1 a MAX_BUBBLES mensagens, na ordem em que sairiam. */
+  replyMessages: string[];
   action: string;
   confidence: number;
   needsHuman: boolean;
@@ -226,12 +227,16 @@ export function evaluatePostPolicy(input: PostPolicyInput): PostPolicyResult {
     return { allowSend: false, needsHuman: true, reason: "ia_pediu_humano" };
   }
 
-  const reply = (input.reply ?? "").trim();
-  if (!reply) {
+  const messages = (input.replyMessages ?? []).map((m) => m.trim()).filter(Boolean);
+  if (messages.length === 0) {
     return { allowSend: false, needsHuman: true, reason: "resposta_vazia" };
   }
 
-  if (reply.length > config.ai.maxReplyChars) {
+  if (messages.length > config.turn.maxBubbles) {
+    return { allowSend: false, needsHuman: true, reason: `bolhas_demais:${messages.length}` };
+  }
+
+  if (messages.some((m) => m.length > config.ai.maxReplyChars)) {
     return { allowSend: false, needsHuman: true, reason: "resposta_longa_demais" };
   }
 
@@ -243,8 +248,13 @@ export function evaluatePostPolicy(input: PostPolicyInput): PostPolicyResult {
     };
   }
 
+  // Checagem sobre o conjunto das bolhas: um termo de risco pode estar
+  // isolado numa única bolha e ainda assim precisa bloquear a sequência
+  // inteira — não é a mensagem 1 que sai e a 2 que não sai.
+  const joined = messages.join(" ");
+
   // Conteúdo de risco que a IA tentou responder mesmo assim.
-  const replyCategory = classifyText(reply);
+  const replyCategory = classifyText(joined);
   if (replyCategory.category === "RED") {
     return {
       allowSend: false,
@@ -253,13 +263,13 @@ export function evaluatePostPolicy(input: PostPolicyInput): PostPolicyResult {
     };
   }
 
-  if (FORBIDDEN_REPLY_PATTERNS.some((pattern) => pattern.test(normalizeForMatch(reply)))) {
+  if (FORBIDDEN_REPLY_PATTERNS.some((pattern) => pattern.test(normalizeForMatch(joined)))) {
     return { allowSend: false, needsHuman: true, reason: "resposta_com_conteudo_proibido" };
   }
 
   // Preço inventado é o erro mais caro que essa IA poderia cometer.
   // A allowlist de preços autorizados fica para depois (item 11).
-  if (containsMoney(reply)) {
+  if (containsMoney(joined)) {
     return { allowSend: false, needsHuman: true, reason: "resposta_com_valor_monetario" };
   }
 

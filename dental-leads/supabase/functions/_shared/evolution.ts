@@ -7,17 +7,39 @@ import { config } from "./config.ts";
 import { fetchWithTimeout, log } from "./http.ts";
 
 /**
- * SENT    = a Evolution confirmou o envio.
- * FAILED  = ela recusou explicitamente (4xx). Não foi entregue; pode retentar.
- * UNKNOWN = timeout, erro de rede ou 5xx. Pode ou não ter sido entregue —
- *           NUNCA reenviar automaticamente, sob pena de duplicar para o lead.
+ * SENT               = a Evolution confirmou o envio.
+ * RETRYABLE_FAILURE  = recusa que tende a passar com o tempo (429 — limite de
+ *                      taxa da própria Evolution). Não foi entregue; vale a
+ *                      pena retentar com backoff, que é exatamente o que o
+ *                      job já faz.
+ * PERMANENT_FAILURE  = recusa que não vai se resolver tentando de novo (400,
+ *                      401, 403, 404, 422...). Não foi entregue; retentar é
+ *                      desperdício e pode até martelar a API. Vira caso
+ *                      humano na hora, sem gastar tentativa de job.
+ * UNKNOWN            = timeout, erro de rede ou 5xx. Pode OU NÃO ter sido
+ *                      entregue — NUNCA reenviar automaticamente, sob pena de
+ *                      duplicar para o lead.
  */
-export type SendStatus = "SENT" | "FAILED" | "UNKNOWN";
+export type SendStatus = "SENT" | "RETRYABLE_FAILURE" | "PERMANENT_FAILURE" | "UNKNOWN";
 
 export interface SendResult {
   status: SendStatus;
   providerMessageId: string | null;
   error?: string;
+}
+
+/**
+ * 5xx pode ter entregue antes de falhar (o corpo às vezes só quebra na volta):
+ * trata-se como incerteza, não como falha, para nunca arriscar reenviar algo
+ * que já chegou. 429 é a própria Evolution pedindo para esperar — é
+ * literalmente o caso de uso do backoff exponencial que o job já tem. O resto
+ * dos 4xx é rejeição de verdade (número inválido, sem permissão, payload
+ * ruim) — insistir não muda o resultado.
+ */
+export function classifyHttpFailure(status: number): SendStatus {
+  if (status >= 500) return "UNKNOWN";
+  if (status === 429) return "RETRYABLE_FAILURE";
+  return "PERMANENT_FAILURE";
 }
 
 /**
@@ -46,9 +68,7 @@ export async function sendText(destination: string, text: string): Promise<SendR
     const body = await response.json().catch(() => null);
 
     if (!response.ok) {
-      // 5xx pode ter entregue antes de falhar: trata-se como incerteza, não
-      // como falha, justamente para não reenviar.
-      const status: SendStatus = response.status >= 500 ? "UNKNOWN" : "FAILED";
+      const status = classifyHttpFailure(response.status);
       log("evolution_envio_falhou", { httpStatus: response.status, status, ms: Date.now() - startedAt });
       return { status, providerMessageId: null, error: `http_${response.status}` };
     }
