@@ -1,3 +1,5 @@
+set search_path = dental_leads, public, extensions;
+
 -- ============================================================================
 -- Rede de segurança da fila (opcional, porém recomendada).
 --
@@ -36,7 +38,7 @@ select cron.schedule(
   where exists (
     -- run_after respeita a janela de debounce: o cron nunca "atropela" um
     -- lead que ainda está escrevendo.
-    select 1 from public.jobs
+    select 1 from dental_leads.jobs
      where status = 'PENDING'
        and run_after <= now()
        and next_attempt_at <= now()

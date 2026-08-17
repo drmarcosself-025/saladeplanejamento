@@ -1,3 +1,5 @@
+set search_path = dental_leads, public, extensions;
+
 -- ============================================================================
 -- Validação final pré-F3 — quatro correções reais encontradas ao auditar o
 -- comportamento sob condições de corrida que os testes anteriores não
@@ -26,7 +28,7 @@
 -- messages: revisão no momento da reserva (escopa o dedupe corretamente) e
 -- timestamp de entrada em SENDING (base do SENDING_STALE_AFTER_MS).
 -- ---------------------------------------------------------------------------
-alter table public.messages
+alter table dental_leads.messages
   add column if not exists reservation_revision bigint,
   add column if not exists sending_at            timestamptz;
 
@@ -48,7 +50,7 @@ alter table public.messages
 -- ainda protege contra o caso hipotético de revisão não ter avançado por um
 -- bug em outro lugar).
 -- ============================================================================
-create or replace function public.reserve_outbound_bubble(
+create or replace function dental_leads.reserve_outbound_bubble(
   p_job_id         bigint,
   p_worker_id      text,
   p_lead_id        uuid,
@@ -67,12 +69,12 @@ security definer
 set search_path = public
 as $$
 declare
-  v_job  public.jobs%rowtype;
-  v_lead public.leads%rowtype;
+  v_job  dental_leads.jobs%rowtype;
+  v_lead dental_leads.leads%rowtype;
   v_dup  uuid;
   v_msg  uuid;
 begin
-  select * into v_job from public.jobs where id = p_job_id for update;
+  select * into v_job from dental_leads.jobs where id = p_job_id for update;
 
   if v_job.id is null
      or v_job.status <> 'RUNNING'
@@ -85,7 +87,7 @@ begin
     return jsonb_build_object('reserved', false, 'reason', 'stale_turn_token');
   end if;
 
-  select * into v_lead from public.leads where id = p_lead_id for update;
+  select * into v_lead from dental_leads.leads where id = p_lead_id for update;
   if v_lead.id is null then
     return jsonb_build_object('reserved', false, 'reason', 'lead_inexistente');
   end if;
@@ -112,7 +114,7 @@ begin
   end if;
 
   if exists (
-    select 1 from public.messages
+    select 1 from dental_leads.messages
      where lead_id = p_lead_id
        and direction = 'IN'
        and consumed_at is null
@@ -122,7 +124,7 @@ begin
   end if;
 
   select id into v_dup
-    from public.messages
+    from dental_leads.messages
    where lead_id = p_lead_id
      and direction = 'OUT'
      and content_hash = p_content_hash
@@ -135,7 +137,7 @@ begin
     return jsonb_build_object('reserved', false, 'reason', 'duplicado', 'message_id', v_dup);
   end if;
 
-  insert into public.messages (
+  insert into dental_leads.messages (
     lead_id, direction, sender_type, message_type, text,
     content_hash, send_status, turn_id, bubble_sequence, meta,
     reserved_job_id, reserved_worker_id, reservation_revision,
@@ -158,7 +160,7 @@ end $$;
 -- SENDING_STALE_AFTER_MS usado pela reconciliação). Regras de validação
 -- inalteradas.
 -- ============================================================================
-create or replace function public.advance_bubble_to_sending(
+create or replace function dental_leads.advance_bubble_to_sending(
   p_message_id      uuid,
   p_job_id          bigint,
   p_worker_id       text,
@@ -174,12 +176,12 @@ security definer
 set search_path = public
 as $$
 declare
-  v_msg    public.messages%rowtype;
-  v_job    public.jobs%rowtype;
-  v_lead   public.leads%rowtype;
+  v_msg    dental_leads.messages%rowtype;
+  v_job    dental_leads.jobs%rowtype;
+  v_lead   dental_leads.leads%rowtype;
   v_reason text;
 begin
-  select * into v_msg from public.messages where id = p_message_id;
+  select * into v_msg from dental_leads.messages where id = p_message_id;
 
   if v_msg.id is null
      or v_msg.send_status <> 'PENDING'
@@ -189,8 +191,8 @@ begin
     return jsonb_build_object('advanced', false, 'reason', 'bolha_nao_pertence_a_este_worker');
   end if;
 
-  select * into v_job from public.jobs where id = p_job_id for update;
-  select * into v_lead from public.leads where id = p_lead_id for update;
+  select * into v_job from dental_leads.jobs where id = p_job_id for update;
+  select * into v_lead from dental_leads.leads where id = p_lead_id for update;
 
   v_reason := case
     when v_job.id is null
@@ -212,7 +214,7 @@ begin
     when v_lead.conversation_revision <> p_input_revision
       then 'stale_revision_mismatch'
     when exists (
-           select 1 from public.messages
+           select 1 from dental_leads.messages
             where lead_id = p_lead_id
               and direction = 'IN'
               and consumed_at is null
@@ -223,7 +225,7 @@ begin
   end;
 
   if v_reason is not null then
-    update public.messages
+    update dental_leads.messages
        set send_status = 'CANCELLED',
            meta = coalesce(meta, '{}'::jsonb) || jsonb_build_object('cancel_reason', v_reason)
      where id = p_message_id
@@ -231,7 +233,7 @@ begin
     return jsonb_build_object('advanced', false, 'reason', v_reason);
   end if;
 
-  update public.messages
+  update dental_leads.messages
      set send_status = 'SENDING',
          sending_at = clock_timestamp()
    where id = p_message_id
@@ -254,7 +256,7 @@ end $$;
 -- meta.late_confirmation para auditoria, sem jamais reverter needs_human
 -- silenciosamente: quem já foi chamado a olhar continua sendo chamado.
 -- ============================================================================
-create or replace function public.finalize_bubble_send(
+create or replace function dental_leads.finalize_bubble_send(
   p_message_id         uuid,
   p_job_id             bigint,
   p_worker_id          text,
@@ -268,9 +270,9 @@ security definer
 set search_path = public
 as $$
 declare
-  v_msg public.messages%rowtype;
+  v_msg dental_leads.messages%rowtype;
 begin
-  select * into v_msg from public.messages where id = p_message_id for update;
+  select * into v_msg from dental_leads.messages where id = p_message_id for update;
 
   if v_msg.id is null then
     return jsonb_build_object('finalized', false, 'late', false, 'reason', 'bolha_inexistente');
@@ -280,7 +282,7 @@ begin
      and v_msg.reserved_job_id = p_job_id
      and v_msg.reserved_worker_id = p_worker_id
      and v_msg.turn_id = p_turn_id then
-    update public.messages
+    update dental_leads.messages
        set send_status = p_result,
            provider_message_id = coalesce(p_provider_message_id, provider_message_id)
      where id = p_message_id;
@@ -291,7 +293,7 @@ begin
   -- Confirmação tardia de entrega é informação valiosa — preserva sem
   -- reescrever o que já foi decidido.
   if p_result = 'SENT' then
-    update public.messages
+    update dental_leads.messages
        set meta = coalesce(meta, '{}'::jsonb) || jsonb_build_object(
              'late_confirmation', jsonb_build_object(
                'result', p_result,
@@ -332,9 +334,9 @@ end $$;
 -- com default), ela criaria um OVERLOAD ambíguo ao lado da antiga em vez de
 -- substituí-la, quebrando toda chamada sem argumentos (Postgres não
 -- consegue escolher entre as duas). DROP explícito evita isso.
-drop function if exists public.reconcile_stuck_sending_bubbles();
+drop function if exists dental_leads.reconcile_stuck_sending_bubbles();
 
-create or replace function public.reconcile_stuck_sending_bubbles(
+create or replace function dental_leads.reconcile_stuck_sending_bubbles(
   p_stale_after_ms int default 45000
 )
 returns int
@@ -347,13 +349,13 @@ declare
   v_count int;
 begin
   with stuck as (
-    update public.messages m
+    update dental_leads.messages m
        set send_status = 'UNKNOWN'
      where m.send_status = 'SENDING'
        and m.sending_at is not null
        and m.sending_at <= now() - make_interval(secs => greatest(coalesce(p_stale_after_ms, 45000), 0) / 1000.0)
        and not exists (
-         select 1 from public.jobs j
+         select 1 from dental_leads.jobs j
           where j.id = m.reserved_job_id
             and j.turn_id = m.turn_id
             and j.status = 'RUNNING'
@@ -364,7 +366,7 @@ begin
   select array_agg(distinct lead_id), count(*) into v_leads, v_count from stuck;
 
   if v_leads is not null then
-    update public.leads
+    update dental_leads.leads
        set needs_human = true,
            automation_status = case
                                  when automation_status = 'ACTIVE' then 'HUMAN_REQUIRED'::automation_status
@@ -393,7 +395,7 @@ end $$;
 --      janela (mesmo lead, já era). Dois ou mais candidatos plausíveis =
 --      não reconcilia automaticamente — marca a ambiguidade e needs_human.
 -- ============================================================================
-create or replace function public.ingest_outbound_event(
+create or replace function dental_leads.ingest_outbound_event(
   p_whatsapp_id         text,
   p_phone               text,
   p_is_lid              boolean,
@@ -412,14 +414,14 @@ security definer
 set search_path = public
 as $$
 declare
-  v_lead      public.leads%rowtype;
+  v_lead      dental_leads.leads%rowtype;
   v_pending   uuid;
   v_candidate_count int;
 begin
-  select * into v_lead from public.leads where whatsapp_id = p_whatsapp_id;
+  select * into v_lead from dental_leads.leads where whatsapp_id = p_whatsapp_id;
 
   if v_lead.id is null then
-    insert into public.leads (
+    insert into dental_leads.leads (
       whatsapp_id, phone, is_lid, name, stage,
       automation_status, human_reason, last_message_at, last_outbound_at
     )
@@ -433,7 +435,7 @@ begin
 
   -- 1. provider_message_id exato.
   select id into v_pending
-    from public.messages where provider_message_id = p_provider_message_id;
+    from dental_leads.messages where provider_message_id = p_provider_message_id;
 
   if v_pending is not null then
     return jsonb_build_object('takeover', false, 'reason', 'known_message', 'lead_id', v_lead.id);
@@ -443,7 +445,7 @@ begin
 
   -- 3. fallback por hash/texto — só se o candidato for único.
   select count(*) into v_candidate_count
-    from public.messages
+    from dental_leads.messages
    where lead_id = v_lead.id
      and direction = 'OUT'
      and sender_type = 'AI'
@@ -456,7 +458,7 @@ begin
 
   if v_candidate_count = 1 then
     select id into v_pending
-      from public.messages
+      from dental_leads.messages
      where lead_id = v_lead.id
        and direction = 'OUT'
        and sender_type = 'AI'
@@ -467,7 +469,7 @@ begin
          or lower(btrim(coalesce(text, ''))) = lower(btrim(coalesce(p_text, '')))
        );
 
-    update public.messages
+    update dental_leads.messages
        set provider_message_id = p_provider_message_id,
            send_status = 'SENT'
      where id = v_pending;
@@ -478,7 +480,7 @@ begin
     -- Ambíguo: dois ou mais candidatos plausíveis. Não escolher "o mais
     -- recente" às cegas — isso arrisca carimbar o id errado na bolha errada
     -- (corrompendo a auditoria e, pior, o rate limit que conta por turno).
-    update public.leads
+    update dental_leads.leads
        set needs_human = true,
            automation_status = case
                                  when automation_status = 'ACTIVE' then 'HUMAN_REQUIRED'::automation_status
@@ -492,7 +494,7 @@ begin
   end if;
 
   -- Nenhum candidato: humano respondeu pelo WhatsApp de verdade.
-  insert into public.messages (
+  insert into dental_leads.messages (
     lead_id, provider_message_id, direction, sender_type, message_type, text,
     meta, provider_timestamp, received_at, content_hash, send_status, created_at
   )
@@ -502,14 +504,14 @@ begin
   )
   on conflict (provider_message_id) do nothing;
 
-  update public.leads
+  update dental_leads.leads
      set automation_status = 'HUMAN_TAKEOVER',
          human_reason      = 'humano respondeu pelo WhatsApp',
          last_message_at   = greatest(coalesce(last_message_at, to_timestamp(0)), coalesce(p_occurred_at, now())),
          last_outbound_at  = greatest(coalesce(last_outbound_at, to_timestamp(0)), coalesce(p_occurred_at, now()))
    where id = v_lead.id;
 
-  update public.jobs
+  update dental_leads.jobs
      set status = 'DONE', outcome = 'HUMAN_TAKEOVER', last_error = 'cancelado por human takeover'
    where lead_id = v_lead.id and status = 'PENDING';
 
@@ -519,8 +521,8 @@ end $$;
 -- ---------------------------------------------------------------------------
 -- Permissões
 -- ---------------------------------------------------------------------------
-revoke all on function public.reserve_outbound_bubble(bigint,text,uuid,bigint,uuid[],text,uuid,int,text,text,int) from public, anon, authenticated;
-revoke all on function public.advance_bubble_to_sending(uuid,bigint,text,uuid,uuid,bigint,uuid[],text) from public, anon, authenticated;
-revoke all on function public.finalize_bubble_send(uuid,bigint,text,uuid,send_status,text) from public, anon, authenticated;
-revoke all on function public.reconcile_stuck_sending_bubbles(int) from public, anon, authenticated;
-revoke all on function public.ingest_outbound_event(text,text,boolean,text,text,text,text,jsonb,timestamptz,int,text) from public, anon, authenticated;
+revoke all on function dental_leads.reserve_outbound_bubble(bigint,text,uuid,bigint,uuid[],text,uuid,int,text,text,int) from public, anon, authenticated;
+revoke all on function dental_leads.advance_bubble_to_sending(uuid,bigint,text,uuid,uuid,bigint,uuid[],text) from public, anon, authenticated;
+revoke all on function dental_leads.finalize_bubble_send(uuid,bigint,text,uuid,send_status,text) from public, anon, authenticated;
+revoke all on function dental_leads.reconcile_stuck_sending_bubbles(int) from public, anon, authenticated;
+revoke all on function dental_leads.ingest_outbound_event(text,text,boolean,text,text,text,text,jsonb,timestamptz,int,text) from public, anon, authenticated;

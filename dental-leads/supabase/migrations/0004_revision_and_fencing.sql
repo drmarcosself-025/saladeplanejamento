@@ -1,3 +1,5 @@
+set search_path = dental_leads, public, extensions;
+
 -- ============================================================================
 -- Correções da auditoria de F1 — dois gaps reais encontrados:
 --
@@ -24,37 +26,37 @@
 -- ---------------------------------------------------------------------------
 -- leads: contador monotônico da conversa
 -- ---------------------------------------------------------------------------
-alter table public.leads
+alter table dental_leads.leads
   add column if not exists conversation_revision bigint not null default 0;
 
 -- ---------------------------------------------------------------------------
 -- messages: consumed_at/consumed_by_turn_id substituem processed
 -- ---------------------------------------------------------------------------
-alter table public.messages
+alter table dental_leads.messages
   add column if not exists consumed_at         timestamptz,
   add column if not exists consumed_by_turn_id uuid;
 
 -- Backfill coerente com o que já existia (ambiente de desenvolvimento; ainda
 -- sem produção).
-update public.messages
+update dental_leads.messages
    set consumed_at = created_at
  where processed = true and consumed_at is null;
 
 drop index if exists messages_pending_in_idx;
 create index if not exists messages_pending_in_idx
-  on public.messages (lead_id, received_at)
+  on dental_leads.messages (lead_id, received_at)
   where direction = 'IN' and consumed_at is null;
 
 create index if not exists messages_consumed_by_turn_idx
-  on public.messages (consumed_by_turn_id)
+  on dental_leads.messages (consumed_by_turn_id)
   where consumed_by_turn_id is not null;
 
-alter table public.messages drop column if exists processed;
+alter table dental_leads.messages drop column if exists processed;
 
 -- ---------------------------------------------------------------------------
 -- automation_decisions: trilha de auditoria da revisão capturada no turno
 -- ---------------------------------------------------------------------------
-alter table public.automation_decisions
+alter table dental_leads.automation_decisions
   add column if not exists input_revision bigint;
 
 -- ============================================================================
@@ -64,7 +66,7 @@ alter table public.automation_decisions
 -- ON CONFLICT DO NOTHING já barra antes de chegarmos aqui, então só mensagem
 -- de verdade nova mexe no contador.
 -- ============================================================================
-create or replace function public.ingest_inbound_message(
+create or replace function dental_leads.ingest_inbound_message(
   p_whatsapp_id         text,
   p_phone               text,
   p_is_lid              boolean,
@@ -88,14 +90,14 @@ security definer
 set search_path = public
 as $$
 declare
-  v_lead       public.leads%rowtype;
+  v_lead       dental_leads.leads%rowtype;
   v_message_id uuid;
   v_received   timestamptz := clock_timestamp();
   v_enqueue    boolean;
   v_job_id     bigint;
   v_revision   bigint;
 begin
-  insert into public.leads (whatsapp_id, phone, is_lid, name, last_message_at, last_inbound_at)
+  insert into dental_leads.leads (whatsapp_id, phone, is_lid, name, last_message_at, last_inbound_at)
   values (
     p_whatsapp_id, nullif(p_phone, ''), coalesce(p_is_lid, false), nullif(p_name, ''),
     v_received, v_received
@@ -110,7 +112,7 @@ begin
 
   v_enqueue := v_lead.automation_status = 'ACTIVE';
 
-  insert into public.messages (
+  insert into dental_leads.messages (
     lead_id, provider_message_id, direction, sender_type, message_type, text,
     consumed_at, meta, provider_timestamp, received_at, content_hash,
     reply_to_provider_id, links, created_at
@@ -137,20 +139,20 @@ begin
 
   -- Contador monotônico: toda mensagem IN genuína muda a conversa. É a base
   -- barata (O(1)) de "algo mudou desde que o turno começou".
-  update public.leads
+  update dental_leads.leads
      set conversation_revision = conversation_revision + 1
    where id = v_lead.id
    returning conversation_revision into v_revision;
 
   if coalesce(p_needs_human, false) then
-    update public.leads
+    update dental_leads.leads
        set needs_human  = true,
            human_reason = coalesce(p_human_reason, human_reason)
      where id = v_lead.id;
   end if;
 
   if v_enqueue then
-    insert into public.jobs (lead_id, status, debounce_started_at, run_after, next_attempt_at)
+    insert into dental_leads.jobs (lead_id, status, debounce_started_at, run_after, next_attempt_at)
     values (
       v_lead.id, 'PENDING', v_received,
       v_received + make_interval(secs => greatest(coalesce(p_debounce_seconds, 5), 0)),
@@ -186,9 +188,9 @@ end $$;
 -- é uma única instrução SQL, revisão e mensagens compartilham o mesmo
 -- snapshot MVCC: sempre consistentes entre si.
 -- ============================================================================
-drop function if exists public.fetch_batch(uuid);
+drop function if exists dental_leads.fetch_batch(uuid);
 
-create or replace function public.fetch_batch(p_lead_id uuid)
+create or replace function dental_leads.fetch_batch(p_lead_id uuid)
 returns table (
   id                    uuid,
   text                  text,
@@ -203,8 +205,8 @@ security definer
 set search_path = public
 as $$
   select m.id, m.text, m.message_type, m.provider_timestamp, m.received_at, m.links,
-         (select l.conversation_revision from public.leads l where l.id = p_lead_id)
-    from public.messages m
+         (select l.conversation_revision from dental_leads.leads l where l.id = p_lead_id)
+    from dental_leads.messages m
    where m.lead_id = p_lead_id
      and m.direction = 'IN'
      and m.consumed_at is null
@@ -220,9 +222,9 @@ $$;
 -- Mantém o NOT EXISTS como defesa em profundidade (cobre qualquer inserção
 -- futura de mensagem IN que por bug não passe por ingest_inbound_message).
 -- ============================================================================
-drop function if exists public.assert_turn_valid(bigint,text,uuid,uuid[],text);
+drop function if exists dental_leads.assert_turn_valid(bigint,text,uuid,uuid[],text);
 
-create or replace function public.assert_turn_valid(
+create or replace function dental_leads.assert_turn_valid(
   p_job_id          bigint,
   p_worker_id       text,
   p_lead_id         uuid,
@@ -236,10 +238,10 @@ security definer
 set search_path = public
 as $$
 declare
-  v_job  public.jobs%rowtype;
-  v_lead public.leads%rowtype;
+  v_job  dental_leads.jobs%rowtype;
+  v_lead dental_leads.leads%rowtype;
 begin
-  select * into v_job from public.jobs where id = p_job_id;
+  select * into v_job from dental_leads.jobs where id = p_job_id;
 
   if v_job.id is null
      or v_job.status <> 'RUNNING'
@@ -248,7 +250,7 @@ begin
     return jsonb_build_object('valid', false, 'reason', 'lease_perdido');
   end if;
 
-  select * into v_lead from public.leads where id = p_lead_id;
+  select * into v_lead from dental_leads.leads where id = p_lead_id;
   if v_lead.id is null then
     return jsonb_build_object('valid', false, 'reason', 'lead_inexistente');
   end if;
@@ -278,7 +280,7 @@ begin
   -- Defesa em profundidade: mesmo com a revisão batendo, confirma que não
   -- existe mensagem IN não consumida fora do batch.
   if exists (
-    select 1 from public.messages
+    select 1 from dental_leads.messages
      where lead_id = p_lead_id
        and direction = 'IN'
        and consumed_at is null
@@ -308,7 +310,7 @@ end $$;
 -- Reprova pelos mesmos motivos de assert_turn_valid, mais duplicidade de
 -- conteúdo (bolha idêntica já enviada recentemente = worker zumbi).
 -- ============================================================================
-create or replace function public.reserve_outbound_bubble(
+create or replace function dental_leads.reserve_outbound_bubble(
   p_job_id         bigint,
   p_worker_id      text,
   p_lead_id        uuid,
@@ -327,13 +329,13 @@ security definer
 set search_path = public
 as $$
 declare
-  v_job  public.jobs%rowtype;
-  v_lead public.leads%rowtype;
+  v_job  dental_leads.jobs%rowtype;
+  v_lead dental_leads.leads%rowtype;
   v_dup  uuid;
   v_msg  uuid;
 begin
   -- Trava a linha do job pelo resto da função: é isto que fecha a janela.
-  select * into v_job from public.jobs where id = p_job_id for update;
+  select * into v_job from dental_leads.jobs where id = p_job_id for update;
 
   if v_job.id is null
      or v_job.status <> 'RUNNING'
@@ -342,7 +344,7 @@ begin
     return jsonb_build_object('reserved', false, 'reason', 'lease_perdido');
   end if;
 
-  select * into v_lead from public.leads where id = p_lead_id for update;
+  select * into v_lead from dental_leads.leads where id = p_lead_id for update;
   if v_lead.id is null then
     return jsonb_build_object('reserved', false, 'reason', 'lead_inexistente');
   end if;
@@ -372,7 +374,7 @@ begin
   -- a revisão batendo, confirma que não existe mensagem IN não consumida
   -- FORA do conjunto que este turno está respondendo.
   if exists (
-    select 1 from public.messages
+    select 1 from dental_leads.messages
      where lead_id = p_lead_id
        and direction = 'IN'
        and consumed_at is null
@@ -382,7 +384,7 @@ begin
   end if;
 
   select id into v_dup
-    from public.messages
+    from dental_leads.messages
    where lead_id = p_lead_id
      and direction = 'OUT'
      and content_hash = p_content_hash
@@ -393,7 +395,7 @@ begin
     return jsonb_build_object('reserved', false, 'reason', 'duplicado', 'message_id', v_dup);
   end if;
 
-  insert into public.messages (
+  insert into dental_leads.messages (
     lead_id, direction, sender_type, message_type, text,
     content_hash, send_status, turn_id, bubble_sequence, meta,
     received_at, created_at
@@ -412,7 +414,7 @@ end $$;
 -- ============================================================================
 -- close_turn — consumed_at/consumed_by_turn_id no lugar de processed
 -- ============================================================================
-create or replace function public.close_turn(
+create or replace function dental_leads.close_turn(
   p_job_id         bigint,
   p_worker_id      text,
   p_outcome        turn_outcome,
@@ -428,15 +430,15 @@ security definer
 set search_path = public
 as $$
 declare
-  v_job public.jobs%rowtype;
+  v_job dental_leads.jobs%rowtype;
 begin
-  select * into v_job from public.jobs where id = p_job_id;
+  select * into v_job from dental_leads.jobs where id = p_job_id;
   if v_job.id is null then
     return jsonb_build_object('closed', false, 'reason', 'job_inexistente');
   end if;
 
   if p_mark_processed and p_batch_ids is not null then
-    update public.messages
+    update dental_leads.messages
        set consumed_at = clock_timestamp(),
            consumed_by_turn_id = v_job.turn_id
      where id = any (p_batch_ids);
@@ -444,12 +446,12 @@ begin
 
   if p_outcome = 'FAILED' then
     if v_job.attempts >= greatest(coalesce(p_max_attempts, 4), 1) then
-      update public.jobs
+      update dental_leads.jobs
          set status = 'FAILED', outcome = p_outcome, last_error = p_error,
              locked_by = null, lease_expires_at = null
        where id = p_job_id;
 
-      update public.leads
+      update dental_leads.leads
          set needs_human = true,
              automation_status = case
                                    when automation_status = 'ACTIVE' then 'HUMAN_REQUIRED'::automation_status
@@ -461,7 +463,7 @@ begin
       return jsonb_build_object('closed', true, 'retry', false);
     end if;
 
-    update public.jobs
+    update dental_leads.jobs
        set status = 'PENDING',
            last_error = p_error,
            locked_by = null,
@@ -473,7 +475,7 @@ begin
     return jsonb_build_object('closed', true, 'retry', true);
   end if;
 
-  update public.jobs
+  update dental_leads.jobs
      set status = 'DONE', outcome = p_outcome, last_error = p_error,
          locked_by = null, lease_expires_at = null
    where id = p_job_id;
@@ -486,7 +488,7 @@ end $$;
 -- Mensagem HUMAN inserida por takeover não é "consumida" por turno nenhum:
 -- consumed_at/consumed_by_turn_id ficam null (são conceito de mensagem IN).
 -- ============================================================================
-create or replace function public.ingest_outbound_event(
+create or replace function dental_leads.ingest_outbound_event(
   p_whatsapp_id         text,
   p_phone               text,
   p_is_lid              boolean,
@@ -505,14 +507,14 @@ security definer
 set search_path = public
 as $$
 declare
-  v_lead     public.leads%rowtype;
+  v_lead     dental_leads.leads%rowtype;
   v_pending  uuid;
   v_existing uuid;
 begin
-  select * into v_lead from public.leads where whatsapp_id = p_whatsapp_id;
+  select * into v_lead from dental_leads.leads where whatsapp_id = p_whatsapp_id;
 
   if v_lead.id is null then
-    insert into public.leads (
+    insert into dental_leads.leads (
       whatsapp_id, phone, is_lid, name, stage,
       automation_status, human_reason, last_message_at, last_outbound_at
     )
@@ -525,14 +527,14 @@ begin
   end if;
 
   select id into v_existing
-    from public.messages where provider_message_id = p_provider_message_id;
+    from dental_leads.messages where provider_message_id = p_provider_message_id;
 
   if v_existing is not null then
     return jsonb_build_object('takeover', false, 'reason', 'known_message', 'lead_id', v_lead.id);
   end if;
 
   select id into v_pending
-    from public.messages
+    from dental_leads.messages
    where lead_id = v_lead.id
      and direction = 'OUT'
      and sender_type = 'AI'
@@ -546,14 +548,14 @@ begin
    limit 1;
 
   if v_pending is not null then
-    update public.messages
+    update dental_leads.messages
        set provider_message_id = p_provider_message_id,
            send_status = 'SENT'
      where id = v_pending;
     return jsonb_build_object('takeover', false, 'reason', 'linked_pending', 'lead_id', v_lead.id);
   end if;
 
-  insert into public.messages (
+  insert into dental_leads.messages (
     lead_id, provider_message_id, direction, sender_type, message_type, text,
     meta, provider_timestamp, received_at, content_hash, send_status, created_at
   )
@@ -563,14 +565,14 @@ begin
   )
   on conflict (provider_message_id) do nothing;
 
-  update public.leads
+  update dental_leads.leads
      set automation_status = 'HUMAN_TAKEOVER',
          human_reason      = 'humano respondeu pelo WhatsApp',
          last_message_at   = greatest(coalesce(last_message_at, to_timestamp(0)), coalesce(p_occurred_at, now())),
          last_outbound_at  = greatest(coalesce(last_outbound_at, to_timestamp(0)), coalesce(p_occurred_at, now()))
    where id = v_lead.id;
 
-  update public.jobs
+  update dental_leads.jobs
      set status = 'DONE', outcome = 'HUMAN_TAKEOVER', last_error = 'cancelado por human takeover'
    where lead_id = v_lead.id and status = 'PENDING';
 
@@ -580,9 +582,9 @@ end $$;
 -- ---------------------------------------------------------------------------
 -- Permissões
 -- ---------------------------------------------------------------------------
-revoke all on function public.ingest_inbound_message(text,text,boolean,text,text,text,text,jsonb,timestamptz,text,text,jsonb,boolean,text,int,int) from public, anon, authenticated;
-revoke all on function public.fetch_batch(uuid) from public, anon, authenticated;
-revoke all on function public.assert_turn_valid(bigint,text,uuid,uuid[],bigint,text) from public, anon, authenticated;
-revoke all on function public.reserve_outbound_bubble(bigint,text,uuid,bigint,uuid[],text,uuid,int,text,text,int) from public, anon, authenticated;
-revoke all on function public.close_turn(bigint,text,turn_outcome,uuid[],boolean,text,int,int) from public, anon, authenticated;
-revoke all on function public.ingest_outbound_event(text,text,boolean,text,text,text,text,jsonb,timestamptz,int,text) from public, anon, authenticated;
+revoke all on function dental_leads.ingest_inbound_message(text,text,boolean,text,text,text,text,jsonb,timestamptz,text,text,jsonb,boolean,text,int,int) from public, anon, authenticated;
+revoke all on function dental_leads.fetch_batch(uuid) from public, anon, authenticated;
+revoke all on function dental_leads.assert_turn_valid(bigint,text,uuid,uuid[],bigint,text) from public, anon, authenticated;
+revoke all on function dental_leads.reserve_outbound_bubble(bigint,text,uuid,bigint,uuid[],text,uuid,int,text,text,int) from public, anon, authenticated;
+revoke all on function dental_leads.close_turn(bigint,text,turn_outcome,uuid[],boolean,text,int,int) from public, anon, authenticated;
+revoke all on function dental_leads.ingest_outbound_event(text,text,boolean,text,text,text,text,jsonb,timestamptz,int,text) from public, anon, authenticated;

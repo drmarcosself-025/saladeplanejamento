@@ -1,3 +1,5 @@
+set search_path = dental_leads, public, extensions;
+
 -- ============================================================================
 -- F2 — envio sequencial seguro em bolhas.
 --
@@ -36,37 +38,37 @@ alter type turn_outcome add value if not exists 'SEND_FAILED';
 -- separado: turn_id já muda a cada concessão de lease e já é gravado em toda
 -- bolha — faltava só COMPARAR contra ele nos pontos certos (feito abaixo).
 -- ---------------------------------------------------------------------------
-alter table public.messages
-  add column if not exists reserved_job_id    bigint references public.jobs(id),
+alter table dental_leads.messages
+  add column if not exists reserved_job_id    bigint references dental_leads.jobs(id),
   add column if not exists reserved_worker_id text;
 
 create index if not exists messages_reserved_job_idx
-  on public.messages (reserved_job_id)
+  on dental_leads.messages (reserved_job_id)
   where reserved_job_id is not null;
 
 -- Nunca duas bolhas com o mesmo número de sequência no mesmo turno. Defesa
 -- em profundidade contra um bug de retry reservando a mesma posição 2x.
 create unique index if not exists messages_turn_sequence_uidx
-  on public.messages (turn_id, bubble_sequence)
+  on dental_leads.messages (turn_id, bubble_sequence)
   where direction = 'OUT' and sender_type = 'AI';
 
 -- Localiza rápido toda bolha travada em SENDING (rotina de reconciliação).
 create index if not exists messages_sending_idx
-  on public.messages (reserved_job_id, turn_id)
+  on dental_leads.messages (reserved_job_id, turn_id)
   where send_status = 'SENDING';
 
 -- ---------------------------------------------------------------------------
 -- automation_decisions: bubbles_planned. messages continua sendo a fonte de
 -- verdade por bolha — este campo é só conveniência de consulta.
 -- ---------------------------------------------------------------------------
-alter table public.automation_decisions
+alter table dental_leads.automation_decisions
   add column if not exists bubbles_planned int not null default 0;
 
 -- ============================================================================
 -- reclaim_expired_jobs — SUPERSEDED em vez de FAILED quando já existe um
 -- turno mais novo para o mesmo lead (não é erro).
 -- ============================================================================
-create or replace function public.reclaim_expired_jobs()
+create or replace function dental_leads.reclaim_expired_jobs()
 returns int
 language plpgsql
 security definer
@@ -75,7 +77,7 @@ as $$
 declare
   v_requeued int;
 begin
-  update public.jobs
+  update dental_leads.jobs
      set status = 'PENDING',
          locked_by = null,
          lease_expires_at = null,
@@ -85,12 +87,12 @@ begin
      and lease_expires_at is not null
      and lease_expires_at <= now()
      and not exists (
-       select 1 from public.jobs p
+       select 1 from dental_leads.jobs p
         where p.lead_id = jobs.lead_id and p.status = 'PENDING'
      );
   get diagnostics v_requeued = row_count;
 
-  update public.jobs
+  update dental_leads.jobs
      set status = 'DONE',
          outcome = 'SUPERSEDED',
          locked_by = null,
@@ -119,7 +121,7 @@ end $$;
 -- reclaim_expired_jobs. A ordem entre as duas não importa: a condição aqui é
 -- lida direto do estado atual do job, não depende de reclaim já ter rodado.
 -- ============================================================================
-create or replace function public.reconcile_stuck_sending_bubbles()
+create or replace function dental_leads.reconcile_stuck_sending_bubbles()
 returns int
 language plpgsql
 security definer
@@ -130,11 +132,11 @@ declare
   v_count int;
 begin
   with stuck as (
-    update public.messages m
+    update dental_leads.messages m
        set send_status = 'UNKNOWN'
      where m.send_status = 'SENDING'
        and not exists (
-         select 1 from public.jobs j
+         select 1 from dental_leads.jobs j
           where j.id = m.reserved_job_id
             and j.turn_id = m.turn_id
             and j.status = 'RUNNING'
@@ -145,7 +147,7 @@ begin
   select array_agg(distinct lead_id), count(*) into v_leads, v_count from stuck;
 
   if v_leads is not null then
-    update public.leads
+    update dental_leads.leads
        set needs_human = true,
            automation_status = case
                                  when automation_status = 'ACTIVE' then 'HUMAN_REQUIRED'::automation_status
@@ -166,7 +168,7 @@ end $$;
 -- alguma já ter sido SENT) é responsabilidade do chamador — ver
 -- lead-worker/index.ts. Esta função só executa a devolução.
 -- ============================================================================
-create or replace function public.yield_turn(
+create or replace function dental_leads.yield_turn(
   p_job_id    bigint,
   p_worker_id text
 )
@@ -178,7 +180,7 @@ as $$
 declare
   v_updated int;
 begin
-  update public.jobs
+  update dental_leads.jobs
      set status = 'PENDING',
          locked_by = null,
          lease_expires_at = null,
@@ -200,9 +202,9 @@ end $$;
 -- turno já morreu de forma óbvia. A validação de verdade, atômica e
 -- imediatamente antes do POST, é advance_bubble_to_sending.
 -- ============================================================================
-drop function if exists public.assert_turn_valid(bigint,text,uuid,uuid[],bigint,text);
+drop function if exists dental_leads.assert_turn_valid(bigint,text,uuid,uuid[],bigint,text);
 
-create or replace function public.assert_turn_valid(
+create or replace function dental_leads.assert_turn_valid(
   p_job_id          bigint,
   p_worker_id       text,
   p_turn_id         uuid,
@@ -217,10 +219,10 @@ security definer
 set search_path = public
 as $$
 declare
-  v_job  public.jobs%rowtype;
-  v_lead public.leads%rowtype;
+  v_job  dental_leads.jobs%rowtype;
+  v_lead dental_leads.leads%rowtype;
 begin
-  select * into v_job from public.jobs where id = p_job_id;
+  select * into v_job from dental_leads.jobs where id = p_job_id;
 
   if v_job.id is null
      or v_job.status <> 'RUNNING'
@@ -235,7 +237,7 @@ begin
     return jsonb_build_object('valid', false, 'reason', 'stale_turn_token');
   end if;
 
-  select * into v_lead from public.leads where id = p_lead_id;
+  select * into v_lead from dental_leads.leads where id = p_lead_id;
   if v_lead.id is null then
     return jsonb_build_object('valid', false, 'reason', 'lead_inexistente');
   end if;
@@ -262,7 +264,7 @@ begin
   end if;
 
   if exists (
-    select 1 from public.messages
+    select 1 from dental_leads.messages
      where lead_id = p_lead_id
        and direction = 'IN'
        and consumed_at is null
@@ -289,7 +291,7 @@ end $$;
 -- proteção real contra isso é needs_human=true bloqueando qualquer AI_REPLY
 -- novo antes mesmo de chegar aqui.
 -- ============================================================================
-create or replace function public.reserve_outbound_bubble(
+create or replace function dental_leads.reserve_outbound_bubble(
   p_job_id         bigint,
   p_worker_id      text,
   p_lead_id        uuid,
@@ -308,12 +310,12 @@ security definer
 set search_path = public
 as $$
 declare
-  v_job  public.jobs%rowtype;
-  v_lead public.leads%rowtype;
+  v_job  dental_leads.jobs%rowtype;
+  v_lead dental_leads.leads%rowtype;
   v_dup  uuid;
   v_msg  uuid;
 begin
-  select * into v_job from public.jobs where id = p_job_id for update;
+  select * into v_job from dental_leads.jobs where id = p_job_id for update;
 
   if v_job.id is null
      or v_job.status <> 'RUNNING'
@@ -326,7 +328,7 @@ begin
     return jsonb_build_object('reserved', false, 'reason', 'stale_turn_token');
   end if;
 
-  select * into v_lead from public.leads where id = p_lead_id for update;
+  select * into v_lead from dental_leads.leads where id = p_lead_id for update;
   if v_lead.id is null then
     return jsonb_build_object('reserved', false, 'reason', 'lead_inexistente');
   end if;
@@ -353,7 +355,7 @@ begin
   end if;
 
   if exists (
-    select 1 from public.messages
+    select 1 from dental_leads.messages
      where lead_id = p_lead_id
        and direction = 'IN'
        and consumed_at is null
@@ -363,7 +365,7 @@ begin
   end if;
 
   select id into v_dup
-    from public.messages
+    from dental_leads.messages
    where lead_id = p_lead_id
      and direction = 'OUT'
      and content_hash = p_content_hash
@@ -375,7 +377,7 @@ begin
     return jsonb_build_object('reserved', false, 'reason', 'duplicado', 'message_id', v_dup);
   end if;
 
-  insert into public.messages (
+  insert into dental_leads.messages (
     lead_id, direction, sender_type, message_type, text,
     content_hash, send_status, turn_id, bubble_sequence, meta,
     reserved_job_id, reserved_worker_id,
@@ -407,7 +409,7 @@ end $$;
 -- CANCELLED só é possível a partir de PENDING; depois de SENDING, a
 -- tentativa já começou e não é mais cancelável por aqui.
 -- ============================================================================
-create or replace function public.advance_bubble_to_sending(
+create or replace function dental_leads.advance_bubble_to_sending(
   p_message_id      uuid,
   p_job_id          bigint,
   p_worker_id       text,
@@ -423,12 +425,12 @@ security definer
 set search_path = public
 as $$
 declare
-  v_msg    public.messages%rowtype;
-  v_job    public.jobs%rowtype;
-  v_lead   public.leads%rowtype;
+  v_msg    dental_leads.messages%rowtype;
+  v_job    dental_leads.jobs%rowtype;
+  v_lead   dental_leads.leads%rowtype;
   v_reason text;
 begin
-  select * into v_msg from public.messages where id = p_message_id;
+  select * into v_msg from dental_leads.messages where id = p_message_id;
 
   -- Bolha que não é nossa (id errado, já mudou de estado, pertence a outro
   -- job/worker/turn_id): não mexe em nada. Idempotente — chamar duas vezes
@@ -441,8 +443,8 @@ begin
     return jsonb_build_object('advanced', false, 'reason', 'bolha_nao_pertence_a_este_worker');
   end if;
 
-  select * into v_job from public.jobs where id = p_job_id for update;
-  select * into v_lead from public.leads where id = p_lead_id for update;
+  select * into v_job from dental_leads.jobs where id = p_job_id for update;
+  select * into v_lead from dental_leads.leads where id = p_lead_id for update;
 
   v_reason := case
     when v_job.id is null
@@ -464,7 +466,7 @@ begin
     when v_lead.conversation_revision <> p_input_revision
       then 'stale_revision_mismatch'
     when exists (
-           select 1 from public.messages
+           select 1 from dental_leads.messages
             where lead_id = p_lead_id
               and direction = 'IN'
               and consumed_at is null
@@ -475,7 +477,7 @@ begin
   end;
 
   if v_reason is not null then
-    update public.messages
+    update dental_leads.messages
        set send_status = 'CANCELLED',
            meta = coalesce(meta, '{}'::jsonb) || jsonb_build_object('cancel_reason', v_reason)
      where id = p_message_id
@@ -483,7 +485,7 @@ begin
     return jsonb_build_object('advanced', false, 'reason', v_reason);
   end if;
 
-  update public.messages
+  update dental_leads.messages
      set send_status = 'SENDING'
    where id = p_message_id
      and send_status = 'PENDING';
@@ -500,7 +502,7 @@ end $$;
 -- devolve false sem erro. Exige job + worker + turn_id (fencing) batendo —
 -- não é só "quem tem o worker_id".
 -- ============================================================================
-create or replace function public.cancel_reserved_bubble(
+create or replace function dental_leads.cancel_reserved_bubble(
   p_message_id uuid,
   p_job_id     bigint,
   p_worker_id  text,
@@ -515,7 +517,7 @@ as $$
 declare
   v_updated int;
 begin
-  update public.messages
+  update dental_leads.messages
      set send_status = 'CANCELLED',
          meta = coalesce(meta, '{}'::jsonb) || jsonb_build_object('cancel_reason', p_reason)
    where id = p_message_id
@@ -540,9 +542,9 @@ end $$;
 -- ---------------------------------------------------------------------------
 -- Permissões
 -- ---------------------------------------------------------------------------
-revoke all on function public.assert_turn_valid(bigint,text,uuid,uuid,uuid[],bigint,text) from public, anon, authenticated;
-revoke all on function public.reserve_outbound_bubble(bigint,text,uuid,bigint,uuid[],text,uuid,int,text,text,int) from public, anon, authenticated;
-revoke all on function public.advance_bubble_to_sending(uuid,bigint,text,uuid,uuid,bigint,uuid[],text) from public, anon, authenticated;
-revoke all on function public.cancel_reserved_bubble(uuid,bigint,text,uuid,text) from public, anon, authenticated;
-revoke all on function public.yield_turn(bigint,text) from public, anon, authenticated;
-revoke all on function public.reconcile_stuck_sending_bubbles() from public, anon, authenticated;
+revoke all on function dental_leads.assert_turn_valid(bigint,text,uuid,uuid,uuid[],bigint,text) from public, anon, authenticated;
+revoke all on function dental_leads.reserve_outbound_bubble(bigint,text,uuid,bigint,uuid[],text,uuid,int,text,text,int) from public, anon, authenticated;
+revoke all on function dental_leads.advance_bubble_to_sending(uuid,bigint,text,uuid,uuid,bigint,uuid[],text) from public, anon, authenticated;
+revoke all on function dental_leads.cancel_reserved_bubble(uuid,bigint,text,uuid,text) from public, anon, authenticated;
+revoke all on function dental_leads.yield_turn(bigint,text) from public, anon, authenticated;
+revoke all on function dental_leads.reconcile_stuck_sending_bubbles() from public, anon, authenticated;

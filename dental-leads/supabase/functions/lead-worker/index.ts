@@ -109,6 +109,7 @@ Deno.serve(async (req) => {
 
   const supabase = createClient(config.supabase.url, config.supabase.serviceRoleKey, {
     auth: { persistSession: false },
+    db: { schema: "dental_leads" },
   });
 
   // Acordado pelo webhook: espera a janela de debounce antes de tentar pegar

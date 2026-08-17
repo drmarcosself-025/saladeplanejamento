@@ -9,6 +9,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const supabase = createClient(
   window.APP_CONFIG.SUPABASE_URL,
   window.APP_CONFIG.SUPABASE_ANON_KEY,
+  { db: { schema: "dental_leads" } },
 );
 
 const COLUMNS = [
