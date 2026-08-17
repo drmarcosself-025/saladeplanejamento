@@ -94,6 +94,7 @@
     habits: [],         // {habit, done}
     routinesToday: [],  // {routine, occurrence}
     goals: [],
+    thoughts: [],       // capturas do "cabeça cheia" ainda não transformadas nem descartadas
     todayCheckin: null, // check-in mais recente de hoje, ou null se nenhum ainda
     weeklyMilestone: null, // {milestone, goal}
     deadlineGoal: null,
@@ -279,7 +280,8 @@
           loadRoutinesToday(),
           loadGoals(),
           loadDailyScore(),
-          loadTodayCheckin()
+          loadTodayCheckin(),
+          loadThoughts()
         ]);
       })
       .then(function () {
@@ -414,6 +416,20 @@
 
   // Mais de um check-in por dia é permitido de propósito — sempre pega
   // o mais recente pra mostrar no indicador do cabeçalho.
+  // Capturas do "cabeça cheia" que ainda estão esperando uma decisão.
+  // Antes disso elas eram gravadas e nunca mais lidas por nenhuma tela —
+  // escrever era um buraco sem fundo. Limite alto o suficiente pra caber
+  // um acúmulo real sem virar uma consulta cara.
+  function loadThoughts() {
+    return sb.from('p30_tasks').select('id,titulo,texto_original,created_at')
+      .eq('user_id', state.user.id).eq('tipo', 'pensamento').eq('status', 'registrado')
+      .order('created_at', { ascending: false }).limit(50)
+      .then(function (res) {
+        if (res.error) throw res.error;
+        state.thoughts = res.data || [];
+      });
+  }
+
   function loadTodayCheckin() {
     return sb.from('p30_checkins').select('*').eq('user_id', state.user.id).eq('data', state.today)
       .order('created_at', { ascending: false }).limit(1)
@@ -515,7 +531,9 @@
 
   function renderAll() {
     safeRender(renderHeader);
+    safeRender(renderEnergy);
     safeRender(renderInfoChips);
+    safeRender(renderThoughts);
     safeRender(renderWeeklyGoal);
     safeRender(renderMissions);
     safeRender(renderTodayTasks);
@@ -544,6 +562,7 @@
     if (state.todayCheckin) {
       var c = state.todayCheckin;
       var parts = [];
+      if (c.energia != null) parts.push('energia ' + ENERGIA_LABEL[energiaNivel(c.energia)]);
       if (c.humor != null) parts.push('humor ' + c.humor + '/5');
       if (c.estado) parts.push(ESTADO_LABEL[c.estado]);
       var div0 = document.createElement('div');
@@ -559,6 +578,140 @@
       wrap.appendChild(div);
     }
     wrap.hidden = wrap.children.length === 0;
+  }
+
+  // ============================================================
+  // ENERGIA RÁPIDA — os três chips do topo. Antes eles só trocavam a
+  // classe CSS: nada era gravado, e "Estável" vinha aceso de fábrica
+  // mesmo sem o usuário ter tocado em nada (a tela afirmava algo que
+  // ele nunca disse). Agora cada toque grava um check-in de verdade e,
+  // sem registro no dia, nenhum chip fica aceso.
+  // ============================================================
+  var ENERGIA_VALOR = { baixa: 2, estavel: 3, alta: 4 };
+  var ENERGIA_LABEL = { baixa: 'baixa', estavel: 'estável', alta: 'alta' };
+
+  function energiaNivel(valor) {
+    if (valor == null) return null;
+    if (valor <= 2) return 'baixa';
+    if (valor >= 4) return 'alta';
+    return 'estavel';
+  }
+
+  // O período sai do relógio em vez de ficar sempre 'livre': é de graça
+  // aqui e é o que torna possível, depois, comparar energia da manhã
+  // com a da noite.
+  function periodoAgora() {
+    var h = +new Intl.DateTimeFormat('en-GB', { timeZone: state.tz, hour: '2-digit', hour12: false }).format(new Date());
+    if (h < 12) return 'manha';
+    if (h < 18) return 'tarde';
+    return 'noite';
+  }
+
+  function renderEnergy() {
+    var nivel = energiaNivel(state.todayCheckin && state.todayCheckin.energia);
+    Array.prototype.forEach.call(q('energyGroup').querySelectorAll('button'), function (b) {
+      b.classList.toggle('active', b.dataset.e === nivel);
+    });
+  }
+
+  function setEnergy(nivel) {
+    var valor = ENERGIA_VALOR[nivel];
+    if (valor == null) return;
+    // Só grava quando o valor muda de fato — assim tocar de novo no chip
+    // que já está aceso não enche a tabela de linhas idênticas.
+    if (state.todayCheckin && state.todayCheckin.energia === valor) return;
+    var anterior = state.todayCheckin;
+    guardedToggle('energia-hoje',
+      function () {
+        state.todayCheckin = Object.assign({}, anterior || {}, { energia: valor, data: state.today });
+        renderEnergy();
+      },
+      function () { state.todayCheckin = anterior; renderEnergy(); renderInfoChips(); },
+      function () {
+        return sb.from('p30_checkins').insert({
+          user_id: state.user.id, data: state.today, periodo: periodoAgora(), energia: valor
+        }).select().single();
+      },
+      function () { loadTodayCheckin().then(function () { renderEnergy(); renderInfoChips(); }); }
+    );
+  }
+
+  // ============================================================
+  // PENSAMENTOS CAPTURADOS — o retorno do "estou com a cabeça cheia".
+  // A captura continua sendo só despejo (nada vira obrigação sozinho),
+  // mas agora o que foi escrito volta pra tela e pode virar tarefa ou
+  // ser descartado. É sempre a MESMA linha de p30_tasks mudando de
+  // tipo/status — nunca uma cópia num sistema paralelo.
+  // ============================================================
+  function renderThoughts() {
+    var pill = q('braindumpPill');
+    var n = state.thoughts.length;
+    pill.textContent = n;
+    pill.hidden = n === 0;
+
+    var box = q('thoughtsBox');
+    box.hidden = n === 0;
+    if (!n) return;
+    q('thoughtsCount').textContent = n;
+    q('thoughtsList').innerHTML = state.thoughts.map(function (t) {
+      var texto = t.texto_original || t.titulo || '';
+      return '<div class="thought-row" data-thought="' + t.id + '">' +
+        '<span class="t">' + esc(texto) + '<span class="when">' + esc(formatThoughtDate(t.created_at)) + '</span></span>' +
+        '<span class="thought-acts">' +
+        '<button type="button" class="go" data-convert="' + t.id + '">Virar tarefa</button>' +
+        '<button type="button" data-drop="' + t.id + '">Descartar</button>' +
+        '</span></div>';
+    }).join('');
+    Array.prototype.forEach.call(q('thoughtsList').querySelectorAll('[data-convert]'), function (b) {
+      b.addEventListener('click', function () { convertThought(b.dataset.convert, b); });
+    });
+    Array.prototype.forEach.call(q('thoughtsList').querySelectorAll('[data-drop]'), function (b) {
+      b.addEventListener('click', function () { dropThought(b.dataset.drop, b); });
+    });
+  }
+
+  function formatThoughtDate(iso) {
+    if (!iso) return '';
+    var d = iso.slice(0, 10);
+    if (d === state.today) return 'hoje';
+    if (d === addDaysStr(state.today, -1)) return 'ontem';
+    var p = d.split('-');
+    return p[2] + '/' + p[1];
+  }
+
+  function convertThought(id, btn) {
+    var t = state.thoughts.filter(function (x) { return x.id === id; })[0];
+    if (!t || btn.disabled) return;
+    var acts = btn.parentNode.querySelectorAll('button');
+    Array.prototype.forEach.call(acts, function (b) { b.disabled = true; });
+    var texto = t.texto_original || t.titulo || '';
+    var titulo = texto.length > 60 ? texto.slice(0, 57) + '…' : texto;
+    withSaveTimeout(Array.prototype.slice.call(acts), sb.from('p30_tasks').update({
+      tipo: 'tarefa', status: 'pendente', organizado: true,
+      titulo: titulo, data: state.today, pontos: 10
+    }).eq('id', id)).then(function (res) {
+      if (!res) return;
+      Array.prototype.forEach.call(acts, function (b) { b.disabled = false; });
+      if (res.error) { toast('Não consegui transformar em tarefa.'); console.error('[30D] falha ao converter pensamento', res.error); return; }
+      toast('Virou tarefa de hoje.');
+      loadThoughts().then(renderThoughts);
+      refreshDailyViews();
+    });
+  }
+
+  function dropThought(id, btn) {
+    if (btn.disabled) return;
+    var acts = btn.parentNode.querySelectorAll('button');
+    Array.prototype.forEach.call(acts, function (b) { b.disabled = true; });
+    withSaveTimeout(Array.prototype.slice.call(acts),
+      sb.from('p30_tasks').update({ status: 'arquivada' }).eq('id', id)
+    ).then(function (res) {
+      if (!res) return;
+      Array.prototype.forEach.call(acts, function (b) { b.disabled = false; });
+      if (res.error) { toast('Não consegui descartar.'); console.error('[30D] falha ao descartar pensamento', res.error); return; }
+      toast('Descartado.');
+      loadThoughts().then(renderThoughts);
+    });
   }
 
   function renderWeeklyGoal() {
@@ -1743,8 +1896,11 @@
         if (!res) return;
         bdBtn.disabled = false;
         if (res.error) { toast('Não consegui registrar.'); console.error('[30D] falha ao registrar pensamento', res.error); return; }
-        closeBraindump();
+        q('braindumpText').value = '';
         toast('Registrado como pensamento — não virou tarefa.');
+        // Mantém o sheet aberto: o item recém-escrito aparece logo abaixo,
+        // deixando claro que ele foi guardado e pode virar tarefa depois.
+        loadThoughts().then(renderThoughts);
       });
     });
   }
@@ -2373,7 +2529,7 @@
     });
     q('energyGroup').addEventListener('click', function (e) {
       var b = e.target.closest('button'); if (!b) return;
-      this.querySelectorAll('button').forEach(function (x) { x.classList.toggle('active', x === b); });
+      setEnergy(b.dataset.e);
     });
     q('habitsToggle').addEventListener('click', function () { q('habitsBox').classList.toggle('open'); });
     el.scrim.addEventListener('click', function () {
