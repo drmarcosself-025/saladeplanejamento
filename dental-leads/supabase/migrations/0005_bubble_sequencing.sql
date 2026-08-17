@@ -26,6 +26,14 @@ alter type turn_outcome add value if not exists 'SUPERSEDED';
 alter type turn_outcome add value if not exists 'YIELDED';
 alter type turn_outcome add value if not exists 'SEND_FAILED';
 
+-- Postgres não deixa usar um valor de enum recém-criado na mesma transação
+-- em que foi adicionado (SQLSTATE 55P04). Fecha a transação aqui para que
+-- 'SENDING' e os novos turn_outcome já estejam commitados antes de aparecer
+-- em WHERE/CASE mais abaixo neste mesmo arquivo.
+commit;
+begin;
+set search_path = dental_leads, public, extensions;
+
 -- ---------------------------------------------------------------------------
 -- messages: quem reservou cada bolha, e com qual token de fencing.
 --
