@@ -80,7 +80,7 @@ create or replace function dental_leads.reclaim_expired_jobs()
 returns int
 language plpgsql
 security definer
-set search_path = public
+set search_path = dental_leads, pg_temp
 as $$
 declare
   v_requeued int;
@@ -133,7 +133,7 @@ create or replace function dental_leads.reconcile_stuck_sending_bubbles()
 returns int
 language plpgsql
 security definer
-set search_path = public
+set search_path = dental_leads, pg_temp
 as $$
 declare
   v_leads uuid[];
@@ -183,7 +183,7 @@ create or replace function dental_leads.yield_turn(
 returns boolean
 language plpgsql
 security definer
-set search_path = public
+set search_path = dental_leads, pg_temp
 as $$
 declare
   v_updated int;
@@ -224,7 +224,7 @@ create or replace function dental_leads.assert_turn_valid(
 returns jsonb
 language plpgsql
 security definer
-set search_path = public
+set search_path = dental_leads, pg_temp
 as $$
 declare
   v_job  dental_leads.jobs%rowtype;
@@ -315,7 +315,7 @@ create or replace function dental_leads.reserve_outbound_bubble(
 returns jsonb
 language plpgsql
 security definer
-set search_path = public
+set search_path = dental_leads, pg_temp
 as $$
 declare
   v_job  dental_leads.jobs%rowtype;
@@ -430,7 +430,7 @@ create or replace function dental_leads.advance_bubble_to_sending(
 returns jsonb
 language plpgsql
 security definer
-set search_path = public
+set search_path = dental_leads, pg_temp
 as $$
 declare
   v_msg    dental_leads.messages%rowtype;
@@ -520,7 +520,7 @@ create or replace function dental_leads.cancel_reserved_bubble(
 returns boolean
 language plpgsql
 security definer
-set search_path = public
+set search_path = dental_leads, pg_temp
 as $$
 declare
   v_updated int;
@@ -556,3 +556,5 @@ revoke all on function dental_leads.advance_bubble_to_sending(uuid,bigint,text,u
 revoke all on function dental_leads.cancel_reserved_bubble(uuid,bigint,text,uuid,text) from public, anon, authenticated;
 revoke all on function dental_leads.yield_turn(bigint,text) from public, anon, authenticated;
 revoke all on function dental_leads.reconcile_stuck_sending_bubbles() from public, anon, authenticated;
+
+commit;

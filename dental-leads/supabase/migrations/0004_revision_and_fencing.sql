@@ -87,7 +87,7 @@ create or replace function dental_leads.ingest_inbound_message(
 returns jsonb
 language plpgsql
 security definer
-set search_path = public
+set search_path = dental_leads, pg_temp
 as $$
 declare
   v_lead       dental_leads.leads%rowtype;
@@ -202,7 +202,7 @@ returns table (
 )
 language sql
 security definer
-set search_path = public
+set search_path = dental_leads, pg_temp
 as $$
   select m.id, m.text, m.message_type, m.provider_timestamp, m.received_at, m.links,
          (select l.conversation_revision from dental_leads.leads l where l.id = p_lead_id)
@@ -235,7 +235,7 @@ create or replace function dental_leads.assert_turn_valid(
 returns jsonb
 language plpgsql
 security definer
-set search_path = public
+set search_path = dental_leads, pg_temp
 as $$
 declare
   v_job  dental_leads.jobs%rowtype;
@@ -326,7 +326,7 @@ create or replace function dental_leads.reserve_outbound_bubble(
 returns jsonb
 language plpgsql
 security definer
-set search_path = public
+set search_path = dental_leads, pg_temp
 as $$
 declare
   v_job  dental_leads.jobs%rowtype;
@@ -427,7 +427,7 @@ create or replace function dental_leads.close_turn(
 returns jsonb
 language plpgsql
 security definer
-set search_path = public
+set search_path = dental_leads, pg_temp
 as $$
 declare
   v_job dental_leads.jobs%rowtype;
@@ -504,7 +504,7 @@ create or replace function dental_leads.ingest_outbound_event(
 returns jsonb
 language plpgsql
 security definer
-set search_path = public
+set search_path = dental_leads, pg_temp
 as $$
 declare
   v_lead     dental_leads.leads%rowtype;

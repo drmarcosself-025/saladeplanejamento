@@ -202,7 +202,7 @@ create or replace function dental_leads.ingest_inbound_message(
 returns jsonb
 language plpgsql
 security definer
-set search_path = public
+set search_path = dental_leads, pg_temp
 as $$
 declare
   v_lead        dental_leads.leads%rowtype;
@@ -318,7 +318,7 @@ create or replace function dental_leads.ingest_outbound_event(
 returns jsonb
 language plpgsql
 security definer
-set search_path = public
+set search_path = dental_leads, pg_temp
 as $$
 declare
   v_lead      dental_leads.leads%rowtype;
@@ -415,7 +415,7 @@ returns table (
 )
 language sql
 security definer
-set search_path = public
+set search_path = dental_leads, pg_temp
 as $$
   update dental_leads.jobs j
      set status    = 'RUNNING',
@@ -448,7 +448,7 @@ create or replace function dental_leads.finish_job(
 returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = dental_leads, pg_temp
 as $$
 declare
   v_job dental_leads.jobs%rowtype;
@@ -493,7 +493,7 @@ create or replace function dental_leads.get_send_stats(p_lead_id uuid)
 returns jsonb
 language sql
 security definer
-set search_path = public
+set search_path = dental_leads, pg_temp
 as $$
   select jsonb_build_object(
     'last_out_at',   (select max(created_at) from dental_leads.messages

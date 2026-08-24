@@ -155,7 +155,7 @@ create or replace function dental_leads.ingest_inbound_message(
 returns jsonb
 language plpgsql
 security definer
-set search_path = public
+set search_path = dental_leads, pg_temp
 as $$
 declare
   v_lead       dental_leads.leads%rowtype;
@@ -263,7 +263,7 @@ returns table (
 )
 language sql
 security definer
-set search_path = public
+set search_path = dental_leads, pg_temp
 as $$
   update dental_leads.jobs j
      set status           = 'RUNNING',
@@ -306,7 +306,7 @@ create or replace function dental_leads.renew_lease(
 returns boolean
 language plpgsql
 security definer
-set search_path = public
+set search_path = dental_leads, pg_temp
 as $$
 declare
   v_updated int;
@@ -339,7 +339,7 @@ returns table (
 )
 language sql
 security definer
-set search_path = public
+set search_path = dental_leads, pg_temp
 as $$
   select m.id, m.text, m.message_type, m.provider_timestamp, m.received_at, m.links
     from dental_leads.messages m
@@ -370,7 +370,7 @@ create or replace function dental_leads.assert_turn_valid(
 returns jsonb
 language plpgsql
 security definer
-set search_path = public
+set search_path = dental_leads, pg_temp
 as $$
 declare
   v_job  dental_leads.jobs%rowtype;
@@ -450,7 +450,7 @@ create or replace function dental_leads.close_turn(
 returns jsonb
 language plpgsql
 security definer
-set search_path = public
+set search_path = dental_leads, pg_temp
 as $$
 declare
   v_job dental_leads.jobs%rowtype;
@@ -518,7 +518,7 @@ create or replace function dental_leads.reclaim_expired_jobs()
 returns int
 language plpgsql
 security definer
-set search_path = public
+set search_path = dental_leads, pg_temp
 as $$
 declare
   v_count int;
@@ -572,7 +572,7 @@ create or replace function dental_leads.get_turn_stats(p_lead_id uuid)
 returns jsonb
 language sql
 security definer
-set search_path = public
+set search_path = dental_leads, pg_temp
 as $$
   select jsonb_build_object(
     'last_turn_at',  (select max(created_at) from dental_leads.automation_decisions
@@ -609,7 +609,7 @@ create or replace function dental_leads.ingest_outbound_event(
 returns jsonb
 language plpgsql
 security definer
-set search_path = public
+set search_path = dental_leads, pg_temp
 as $$
 declare
   v_lead     dental_leads.leads%rowtype;

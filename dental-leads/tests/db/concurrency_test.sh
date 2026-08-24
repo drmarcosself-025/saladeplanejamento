@@ -19,25 +19,25 @@ echo "== preparando cenário"
 $PSQL <<'SQL'
 -- Apagar o lead cascateia pra jobs/messages/automation_decisions — não dá
 -- pra apagar jobs antes por causa do FK messages.reserved_job_id.
-delete from public.leads where whatsapp_id like '55119999900%@s.whatsapp.net';
+delete from dental_leads.leads where whatsapp_id like '55119999900%@s.whatsapp.net';
 
-select public.ingest_inbound_message(
+select dental_leads.ingest_inbound_message(
   '5511999990010@s.whatsapp.net', '5511999990010', false, 'Concorrência A',
   'CONC-A1', 'TEXT', 'Oi', '{}'::jsonb, now(), 'h-a1', null, null, false, null, 5, 30);
 
-select public.ingest_inbound_message(
+select dental_leads.ingest_inbound_message(
   '5511999990011@s.whatsapp.net', '5511999990011', false, 'Concorrência B',
   'CONC-B1', 'TEXT', 'Oi', '{}'::jsonb, now(), 'h-b1', null, null, false, null, 5, 30);
 
 -- Janela de debounce já vencida: os dois turnos estão maduros.
-update public.jobs set run_after = now() where status = 'PENDING';
+update dental_leads.jobs set run_after = now() where status = 'PENDING';
 SQL
 
 echo "== $WORKERS workers disputando 2 leads simultaneamente"
 tmp=$(mktemp -d)
 for i in $(seq 1 "$WORKERS"); do
   (
-    $PSQL -c "select count(*) from public.claim_lead_jobs('worker-$i', 5, 120);" > "$tmp/w$i.out" 2>&1
+    $PSQL -c "select count(*) from dental_leads.claim_lead_jobs('worker-$i', 5, 120);" > "$tmp/w$i.out" 2>&1
   ) &
 done
 wait
@@ -59,7 +59,7 @@ declare
   v_por_lead int;
 begin
   select count(*) into v_running
-    from public.jobs j join public.leads l on l.id = j.lead_id
+    from dental_leads.jobs j join dental_leads.leads l on l.id = j.lead_id
    where l.whatsapp_id like '55119999900%@s.whatsapp.net' and j.status = 'RUNNING';
 
   if v_running <> 2 then
@@ -68,7 +68,7 @@ begin
 
   select max(c) into v_por_lead from (
     select count(*) c
-      from public.jobs j join public.leads l on l.id = j.lead_id
+      from dental_leads.jobs j join dental_leads.leads l on l.id = j.lead_id
      where l.whatsapp_id like '55119999900%@s.whatsapp.net' and j.status = 'RUNNING'
      group by j.lead_id
   ) t;
@@ -83,7 +83,7 @@ SQL
 
 echo "== limpando cenário 1"
 $PSQL <<'SQL'
-delete from public.leads where whatsapp_id like '55119999900%@s.whatsapp.net';
+delete from dental_leads.leads where whatsapp_id like '55119999900%@s.whatsapp.net';
 SQL
 
 # ============================================================================
@@ -98,15 +98,15 @@ SQL
 # ============================================================================
 echo "== preparando cenário 2 (fencing sob concorrência real)"
 LEAD_ID=$($PSQL -c "
-  select (public.ingest_inbound_message(
+  select (dental_leads.ingest_inbound_message(
     '5511999990020@s.whatsapp.net', '5511999990020', false, 'Fencing',
     'FENCE-1', 'TEXT', 'Oi', '{}'::jsonb, now(), 'h-fence1', null, null, false, null, 5, 30)
   )->>'lead_id';
 ")
 LEAD_ID=$(echo "$LEAD_ID" | tr -d '[:space:]')
 
-$PSQL -c "update public.jobs set run_after = now() where lead_id = '$LEAD_ID' and status = 'PENDING';" > /dev/null
-CLAIM=$($PSQL -c "select job_id, turn_id from public.claim_lead_jobs('worker-fence', 1, 120);")
+$PSQL -c "update dental_leads.jobs set run_after = now() where lead_id = '$LEAD_ID' and status = 'PENDING';" > /dev/null
+CLAIM=$($PSQL -c "select job_id, turn_id from dental_leads.claim_lead_jobs('worker-fence', 1, 120);")
 JOB_ID=$(echo "$CLAIM" | awk -F'|' 'NR==1{gsub(/ /,"",$1); print $1}')
 TURN_ID=$(echo "$CLAIM" | awk -F'|' 'NR==1{gsub(/ /,"",$2); print $2}')
 
@@ -115,9 +115,9 @@ tmp2=$(mktemp -d)
 for i in $(seq 1 "$WORKERS"); do
   (
     $PSQL -c "
-      select (public.reserve_outbound_bubble(
+      select (dental_leads.reserve_outbound_bubble(
         p_job_id => $JOB_ID, p_worker_id => 'worker-fence', p_lead_id => '$LEAD_ID',
-        p_input_revision => 1, p_batch_ids => (select array_agg(id) from public.messages where lead_id = '$LEAD_ID' and direction = 'IN'),
+        p_input_revision => 1, p_batch_ids => (select array_agg(id) from dental_leads.messages where lead_id = '$LEAD_ID' and direction = 'IN'),
         p_purpose => 'AI_REPLY', p_turn_id => '$TURN_ID', p_sequence => 1,
         p_text => 'Claro 😊', p_content_hash => 'hash-fence-bolha', p_dedupe_seconds => 120
       ))->>'reserved';
@@ -141,7 +141,7 @@ $PSQL -c "
 do \$\$
 declare v_count int;
 begin
-  select count(*) into v_count from public.messages
+  select count(*) into v_count from dental_leads.messages
    where lead_id = '$LEAD_ID' and direction = 'OUT' and content_hash = 'hash-fence-bolha';
   if v_count <> 1 then
     raise exception 'FALHOU: deveria existir exatamente 1 bolha gravada sob concorrência real, há %', v_count;
@@ -151,7 +151,7 @@ end \$\$;
 "
 
 echo "== limpando cenário 2"
-$PSQL -c "delete from public.leads where id = '$LEAD_ID';"
+$PSQL -c "delete from dental_leads.leads where id = '$LEAD_ID';"
 
 # ============================================================================
 # Cenário 3 — duas (ou N) tentativas concorrentes da MESMA posição de
@@ -165,15 +165,15 @@ $PSQL -c "delete from public.leads where id = '$LEAD_ID';"
 # ============================================================================
 echo "== preparando cenário 3 (duas tentativas concorrentes da mesma sequência)"
 LEAD_ID3=$($PSQL -c "
-  select (public.ingest_inbound_message(
+  select (dental_leads.ingest_inbound_message(
     '5511999990021@s.whatsapp.net', '5511999990021', false, 'Sequencia',
     'SEQ-1', 'TEXT', 'Oi', '{}'::jsonb, now(), 'h-seq1', null, null, false, null, 5, 30)
   )->>'lead_id';
 ")
 LEAD_ID3=$(echo "$LEAD_ID3" | tr -d '[:space:]')
 
-$PSQL -c "update public.jobs set run_after = now() where lead_id = '$LEAD_ID3' and status = 'PENDING';" > /dev/null
-CLAIM3=$($PSQL -c "select job_id, turn_id from public.claim_lead_jobs('worker-seq', 1, 120);")
+$PSQL -c "update dental_leads.jobs set run_after = now() where lead_id = '$LEAD_ID3' and status = 'PENDING';" > /dev/null
+CLAIM3=$($PSQL -c "select job_id, turn_id from dental_leads.claim_lead_jobs('worker-seq', 1, 120);")
 JOB_ID3=$(echo "$CLAIM3" | awk -F'|' 'NR==1{gsub(/ /,"",$1); print $1}')
 TURN_ID3=$(echo "$CLAIM3" | awk -F'|' 'NR==1{gsub(/ /,"",$2); print $2}')
 
@@ -182,9 +182,9 @@ tmp3=$(mktemp -d)
 for i in $(seq 1 "$WORKERS"); do
   (
     $PSQL -c "
-      select (public.reserve_outbound_bubble(
+      select (dental_leads.reserve_outbound_bubble(
         p_job_id => $JOB_ID3, p_worker_id => 'worker-seq', p_lead_id => '$LEAD_ID3',
-        p_input_revision => 1, p_batch_ids => (select array_agg(id) from public.messages where lead_id = '$LEAD_ID3' and direction = 'IN'),
+        p_input_revision => 1, p_batch_ids => (select array_agg(id) from dental_leads.messages where lead_id = '$LEAD_ID3' and direction = 'IN'),
         p_purpose => 'AI_REPLY', p_turn_id => '$TURN_ID3', p_sequence => 1,
         p_text => 'tentativa numero $i', p_content_hash => 'hash-seq-tentativa-$i', p_dedupe_seconds => 120
       ))->>'reserved';
@@ -212,7 +212,7 @@ $PSQL -c "
 do \$\$
 declare v_count int;
 begin
-  select count(*) into v_count from public.messages
+  select count(*) into v_count from dental_leads.messages
    where lead_id = '$LEAD_ID3' and turn_id = '$TURN_ID3' and bubble_sequence = 1;
   if v_count <> 1 then
     raise exception 'FALHOU: deveria existir exatamente 1 bolha na posição (turn_id, sequence=1), há %', v_count;
@@ -222,4 +222,4 @@ end \$\$;
 "
 
 echo "== limpando cenário 3"
-$PSQL -c "delete from public.leads where id = '$LEAD_ID3';"
+$PSQL -c "delete from dental_leads.leads where id = '$LEAD_ID3';"

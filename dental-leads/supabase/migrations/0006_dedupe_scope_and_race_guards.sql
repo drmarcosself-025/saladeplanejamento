@@ -66,7 +66,7 @@ create or replace function dental_leads.reserve_outbound_bubble(
 returns jsonb
 language plpgsql
 security definer
-set search_path = public
+set search_path = dental_leads, pg_temp
 as $$
 declare
   v_job  dental_leads.jobs%rowtype;
@@ -173,7 +173,7 @@ create or replace function dental_leads.advance_bubble_to_sending(
 returns jsonb
 language plpgsql
 security definer
-set search_path = public
+set search_path = dental_leads, pg_temp
 as $$
 declare
   v_msg    dental_leads.messages%rowtype;
@@ -267,7 +267,7 @@ create or replace function dental_leads.finalize_bubble_send(
 returns jsonb
 language plpgsql
 security definer
-set search_path = public
+set search_path = dental_leads, pg_temp
 as $$
 declare
   v_msg dental_leads.messages%rowtype;
@@ -342,7 +342,7 @@ create or replace function dental_leads.reconcile_stuck_sending_bubbles(
 returns int
 language plpgsql
 security definer
-set search_path = public
+set search_path = dental_leads, pg_temp
 as $$
 declare
   v_leads uuid[];
@@ -395,6 +395,8 @@ end $$;
 --      janela (mesmo lead, já era). Dois ou mais candidatos plausíveis =
 --      não reconcilia automaticamente — marca a ambiguidade e needs_human.
 -- ============================================================================
+drop function if exists dental_leads.ingest_outbound_event(text,text,boolean,text,text,text,text,jsonb,timestamptz,int);
+
 create or replace function dental_leads.ingest_outbound_event(
   p_whatsapp_id         text,
   p_phone               text,
@@ -411,7 +413,7 @@ create or replace function dental_leads.ingest_outbound_event(
 returns jsonb
 language plpgsql
 security definer
-set search_path = public
+set search_path = dental_leads, pg_temp
 as $$
 declare
   v_lead      dental_leads.leads%rowtype;
