@@ -163,6 +163,31 @@ a{ color:inherit; }
 .body-row{ display:flex; align-items:center; justify-content:space-between; gap:10px; font-size:13px; }
 .body-row .l{ color:var(--sand-dim); }
 .body-row .v{ color:var(--sand-faint); font-weight:600; text-align:right; }
+.body-row.clickable{
+  width:100%; background:none; border:none; padding:6px 0; margin:-6px 0; cursor:pointer;
+  font-family:inherit; text-align:left; -webkit-tap-highlight-color:transparent;
+}
+.body-row.clickable:active{ opacity:.7; }
+.body-row.clickable .v.filled{ color:var(--gold); }
+
+/* ---------- registrar treino ---------- */
+.exercise-row{
+  display:flex; align-items:center; gap:7px; background:var(--graphite-2);
+  border:1px solid var(--line); border-radius:13px; padding:9px 10px; margin-bottom:7px;
+}
+.exercise-row input{
+  background:transparent; border:none; color:var(--sand); font-size:13px;
+  font-family:inherit; padding:4px 2px; min-width:0;
+}
+.exercise-row input:focus{ outline:none; }
+.exercise-row .ex-nome{ flex:2 1 0; }
+.exercise-row .ex-series, .exercise-row .ex-carga{ flex:0 1 44px; text-align:center; }
+.exercise-row .ex-reps{ flex:1 1 0; text-align:center; }
+.exercise-row .ex-remove{
+  flex:0 0 auto; background:none; border:none; color:var(--sand-faint); cursor:pointer;
+  display:flex; padding:4px;
+}
+.exercise-row .ex-remove:hover{ color:var(--sand); }
 
 /* ---------- atalhos ---------- */
 .shortcuts-row{ display:grid; grid-template-columns:repeat(2,1fr); gap:10px; }

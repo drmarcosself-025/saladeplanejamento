@@ -414,3 +414,54 @@ create policy "p30_checkins_owner" on public.p30_checkins for all to authenticat
   using (user_id = auth.uid()) with check (user_id = auth.uid());
 
 -- Rollback: drop table public.p30_checkins;
+
+-- ============================================================
+-- TREINOS — registro de treino (sessão + exercícios). Modelo assumido
+-- nesta primeira versão: um treino por dia (o mais recente de "hoje" é
+-- o que a tela edita/exclui); se um dia precisar de dois treinos no
+-- mesmo dia, isso é ajuste pequeno depois, não replanejamento.
+-- percepcao_esforco e energia_pos usam a mesma escala 1-5 do check-in,
+-- de propósito — mesmo vocabulário, mais fácil de cruzar depois.
+-- ============================================================
+create table if not exists public.p30_workouts (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  data date not null default current_date,
+  tipo text check (tipo in ('pernas','superior','corpo_inteiro','cardio','outro')),
+  duracao_min integer,
+  percepcao_esforco smallint check (percepcao_esforco between 1 and 5),
+  energia_pos smallint check (energia_pos between 1 and 5),
+  observacao text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists p30_workouts_user_data_idx on public.p30_workouts (user_id, data desc, created_at desc);
+drop trigger if exists trg_p30_workouts_updated_at on public.p30_workouts;
+create trigger trg_p30_workouts_updated_at before update on public.p30_workouts
+  for each row execute function public.p30_set_updated_at();
+
+create table if not exists public.p30_workout_exercises (
+  id uuid primary key default gen_random_uuid(),
+  workout_id uuid not null references public.p30_workouts(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  ordem integer not null default 0,
+  nome text not null,
+  series smallint,
+  repeticoes text,
+  carga_kg numeric,
+  created_at timestamptz not null default now()
+);
+create index if not exists p30_workout_exercises_workout_idx on public.p30_workout_exercises (workout_id, ordem);
+
+grant select, insert, update, delete on public.p30_workouts, public.p30_workout_exercises to authenticated;
+alter table public.p30_workouts enable row level security;
+alter table public.p30_workout_exercises enable row level security;
+drop policy if exists "p30_workouts_owner" on public.p30_workouts;
+create policy "p30_workouts_owner" on public.p30_workouts for all to authenticated
+  using (user_id = auth.uid()) with check (user_id = auth.uid());
+drop policy if exists "p30_workout_exercises_owner" on public.p30_workout_exercises;
+create policy "p30_workout_exercises_owner" on public.p30_workout_exercises for all to authenticated
+  using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+-- Rollback: drop table public.p30_workout_exercises; drop table public.p30_workouts;
+
