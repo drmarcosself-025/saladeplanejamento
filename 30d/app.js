@@ -96,6 +96,7 @@
     goals: [],
     thoughts: [],       // capturas do "cabeça cheia" ainda não transformadas nem descartadas
     todayCheckin: null, // check-in mais recente de hoje, ou null se nenhum ainda
+    todayWorkout: null, // { ...workout, exercises: [...] } do treino mais recente de hoje, ou null
     weeklyMilestone: null, // {milestone, goal}
     deadlineGoal: null,
     nextCommitment: null,
@@ -281,7 +282,8 @@
           loadGoals(),
           loadDailyScore(),
           loadTodayCheckin(),
-          loadThoughts()
+          loadThoughts(),
+          loadTodayWorkout()
         ]);
       })
       .then(function () {
@@ -439,6 +441,25 @@
       });
   }
 
+  // Modelo assumido: um treino por dia — pega o mais recente de "hoje"
+  // e os exercícios dele, numa segunda consulta só quando existe
+  // treino (não gasta query à toa nos dias sem registro).
+  function loadTodayWorkout() {
+    return sb.from('p30_workouts').select('*').eq('user_id', state.user.id).eq('data', state.today)
+      .order('created_at', { ascending: false }).limit(1)
+      .then(function (res) {
+        if (res.error) throw res.error;
+        var w = (res.data || [])[0] || null;
+        if (!w) { state.todayWorkout = null; return; }
+        return sb.from('p30_workout_exercises').select('*').eq('workout_id', w.id)
+          .order('ordem', { ascending: true }).then(function (res2) {
+            if (res2.error) throw res2.error;
+            w.exercises = res2.data || [];
+            state.todayWorkout = w;
+          });
+      });
+  }
+
   function computeWeeklyMilestone() {
     state.weeklyMilestone = null;
     for (var i = 0; i < state.goals.length; i++) {
@@ -534,6 +555,7 @@
     safeRender(renderEnergy);
     safeRender(renderInfoChips);
     safeRender(renderThoughts);
+    safeRender(renderBodyCard);
     safeRender(renderWeeklyGoal);
     safeRender(renderMissions);
     safeRender(renderTodayTasks);
@@ -712,6 +734,24 @@
       toast('Descartado.');
       loadThoughts().then(renderThoughts);
     });
+  }
+
+  // ============================================================
+  // MEU CORPO HOJE — só a linha de "Treino" é real por enquanto (água,
+  // sono, refeições e peso continuam placeholder, fora do escopo desta
+  // fatia). Mostra um resumo quando há registro do dia.
+  // ============================================================
+  var TIPO_TREINO_LABEL = { pernas: 'Pernas', superior: 'Superior', corpo_inteiro: 'Corpo inteiro', cardio: 'Cardio', outro: 'Treino' };
+
+  function renderBodyCard() {
+    var valueEl = q('bodyTreinoValue');
+    var w = state.todayWorkout;
+    if (!w) { valueEl.textContent = 'Ainda sem registro'; valueEl.classList.remove('filled'); return; }
+    var parts = [];
+    parts.push(TIPO_TREINO_LABEL[w.tipo] || 'Treino');
+    if (w.duracao_min) parts.push(w.duracao_min + ' min');
+    valueEl.textContent = parts.join(' · ');
+    valueEl.classList.add('filled');
   }
 
   function renderWeeklyGoal() {
@@ -1996,6 +2036,205 @@
   }
 
   // ============================================================
+  // REGISTRAR TREINO — modelo "um treino por dia": abrir com um treino
+  // já existente hoje entra em modo de edição (atualiza a mesma linha,
+  // substitui a lista de exercícios por inteiro em vez de tentar
+  // diferenciar lin ha a linha — mais simples e sem risco de duplicar).
+  // ============================================================
+  function initWorkout() {
+    var WORKOUT_SCALES = ['workoutEsforco', 'workoutEnergiaPos'];
+    var scaleValues = {};
+    var selectedTipo = null;
+    var editingId = null;
+
+    WORKOUT_SCALES.forEach(function (id) {
+      var wrap = q(id);
+      wrap.innerHTML = [1, 2, 3, 4, 5].map(function (n) {
+        return '<button type="button" class="scale-btn" data-v="' + n + '">' + n + '</button>';
+      }).join('');
+      wrap.addEventListener('click', function (e) {
+        var b = e.target.closest('.scale-btn'); if (!b) return;
+        var already = b.classList.contains('active');
+        Array.prototype.forEach.call(wrap.querySelectorAll('.scale-btn'), function (x) { x.classList.remove('active'); });
+        scaleValues[id] = already ? null : +b.dataset.v;
+        if (!already) b.classList.add('active');
+      });
+    });
+
+    q('workoutTipoChips').addEventListener('click', function (e) {
+      var b = e.target.closest('.chip'); if (!b) return;
+      var already = b.classList.contains('active');
+      Array.prototype.forEach.call(this.querySelectorAll('.chip'), function (x) { x.classList.remove('active'); });
+      selectedTipo = already ? null : b.dataset.tipo;
+      if (!already) b.classList.add('active');
+    });
+
+    function setScale(id, val) {
+      scaleValues[id] = val || null;
+      Array.prototype.forEach.call(q(id).querySelectorAll('.scale-btn'), function (b) {
+        b.classList.toggle('active', val != null && +b.dataset.v === val);
+      });
+    }
+
+    function addExerciseRow(ex) {
+      var row = document.createElement('div');
+      row.className = 'exercise-row';
+      row.innerHTML =
+        '<input type="text" class="ex-nome" placeholder="Exercício">' +
+        '<input type="number" class="ex-series" min="0" max="20" placeholder="séries">' +
+        '<input type="text" class="ex-reps" placeholder="reps">' +
+        '<input type="number" class="ex-carga" min="0" step="0.5" placeholder="kg">' +
+        '<button type="button" class="ex-remove" aria-label="Remover exercício"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>';
+      if (ex) {
+        row.querySelector('.ex-nome').value = ex.nome || '';
+        row.querySelector('.ex-series').value = ex.series != null ? ex.series : '';
+        row.querySelector('.ex-reps').value = ex.repeticoes || '';
+        row.querySelector('.ex-carga').value = ex.carga_kg != null ? ex.carga_kg : '';
+      }
+      row.querySelector('.ex-remove').addEventListener('click', function () { row.remove(); });
+      q('workoutExerciseList').appendChild(row);
+    }
+
+    function collectExercises() {
+      var rows = Array.prototype.slice.call(q('workoutExerciseList').querySelectorAll('.exercise-row'));
+      var out = [];
+      var missingName = false;
+      rows.forEach(function (row) {
+        var nome = row.querySelector('.ex-nome').value.trim();
+        var series = row.querySelector('.ex-series').value;
+        var reps = row.querySelector('.ex-reps').value.trim();
+        var carga = row.querySelector('.ex-carga').value;
+        var hasAny = nome || series !== '' || reps || carga !== '';
+        if (!hasAny) return;
+        if (!nome) { missingName = true; return; }
+        out.push({
+          ordem: out.length, nome: nome,
+          series: series !== '' ? +series : null,
+          repeticoes: reps || null,
+          carga_kg: carga !== '' ? +carga : null
+        });
+      });
+      return missingName ? null : out;
+    }
+
+    function resetWorkoutForm() {
+      editingId = null;
+      selectedTipo = null;
+      Array.prototype.forEach.call(q('workoutTipoChips').querySelectorAll('.chip'), function (x) { x.classList.remove('active'); });
+      q('workoutDuracao').value = '';
+      q('workoutObs').value = '';
+      setScale('workoutEsforco', null);
+      setScale('workoutEnergiaPos', null);
+      q('workoutExerciseList').innerHTML = '';
+      addExerciseRow();
+      q('workoutTitle').textContent = 'Registrar treino';
+      q('workoutSaveBtn').textContent = 'Registrar';
+      q('workoutDeleteBtn').hidden = true;
+    }
+
+    function fillWorkoutForm(w) {
+      editingId = w.id;
+      selectedTipo = w.tipo || null;
+      Array.prototype.forEach.call(q('workoutTipoChips').querySelectorAll('.chip'), function (x) {
+        x.classList.toggle('active', x.dataset.tipo === selectedTipo);
+      });
+      q('workoutDuracao').value = w.duracao_min != null ? w.duracao_min : '';
+      q('workoutObs').value = w.observacao || '';
+      setScale('workoutEsforco', w.percepcao_esforco);
+      setScale('workoutEnergiaPos', w.energia_pos);
+      q('workoutExerciseList').innerHTML = '';
+      var exs = (w.exercises || []).slice().sort(function (a, b) { return (a.ordem || 0) - (b.ordem || 0); });
+      if (exs.length) exs.forEach(addExerciseRow); else addExerciseRow();
+      q('workoutTitle').textContent = 'Editar treino';
+      q('workoutSaveBtn').textContent = 'Atualizar';
+      q('workoutDeleteBtn').hidden = false;
+    }
+
+    function openWorkout() {
+      if (state.todayWorkout) fillWorkoutForm(state.todayWorkout); else resetWorkoutForm();
+      el.scrim.classList.add('show');
+      el.sheetWorkout.classList.add('show');
+    }
+    function closeWorkout() {
+      el.scrim.classList.remove('show');
+      el.sheetWorkout.classList.remove('show');
+    }
+    q('bodyTreinoRow').addEventListener('click', openWorkout);
+    q('workoutCloseBtn').addEventListener('click', closeWorkout);
+    q('workoutAddExerciseBtn').addEventListener('click', function () { addExerciseRow(); });
+
+    // Substitui a lista de exercícios por inteiro (apaga + reinsere) em
+    // vez de tentar casar linha a linha com o que já existia — mais
+    // simples e sem chance de sobrar exercício órfão de uma edição
+    // anterior. refreshDailyViews() não entra aqui: treino não participa
+    // do cálculo de pontos nem da tela Hoje/Semana.
+    function saveExercises(workoutId, exercises) {
+      return sb.from('p30_workout_exercises').delete().eq('workout_id', workoutId).then(function (resDel) {
+        if (resDel.error) return resDel;
+        if (!exercises.length) return { error: null };
+        return sb.from('p30_workout_exercises').insert(exercises.map(function (ex) {
+          return Object.assign({ workout_id: workoutId, user_id: state.user.id }, ex);
+        }));
+      });
+    }
+
+    q('workoutSaveBtn').addEventListener('click', function () {
+      var exercises = collectExercises();
+      if (exercises === null) { toast('Dê um nome para o exercício antes de salvar.'); return; }
+      var saveBtn = q('workoutSaveBtn');
+      if (saveBtn.disabled) return;
+      var row = {
+        tipo: selectedTipo, duracao_min: q('workoutDuracao').value !== '' ? +q('workoutDuracao').value : null,
+        percepcao_esforco: scaleValues.workoutEsforco || null, energia_pos: scaleValues.workoutEnergiaPos || null,
+        observacao: q('workoutObs').value.trim() || null
+      };
+      saveBtn.disabled = true;
+      var isEdit = !!editingId;
+      var base = isEdit
+        ? sb.from('p30_workouts').update(row).eq('id', editingId)
+        : sb.from('p30_workouts').insert(Object.assign({ user_id: state.user.id, data: state.today }, row)).select().single();
+      withSaveTimeout([saveBtn], base).then(function (res) {
+        if (!res) return;
+        if (res.error) {
+          saveBtn.disabled = false;
+          toast('Não consegui salvar o treino. Tente de novo.');
+          console.error('[30D] falha ao salvar treino', res.error);
+          return;
+        }
+        var workoutId = isEdit ? editingId : res.data.id;
+        saveExercises(workoutId, exercises).then(function (resEx) {
+          saveBtn.disabled = false;
+          loadTodayWorkout().then(renderBodyCard);
+          if (resEx.error) {
+            console.error('[30D] falha ao salvar exercícios do treino', resEx.error);
+            toast('Treino salvo, mas os exercícios não foram salvos. Abra de novo e tente salvar.');
+            return;
+          }
+          closeWorkout();
+          toast(isEdit ? 'Treino atualizado.' : 'Treino registrado.');
+        });
+      });
+    });
+
+    q('workoutDeleteBtn').addEventListener('click', function () {
+      if (!editingId) return;
+      if (!window.confirm('Excluir este treino? Os exercícios registrados também somem.')) return;
+      var delBtn = q('workoutDeleteBtn');
+      if (delBtn.disabled) return;
+      delBtn.disabled = true;
+      withSaveTimeout([delBtn], sb.from('p30_workouts').delete().eq('id', editingId)).then(function (res) {
+        if (!res) return;
+        delBtn.disabled = false;
+        if (res.error) { toast('Não consegui excluir.'); console.error('[30D] falha ao excluir treino', res.error); return; }
+        closeWorkout();
+        toast('Treino excluído.');
+        loadTodayWorkout().then(renderBodyCard);
+      });
+    });
+  }
+
+
+  // ============================================================
   // ENCERRAR O DIA (ação real: fecha o dia; a sequência guiada
   // completa do modo noturno é da Fase 3)
   // ============================================================
@@ -2533,7 +2772,7 @@
     });
     q('habitsToggle').addEventListener('click', function () { q('habitsBox').classList.toggle('open'); });
     el.scrim.addEventListener('click', function () {
-      [el.sheetCapture, el.sheetSettings, el.sheetReorganize, el.sheetBraindump, el.sheetCheckin, el.sheetMoveTask, el.sheetSetup, el.sheetTaskManage, el.sheetGoalDetail].forEach(function (s) { s.classList.remove('show'); });
+      [el.sheetCapture, el.sheetSettings, el.sheetReorganize, el.sheetBraindump, el.sheetCheckin, el.sheetWorkout, el.sheetMoveTask, el.sheetSetup, el.sheetTaskManage, el.sheetGoalDetail].forEach(function (s) { s.classList.remove('show'); });
       el.scrim.classList.remove('show');
     });
     q('errorRetryBtn').addEventListener('click', function () {
@@ -2549,6 +2788,7 @@
     el.sheetReorganize = q('sheetReorganize');
     el.sheetBraindump = q('sheetBraindump');
     el.sheetCheckin = q('sheetCheckin');
+    el.sheetWorkout = q('sheetWorkout');
     el.missionsList = q('missionsList');
     el.missionsEmpty = q('missionsEmpty');
     el.restBanner = q('restBanner');
@@ -2576,6 +2816,7 @@
     initWeek();
     initBraindump();
     initCheckin();
+    initWorkout();
     initEndDay();
     initSettings();
     initSetup();
