@@ -44,12 +44,15 @@
       canvas.width = W * dpr; canvas.height = H * dpr;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
-    window.addEventListener("resize", resize);
+    if (typeof ResizeObserver !== "undefined") new ResizeObserver(resize).observe(canvas);
+    else window.addEventListener("resize", resize);
     resize();
+    // Quem pede menos movimento vê o avatar quase parado (só o brilho respira).
+    const reduzido = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
     let t0 = performance.now();
     function frame(now) {
-      const t = (now - t0) / 1000;
+      const t = ((now - t0) / 1000) * (reduzido ? 0.15 : 1);
       // transição de cor e amplitude
       for (let i = 0; i < 3; i++) corAtual[i] += (corAlvo[i] - corAtual[i]) * 0.06;
       // ouvindo: o avatar reage ao nível REAL do seu microfone

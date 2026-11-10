@@ -1,28 +1,87 @@
-// Voz: entrada (SpeechRecognition) e saída (speechSynthesis), no navegador.
+// Voz do Jarvis: entrada e saída, com dois caminhos conforme onde a página roda.
 //
-// PRIVACIDADE: no Chrome/Edge o reconhecimento de fala é feito pelo servidor
-// do próprio navegador (o áudio vai ao Google/Microsoft). Não passa por
-// nenhum servidor nosso, mas SAI do seu computador. A interface avisa isso.
-// A saída (a voz do Jarvis) é local, do sistema operacional.
+// A) DENTRO de um artefato do claude.ai (window.claude existe)
+//    - Entrada: capacidade `dictation`. O microfone é da plataforma; a página
+//      só recebe TEXTO. Só funciona "segurando para falar" (a voz do Claude fica
+//      ocupada enquanto o ditado escuta, então não há modo contínuo).
+//    - Saída: capacidade `tts` (voz do Claude). Sem ela, a página mostra o texto.
+// B) Em qualquer outro lugar (localhost, GitHub Pages)
+//    - Entrada: SpeechRecognition do navegador (Chrome/Edge), contínua ou segurar.
+//    - Saída: speechSynthesis do sistema.
 //
-// Dois modos de entrada:
-//  - contínuo: microfone ligado, só age quando ouvir "Jarvis" (ou logo após uma
-//    conversa). Pausa enquanto o Jarvis fala, para não ouvir a si mesmo.
-//  - segurar para falar (PTT): só escuta enquanto o botão/Espaço está apertado.
-//    Mais confiável em ambiente barulhento e o que menos áudio envia.
-//
-// Trocar para Whisper/Realtime API no futuro = substituir este arquivo.
+// PRIVACIDADE. A: o áudio vai ao serviço de fala da Anthropic (o mesmo do chat).
+// B: no Chrome/Edge o áudio vai ao servidor do navegador (Google/Microsoft).
+// Nos dois casos o áudio sai do computador enquanto o microfone está ativo.
 (function () {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   const LS = "jarvis_voz_v1";
+  const NO_ARTEFATO = !!(window.claude && typeof window.claude.use === "function");
+  const dormir = (ms) => new Promise((r) => setTimeout(r, ms));
 
-  let cb = { onTexto() {}, onInterim() {}, onEstado() {}, onErro() {}, onNivel() {} };
-  let rec = null, continuo = false, pausado = false, ptt = null, pttSoltou = false;
-  let mudo = false, config = { voz: "", rate: 1.05 };
+  let cb = { onTexto() {}, onInterim() {}, onEstado() {}, onErro() {}, onNivel() {}, onVozes() {} };
+  let config = { voz: "", rate: 1.05 };
   try { Object.assign(config, JSON.parse(localStorage.getItem(LS) || "{}")); } catch (_) {}
+  function salvar() { try { localStorage.setItem(LS, JSON.stringify(config)); } catch (_) {} }
 
-  // ---------- medidor de microfone ----------
-  let stream = null, ac = null, an = null, buf = null, raf = 0;
+  let dict = null, ttsCap = null, ttsVozes = [], detectado = false;
+  let mudo = false, tokenFala = 0;
+
+  // =====================================================================
+  // Caminho A: capacidades do artefato
+  // =====================================================================
+  let dictPtt = false, pttBuf = [], pttSoltou = false;
+
+  function msgErroDict(e) {
+    const c = e && e.code;
+    if (c === "stopped" || c === "dismissed") return null;      // você soltou/fechou: sem aviso
+    if (c === "not_granted") return "O ditado não foi permitido. Libere no menu Permissões do artefato.";
+    if (c === "unavailable") return "Ditado indisponível neste navegador, app ou idioma. Digite o pedido.";
+    if (c === "rate_limited") return "Muitos ditados seguidos. Espere um instante.";
+    if (c === "no_gesture") return "Aperte e segure o botão (ou a tecla Espaço) para falar.";
+    return "O serviço de ditado falhou. Tente de novo ou digite.";
+  }
+
+  function finalizarPtt() {
+    if (!dictPtt) return;
+    dictPtt = false; cb.onEstado(false); cb.onInterim("");
+    const t = pttBuf.join("").replace(/\s+/g, " ").trim(); pttBuf = [];
+    if (t) cb.onTexto(t, { ptt: true });
+  }
+
+  function ligarDictation() {
+    dict.onPartial(({ text }) => { if (dictPtt) cb.onInterim(text || ""); });
+    dict.onFinal(({ text }) => { if (dictPtt) pttBuf.push(text); });
+    dict.onState(({ state, reason }) => {
+      if (state !== "idle" || !dictPtt) return;
+      // A plataforma encerrou por conta própria (Stop dela, aba oculta, erro).
+      if (reason && reason !== "stopped") {
+        const m = msgErroDict({ code: reason === "viewer_stopped" || reason === "hidden" || reason === "time_limit" ? "stopped" : reason });
+        finalizarPtt(); if (m) cb.onErro(m);
+      }
+    });
+  }
+
+  const prontoP = (async () => {
+    if (NO_ARTEFATO) {
+      try { dict = await window.claude.use("dictation"); } catch (_) { dict = null; }
+      try { ttsCap = await window.claude.use("tts"); } catch (_) { ttsCap = null; }
+      if (dict) ligarDictation();
+      if (ttsCap) {
+        try { await ttsCap.setRate?.(config.rate); } catch (_) {}
+        try { ttsVozes = await ttsCap.voices(); } catch (_) { ttsVozes = []; }
+      }
+    }
+    detectado = true;
+    cb.onVozes();
+    return info();
+  })();
+
+  // =====================================================================
+  // Caminho B: navegador comum
+  // =====================================================================
+  let rec = null, continuo = false, pausado = false, ptt = null;
+  let stream = null, ac = null, an = null, buf = null, raf = 0, falhas = [];
+
   async function abrirMic() {
     if (stream) return true;
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -50,7 +109,7 @@
         raf = requestAnimationFrame(laco);
       };
       laco();
-    } catch (_) { /* sem medidor, mas o reconhecimento segue funcionando */ }
+    } catch (_) { /* sem medidor; o reconhecimento segue */ }
     return true;
   }
   function fecharMic() {
@@ -59,12 +118,11 @@
     if (ac) { try { ac.close(); } catch (_) {} ac = null; }
     cb.onNivel(0);
   }
-  function micEmUso() { return continuo || !!ptt; }
+  const micEmUso = () => continuo || !!ptt;
 
-  // ---------- reconhecimento ----------
   function erroDe(e) {
     switch (e) {
-      case "no-speech": case "aborted": return null;       // normal: ninguém falou
+      case "no-speech": case "aborted": return null;
       case "not-allowed": case "service-not-allowed": return "Permissão do microfone negada.";
       case "audio-capture": return "Nenhum microfone encontrado.";
       case "network": return "O reconhecimento de voz precisa de internet (ele é feito pelo servidor do navegador).";
@@ -72,57 +130,52 @@
       default: return "Erro no reconhecimento de voz: " + e;
     }
   }
-  function criarRec(modoContinuo, meta, aoFinal) {
+  function criarRec(modoContinuo, meta) {
     const r = new SR();
     r.lang = "pt-BR"; r.continuous = modoContinuo; r.interimResults = true; r.maxAlternatives = 1;
     r.onresult = (e) => {
       let interim = "";
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const res = e.results[i], t = res[0].transcript.trim();
-        if (res.isFinal) { if (t) { cb.onInterim(""); aoFinal(t, meta); } } else interim += res[0].transcript;
+        if (res.isFinal) { if (t) { cb.onInterim(""); cb.onTexto(t, meta); } } else interim += res[0].transcript;
       }
       if (interim) cb.onInterim(interim);
     };
     r.onerror = (e) => {
       const m = erroDe(e.error); if (!m) return;
       cb.onErro(m);
-      if (e.error === "not-allowed" || e.error === "service-not-allowed" || e.error === "audio-capture") parar_tudo();
+      if (["not-allowed", "service-not-allowed", "audio-capture"].includes(e.error)) pararTudo();
     };
     return r;
   }
-
-  // O Chrome encerra a escuta contínua sozinho de tempos em tempos; reinicia,
-  // mas desiste se falhar em sequência (evita laço infinito).
-  let falhas = [];
   function reiniciarContinuo() {
     if (!continuo || pausado) return;
     const agora = Date.now();
     falhas = falhas.filter((t) => agora - t < 6000); falhas.push(agora);
-    if (falhas.length > 6) { cb.onErro("O reconhecimento de voz ficou instável e foi desligado. Ligue o microfone de novo."); parar_tudo(); return; }
-    try { rec.start(); } catch (_) { /* já estava iniciando */ }
+    if (falhas.length > 6) { cb.onErro("O reconhecimento de voz ficou instável e foi desligado. Ligue o microfone de novo."); pararTudo(); return; }
+    try { rec.start(); } catch (_) {}
   }
-  function parar_tudo() {
+  function pararTudo() {
     continuo = false; pausado = false;
     try { rec && rec.stop(); } catch (_) {}
     try { ptt && ptt.stop(); } catch (_) {}
     ptt = null; cb.onInterim(""); cb.onEstado(false); fecharMic();
   }
 
-  // ---------- fala (TTS) ----------
-  let vozes = [], tokenFala = 0;
+  // ---------- fala em navegador comum (por frases: o Chrome corta falas longas) ----------
+  let vozesSis = [];
   function carregarVozes() {
     if (!("speechSynthesis" in window)) return;
-    vozes = speechSynthesis.getVoices().filter((v) => /^pt/i.test(v.lang));
-    cb.onVozes && cb.onVozes(vozes.map((v) => v.name));
+    vozesSis = speechSynthesis.getVoices().filter((v) => /^pt/i.test(v.lang));
+    cb.onVozes();
   }
-  function vozEscolhida() {
-    return vozes.find((v) => v.name === config.voz)
-      || vozes.find((v) => /pt-BR/i.test(v.lang) && /natural|google|luciana|francisca|microsoft/i.test(v.name))
-      || vozes.find((v) => /pt-BR/i.test(v.lang)) || vozes[0] || null;
+  function vozSisEscolhida() {
+    return vozesSis.find((v) => v.name === config.voz)
+      || vozesSis.find((v) => /pt-BR/i.test(v.lang) && /natural|google|luciana|francisca|microsoft/i.test(v.name))
+      || vozesSis.find((v) => /pt-BR/i.test(v.lang)) || vozesSis[0] || null;
   }
   if ("speechSynthesis" in window) { carregarVozes(); speechSynthesis.onvoiceschanged = carregarVozes; }
 
-  // O Chrome corta falas longas (~15 s): fala por frases, e quebra frase gigante.
   function partes(texto) {
     const frases = (String(texto).match(/[^.!?\n]+[.!?]*/g) || []).map((s) => s.trim()).filter(Boolean);
     const out = [];
@@ -135,40 +188,55 @@
     }
     return out;
   }
-
   function falarParte(txt, meuToken) {
     return new Promise((resolve) => {
       const u = new SpeechSynthesisUtterance(txt);
-      u.lang = "pt-BR"; u.rate = config.rate; const v = vozEscolhida(); if (v) u.voice = v;
+      u.lang = "pt-BR"; u.rate = config.rate; const v = vozSisEscolhida(); if (v) u.voice = v;
       let fim = false; const done = () => { if (!fim) { fim = true; resolve(); } };
       u.onend = done; u.onerror = done;
-      setTimeout(done, 3000 + txt.length * 110);      // rede de segurança
+      setTimeout(done, 3000 + txt.length * 110);
       if (meuToken === tokenFala) speechSynthesis.speak(u); else done();
     });
   }
 
+  // =====================================================================
+  // API
+  // =====================================================================
+  function info() {
+    const entrada = dict ? "ditado" : (!NO_ARTEFATO && SR) ? "navegador" : null;
+    const saida = ttsCap ? "claude" : (!NO_ARTEFATO && "speechSynthesis" in window) ? "navegador" : null;
+    return { artefato: NO_ARTEFATO, entrada, continuo: entrada === "navegador", saida };
+  }
+
   window.JarvisVoice = {
-    suportaEntrada: !!SR,
-    suportaSaida: "speechSynthesis" in window,
     _partes: partes,
+    pronto: prontoP,
+    info,
     configurar(c) { cb = Object.assign(cb, c); },
     get escutando() { return continuo; },
-    get segurando() { return !!ptt; },
+    get segurando() { return dictPtt || !!ptt; },
     get mudo() { return mudo; },
     set mudo(v) { mudo = !!v; if (mudo) this.parar(); },
 
-    vozes() { return vozes.map((v) => v.name); },
-    get vozAtual() { const v = vozEscolhida(); return v ? v.name : ""; },
+    vozes() { return ttsCap ? ttsVozes.slice() : vozesSis.map((v) => v.name); },
+    get vozAtual() {
+      if (ttsCap) return ttsVozes.includes(config.voz) ? config.voz : (ttsVozes[0] || "");
+      const v = vozSisEscolhida(); return v ? v.name : "";
+    },
     get velocidade() { return config.rate; },
     setVoz(nome) { config.voz = nome; salvar(); },
-    setVelocidade(r) { config.rate = Math.max(0.7, Math.min(1.5, Number(r) || 1)); salvar(); },
+    setVelocidade(r) {
+      config.rate = Math.max(0.7, Math.min(1.5, Number(r) || 1)); salvar();
+      if (ttsCap && ttsCap.setRate) ttsCap.setRate(config.rate).catch(() => {});
+    },
 
-    // Microfone contínuo (liga/desliga). Devolve true se ficou ligado.
+    // Microfone contínuo (só em navegador comum).
     async alternarEscuta() {
-      if (continuo) { parar_tudo(); return false; }
+      if (continuo) { pararTudo(); return false; }
+      if (NO_ARTEFATO) { cb.onErro("Nesta página use Segurar para falar (botão 🗣 ou tecla Espaço)."); return false; }
       if (!SR) { cb.onErro("Este navegador não tem reconhecimento de voz. Use Chrome ou Edge, ou digite."); return false; }
       if (!(await abrirMic())) return false;
-      rec = criarRec(true, { ptt: false }, (t, m) => cb.onTexto(t, m));
+      rec = criarRec(true, { ptt: false });
       rec.onend = () => setTimeout(reiniciarContinuo, 250);
       continuo = true; pausado = false; falhas = [];
       try { rec.start(); } catch (_) {}
@@ -176,28 +244,70 @@
       return true;
     },
 
-    // Segurar para falar. soltar() encerra e entrega o que foi dito.
+    // Segurar para falar. Em artefato, dict.start() TEM de ser chamado direto do
+    // clique/tecla, sem nenhum await antes: por isso não há await acima dele.
     async segurar() {
-      if (ptt || continuo) return false;
+      if (this.segurando || continuo) return false;
+      if (dict) {
+        dictPtt = true; pttBuf = []; pttSoltou = false;
+        this.parar();
+        const p = dict.start();
+        cb.onEstado(true);
+        try { await p; }
+        catch (e) { dictPtt = false; pttBuf = []; cb.onEstado(false); const m = msgErroDict(e); if (m) cb.onErro(m); return false; }
+        if (pttSoltou) await this.soltar();
+        return true;
+      }
+      if (NO_ARTEFATO) { cb.onErro(detectado ? "Ditado indisponível neste navegador ou app. Digite o pedido." : "Preparando a voz… tente de novo em um instante."); return false; }
       if (!SR) { cb.onErro("Este navegador não tem reconhecimento de voz. Use Chrome ou Edge, ou digite."); return false; }
-      this.parar();                                   // o Jarvis cala para você falar
-      pttSoltou = false;
-      const r = (ptt = criarRec(false, { ptt: true }, (t, m) => cb.onTexto(t, m)));
+      this.parar(); pttSoltou = false;
+      const r = (ptt = criarRec(false, { ptt: true }));
       if (!(await abrirMic())) { ptt = null; return false; }
-      if (pttSoltou || ptt !== r) { ptt = null; if (!micEmUso()) fecharMic(); return false; } // soltou antes de abrir
+      if (pttSoltou || ptt !== r) { ptt = null; if (!micEmUso()) fecharMic(); return false; }
       r.onend = () => { if (ptt === r) { ptt = null; cb.onInterim(""); cb.onEstado(false); fecharMic(); } };
       try { r.start(); } catch (_) {}
       cb.onEstado(true);
       return true;
     },
-    soltar() { pttSoltou = true; const r = ptt; if (!r) return; try { r.stop(); } catch (_) {} },
+    async soltar() {
+      pttSoltou = true;
+      if (dict) {
+        if (!dictPtt) return;
+        try { await dict.stop(); } catch (_) {}
+        finalizarPtt();
+        return;
+      }
+      const r = ptt; if (!r) return; try { r.stop(); } catch (_) {}
+    },
 
-    // Fala (por frases) e resolve ao terminar ou ser interrompida. Pausa o
-    // microfone contínuo enquanto fala, para não ouvir a própria voz.
+    // Fala e resolve ao terminar ou ser interrompida.
     async falar(texto) {
       const meu = ++tokenFala;
       const tempo = Math.min(20000, 1200 + texto.length * 55);
-      if (mudo || !this.suportaSaida) return new Promise((r) => setTimeout(r, tempo));
+      if (mudo) return dormir(tempo);
+
+      if (ttsCap) {
+        // "busy" = o ditado ainda está fechando; tenta de novo em instantes.
+        for (let i = 0; i < 5; i++) {
+          try {
+            const op = { language: "pt-BR", rate: config.rate };
+            if (ttsVozes.includes(config.voz)) op.voice = config.voz;
+            await ttsCap.speak(texto.slice(0, 2000), op);
+            return;
+          } catch (e) {
+            if (meu !== tokenFala) return;
+            const c = e && e.code;
+            if (c === "busy") { await dormir(350); continue; }
+            if (c === "not_granted") { cb.onErro("A voz está desligada nas Permissões do artefato. O texto continua na tela."); return; }
+            if (c === "no_gesture") return;                       // ainda sem clique/tecla na página: só o texto
+            if (c === "rate_limited") { cb.onErro("Muita fala seguida. Espere um instante."); return; }
+            return;                                               // stopped / unavailable / erro: só o texto
+          }
+        }
+        return;
+      }
+      if (NO_ARTEFATO || !("speechSynthesis" in window)) return dormir(tempo);
+
       speechSynthesis.cancel();
       if (continuo) { pausado = true; try { rec.stop(); } catch (_) {} }
       try {
@@ -208,12 +318,10 @@
     },
     parar() {
       tokenFala++;
-      if (this.suportaSaida) speechSynthesis.cancel();
-      // Interrompeu a fala: se o microfone contínuo estava pausado, religa.
+      if (ttsCap) { try { ttsCap.stop().catch(() => {}); } catch (_) {} }
+      if (!NO_ARTEFATO && "speechSynthesis" in window) speechSynthesis.cancel();
       if (continuo && pausado) { pausado = false; setTimeout(reiniciarContinuo, 350); }
     },
     testar() { return this.falar("Olá, eu sou o Jarvis. Esta é a minha voz."); },
   };
-
-  function salvar() { try { localStorage.setItem(LS, JSON.stringify(config)); } catch (_) {} }
 })();

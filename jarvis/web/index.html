@@ -3,16 +3,20 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
 <meta name="theme-color" content="#05080f">
 <title>Jarvis</title>
-<link rel="stylesheet" href="app.css?v=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;700&display=swap">
+<link rel="stylesheet" href="app.css?v=2">
 </head>
 <body>
 <header class="top">
   <div class="brand"><span class="dot"></span> JARVIS</div>
   <nav id="chips" class="chips" aria-label="Agentes"></nav>
   <div class="top-right">
-    <span id="badgeFonte" class="badge demo" title="De onde vêm os números mostrados">DEMO</span>
+    <span id="badgeFonte" class="badge demo" title="De onde vêm os números mostrados" hidden>DEMO</span>
     <span id="cerebro" class="muted small">cérebro: local</span>
   </div>
 </header>
@@ -25,27 +29,30 @@
       <p id="agResumo" class="muted small"></p>
       <dl id="kpis" class="kpis"></dl>
     </section>
-    <section class="panel" id="painelPendente" hidden>
+
+    <section class="panel destaque" id="painelPendente" hidden>
       <h2>Aguardando sua confirmação</h2>
       <p id="pendTitulo" class="pend-titulo"></p>
       <ul id="pendDetalhe" class="pend-lista"></ul>
       <p id="pendExemplo" class="pend-exemplo"></p>
       <div class="row">
         <button class="btn ok" id="btnConfirmar" type="button">Confirmar</button>
+        <a class="btn ok" id="linkWa" href="#" target="_blank" rel="noopener" hidden>Abrir WhatsApp</a>
         <button class="btn" id="btnCancelar" type="button">Cancelar</button>
       </div>
       <p class="muted small" id="pendNota"></p>
     </section>
+
     <details class="panel" id="painelContatos">
       <summary><span id="contatosTitulo">Contatos</span></summary>
       <p class="muted small">Ficam só neste navegador. Não vão para o repositório nem para nenhum servidor.</p>
       <ul id="contatosLista" class="contatos"></ul>
       <form id="contatoForm" class="contato-form" autocomplete="off">
-        <input id="contatoNome" type="text" placeholder="Nome (ex.: João Silva)" aria-label="Nome do contato" required>
-        <input id="contatoTel" type="tel" placeholder="WhatsApp com DDD (ex.: 63 99999-0000)" aria-label="Telefone" required>
-        <button class="btn" type="submit">Adicionar</button>
+        <input id="contatoNome" type="text" maxlength="60" placeholder="Nome (ex.: João Silva)" aria-label="Nome do contato" required>
+        <input id="contatoTel" type="tel" maxlength="24" placeholder="WhatsApp com DDD (ex.: 63 99999-0000)" aria-label="Telefone" required>
+        <button class="btn" type="submit">Adicionar contato</button>
       </form>
-      <p class="small bad" id="contatoErro" hidden></p>
+      <p class="small bad" id="contatoErro" role="alert" hidden></p>
     </details>
   </aside>
 
@@ -53,6 +60,7 @@
     <canvas id="avatar" aria-label="Avatar do Jarvis"></canvas>
     <p id="legenda" class="legenda" aria-live="polite"></p>
     <p id="interim" class="interim" aria-live="off"></p>
+    <div id="sugestoes" class="sugestoes" aria-label="Sugestões de comando"></div>
   </section>
 
   <aside class="col right">
@@ -66,8 +74,17 @@
         <li data-estado="falando">Falando</li>
       </ul>
     </section>
+
+    <section class="panel">
+      <h2>Conversa</h2>
+      <ol id="conversa" class="conversa" aria-live="off">
+        <li class="vazio">Nada ainda. A conversa aparece aqui e não é guardada.</li>
+      </ol>
+    </section>
+
     <details class="panel" id="painelVoz">
       <summary>Voz</summary>
+      <p class="small muted" id="vozInfo">Verificando a voz…</p>
       <div class="voz-campos">
         <label class="small muted" for="vozSel">Voz do Jarvis</label>
         <select id="vozSel"></select>
@@ -75,16 +92,10 @@
         <input type="range" id="velocidade" min="0.7" max="1.5" step="0.05">
         <button class="btn" id="btnTestarVoz" type="button">Testar voz</button>
       </div>
-      <p class="small muted">
-        <b>Segurar para falar</b> (🗣 ou tecla <kbd>Espaço</kbd>) só escuta enquanto você aperta.
-        <b>🎙</b> fica ouvindo e só responde quando ouvir “Jarvis”.
-      </p>
-      <p class="small aviso-priv">
-        Privacidade: no Chrome/Edge o reconhecimento de fala é feito pelo servidor do navegador
-        (Google/Microsoft), então o áudio <b>sai do seu computador</b>. A voz do Jarvis é local.
-        Ao falar nome de paciente, prefira segurar para falar só quando precisar, ou digite.
-      </p>
+      <p class="small muted" id="vozComo"></p>
+      <p class="small aviso-priv" id="avisoPriv"></p>
     </details>
+
     <section class="panel">
       <h2>Ferramentas do modo</h2>
       <ul id="ferramentas" class="ferramentas"></ul>
@@ -100,10 +111,10 @@
 <form id="barra" class="barra" autocomplete="off">
   <button type="button" id="btnPtt" class="icon" title="Segure para falar (ou segure a tecla Espaço)" aria-label="Segurar para falar">🗣</button>
   <button type="button" id="btnMic" class="icon" title="Microfone sempre ligado (responde quando ouvir “Jarvis”)" aria-pressed="false" aria-label="Microfone contínuo">🎙</button>
-  <span class="medidor" aria-hidden="true" title="Nível do microfone"><i id="medidor"></i></span>
-  <input id="entrada" type="text" placeholder="Fale ou digite um pedido… ex.: ativa o agente gestão do dia" aria-label="Pedido">
-  <button type="button" id="btnMudo" class="icon" title="Silenciar a voz do Jarvis" aria-pressed="false">🔊</button>
-  <button type="button" id="btnTec" class="icon" title="Detalhes técnicos">⚙</button>
+  <span class="medidor" id="medidorBox" aria-hidden="true" title="Nível do microfone"><i id="medidor"></i></span>
+  <input id="entrada" type="text" placeholder="Fale ou digite um pedido…  (tecla / para digitar)" aria-label="Pedido">
+  <button type="button" id="btnMudo" class="icon" title="Silenciar a voz do Jarvis" aria-pressed="false" aria-label="Silenciar voz">🔊</button>
+  <button type="button" id="btnTec" class="icon" title="Detalhes técnicos" aria-label="Detalhes técnicos">⚙</button>
   <button type="submit" class="btn primary">Enviar</button>
 </form>
 
@@ -111,7 +122,7 @@
   <div class="row between">
     <h2>Detalhes técnicos · registro de interações (fica só neste navegador)</h2>
     <div class="row">
-      <button class="btn" id="btnExportar" type="button">Exportar JSON</button>
+      <button class="btn" id="btnExportar" type="button">Salvar JSON</button>
       <button class="btn" id="btnLimpar" type="button">Limpar</button>
     </div>
   </div>

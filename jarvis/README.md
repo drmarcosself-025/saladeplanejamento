@@ -18,6 +18,13 @@ python3 -m http.server 8000      # ou qualquer servidor estático
 `localhost` é necessário para o microfone funcionar (ou HTTPS). Use Chrome ou
 Edge para voz; em outros navegadores dá para digitar.
 
+## Versão publicada (link do claude.ai)
+
+Gerada com `node jarvis/tools/build-artifact.mjs saida.html` (junta tudo em um
+arquivo). Lá o microfone do navegador é bloqueado, então a página usa as
+capacidades do claude.ai: **ditado** (só segurar para falar) e **voz do
+Claude**. Fora do claude.ai (localhost, GitHub Pages) vale o que está abaixo.
+
 ## Voz
 
 | Controle | O que faz |
@@ -88,6 +95,7 @@ jarvis/
     avatar.js           busto em canvas (cor por modo, amplitude por estado)
     voice.js            Web Speech API (entrada e saída)
     config.js           URLs públicas do backend (vazio = demo)
+  tools/build-artifact.mjs  junta web/ em um único HTML (para publicar)
   tests/brain.test.mjs
 ```
 

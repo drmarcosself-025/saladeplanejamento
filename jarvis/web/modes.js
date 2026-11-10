@@ -17,6 +17,7 @@ window.JARVIS_MODES = {
     aliases: [],
     status: "ativo",
     resumo: "Modo neutro. Diga o nome de um agente para ativá-lo.",
+    sugestoes: ["Ativa o agente gestão do dia", "Ativa o agente gestor de tráfego", "Ativa o agente social media"],
     ferramentas: [],
     kpis: () => [],
     abertura: () => "De volta ao normal.",
@@ -29,6 +30,7 @@ window.JARVIS_MODES = {
     aliases: ["gestor de trafego", "trafego", "gestor de anuncios", "anuncios"],
     status: "demo",
     resumo: "Campanhas, gasto, custo por conversa e vendas vindas dos anúncios.",
+    sugestoes: ["Analisa as campanhas", "Volta ao normal"],
     ferramentas: [
       { id: "ads.resumo", nivel: "READ", desc: "Gasto, conversas e custo por conversa (ontem / 7 dias)" },
       { id: "crm.vendas_origem", nivel: "READ", desc: "Vendas por origem no CRM" },
@@ -54,6 +56,7 @@ window.JARVIS_MODES = {
     aliases: ["social media", "social", "redes sociais", "midia social"],
     status: "demo",
     resumo: "Posts na agenda, aprovação, erros de envio e criação de artes.",
+    sugestoes: ["Criar uma arte nova", "Volta ao normal"],
     ferramentas: [
       { id: "social.agenda", nivel: "READ", desc: "Posts agendados, postados e com erro" },
       { id: "social.criar_arte", nivel: "PROPOSE", desc: "Gerar imagem/legenda para aprovação" },
@@ -76,6 +79,7 @@ window.JARVIS_MODES = {
     aliases: ["gestao do dia", "gestao", "secretaria", "meu dia", "rotina", "ceo"],
     status: "demo",
     resumo: "Confirmações da agenda de amanhã, e-mails que pedem resposta e contas a vencer.",
+    sugestoes: ["Confirmar pacientes de amanhã", "Quais contas vencem esta semana?", "E-mails para responder", "Volta ao normal"],
     ferramentas: [
       { id: "agenda.amanha", nivel: "READ", desc: "Agenda de amanhã (Clinicorp) com status de confirmação" },
       { id: "agenda.preparar_confirmacoes", nivel: "PROPOSE", desc: "Montar mensagem de confirmação por paciente" },
@@ -104,6 +108,7 @@ window.JARVIS_MODES = {
     aliases: ["whatsapp", "zap", "leads", "atendimento"],
     status: "planejado",
     resumo: "Leads novos, conversas quentes e respostas aguardando aprovação (projeto dental-leads).",
+    sugestoes: ["Volta ao normal"],
     ferramentas: [
       { id: "leads.funil", nivel: "READ", desc: "Funil e temperatura dos leads (schema dental_leads)" },
       { id: "leads.rascunho", nivel: "PROPOSE", desc: "Sugerir resposta para lead" },
@@ -120,6 +125,7 @@ window.JARVIS_MODES = {
     aliases: ["editor de video", "video", "reels", "edicao"],
     status: "planejado",
     resumo: "Plano de cortes, legenda de tela e capa para Reels.",
+    sugestoes: ["Volta ao normal"],
     ferramentas: [{ id: "video.plano_cortes", nivel: "PROPOSE", desc: "Analisar vídeo e propor edição" }],
     kpis: () => [["Fonte", "a definir"]],
     abertura: () => "Modo Editor de Vídeo ativado. Ainda não tem integração. Está no planejamento.",
@@ -132,6 +138,7 @@ window.JARVIS_MODES = {
     aliases: ["assistente de automacao", "automacao", "automatizar"],
     status: "planejado",
     resumo: "Cria e acompanha automações e fluxos entre os sistemas.",
+    sugestoes: ["Volta ao normal"],
     ferramentas: [{ id: "automacao.listar", nivel: "READ", desc: "Fluxos ativos e falhas recentes" }],
     kpis: () => [["Fonte", "a definir"]],
     abertura: () => "Modo Automação ativado. Ainda não tem integração. Está no planejamento.",
@@ -144,6 +151,7 @@ window.JARVIS_MODES = {
     aliases: ["programador", "programar", "codigo", "dev", "claude code"],
     status: "planejado",
     resumo: "Abre projetos no Cursor, VS Code ou Claude Code no seu computador.",
+    sugestoes: ["Volta ao normal"],
     ferramentas: [
       { id: "dev.projetos", nivel: "READ", desc: "Lista de projetos e último projeto aberto (agente local no PC)" },
       { id: "dev.abrir", nivel: "EXECUTE", desc: "Abrir projeto / iniciar Claude Code" },
