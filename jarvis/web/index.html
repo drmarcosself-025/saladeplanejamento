@@ -9,9 +9,17 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;700&display=swap">
-<link rel="stylesheet" href="app.css?v=2">
+<link rel="stylesheet" href="app.css?v=3">
 </head>
 <body>
+<canvas id="fundo" class="fundo" aria-hidden="true"></canvas>
+<div id="boot" class="boot" role="status" aria-live="polite" hidden>
+  <div class="boot-box">
+    <div class="boot-marca">JARVIS</div>
+    <ul id="bootLinhas" class="boot-linhas"></ul>
+    <p class="boot-pular">toque ou tecle para pular</p>
+  </div>
+</div>
 <header class="top">
   <div class="brand"><span class="dot"></span> JARVIS</div>
   <nav id="chips" class="chips" aria-label="Agentes"></nav>
@@ -28,6 +36,10 @@
       <p id="agStatus" class="tag">ativo</p>
       <p id="agResumo" class="muted small"></p>
       <dl id="kpis" class="kpis"></dl>
+      <figure id="spark" class="spark" hidden>
+        <figcaption id="sparkRotulo" class="small muted"></figcaption>
+        <svg id="sparkSvg" viewBox="0 0 220 64" preserveAspectRatio="none" role="img" aria-label="Tendência"></svg>
+      </figure>
     </section>
 
     <section class="panel destaque" id="painelPendente" hidden>
@@ -45,20 +57,43 @@
 
     <details class="panel" id="painelContatos">
       <summary><span id="contatosTitulo">Contatos</span></summary>
-      <p class="muted small">Ficam só neste navegador. Não vão para o repositório nem para nenhum servidor.</p>
+      <div class="import">
+        <label class="btn" for="arquivoContatos">Importar contatos (.vcf ou .csv)</label>
+        <input type="file" id="arquivoContatos" accept=".vcf,.csv,.txt,text/vcard,text/x-vcard,text/csv" hidden>
+        <button class="btn" id="btnPicker" type="button" hidden>Escolher no celular</button>
+      </div>
+      <p class="small muted" id="importaMsg" role="status"></p>
+      <details class="como">
+        <summary>Como exportar do meu celular ou do Google?</summary>
+        <ul class="small muted">
+          <li><b>Google Contatos</b> (contacts.google.com): Exportar → vCard ou CSV do Google.</li>
+          <li><b>Android</b>: app Contatos → Menu → Exportar contatos → .vcf.</li>
+          <li><b>iPhone</b>: icloud.com/contacts → selecionar todos → Exportar vCard.</li>
+          <li><b>Clinicorp</b>: relatório de pacientes exportado em CSV (colunas Nome e Celular).</li>
+        </ul>
+        <p class="small muted">O arquivo é lido aqui no navegador e não vai a nenhum servidor. Telefones fixos e sem DDD são ignorados.</p>
+      </details>
+      <input id="buscaContato" type="search" placeholder="Buscar contato…" aria-label="Buscar contato" autocomplete="off">
       <ul id="contatosLista" class="contatos"></ul>
-      <form id="contatoForm" class="contato-form" autocomplete="off">
-        <input id="contatoNome" type="text" maxlength="60" placeholder="Nome (ex.: João Silva)" aria-label="Nome do contato" required>
-        <input id="contatoTel" type="tel" maxlength="24" placeholder="WhatsApp com DDD (ex.: 63 99999-0000)" aria-label="Telefone" required>
-        <button class="btn" type="submit">Adicionar contato</button>
-      </form>
-      <p class="small bad" id="contatoErro" role="alert" hidden></p>
+      <p class="small muted" id="contatosMais"></p>
+      <details class="como">
+        <summary>Adicionar um por um</summary>
+        <form id="contatoForm" class="contato-form" autocomplete="off">
+          <input id="contatoNome" type="text" maxlength="60" placeholder="Nome (ex.: João Silva)" aria-label="Nome do contato" required>
+          <input id="contatoTel" type="tel" maxlength="24" placeholder="WhatsApp com DDD (ex.: 63 99999-0000)" aria-label="Telefone" required>
+          <button class="btn" type="submit">Adicionar contato</button>
+        </form>
+        <p class="small bad" id="contatoErro" role="alert" hidden></p>
+      </details>
+      <div class="row"><button class="btn" id="btnApagarTodos" type="button">Apagar todos</button></div>
+      <p class="small muted">Os contatos ficam só neste navegador. Conectar o WhatsApp por QR code para sincronizar sozinho é uma etapa futura (exige um servidor).</p>
     </details>
   </aside>
 
   <section class="center">
     <canvas id="avatar" aria-label="Avatar do Jarvis"></canvas>
-    <p id="legenda" class="legenda" aria-live="polite"></p>
+    <p id="legenda" class="legenda" aria-hidden="true"></p>
+    <p id="legendaSr" class="sr" aria-live="polite"></p>
     <p id="interim" class="interim" aria-live="off"></p>
     <div id="sugestoes" class="sugestoes" aria-label="Sugestões de comando"></div>
   </section>
@@ -132,7 +167,10 @@
 <script src="config.js"></script>
 <script src="modes.js"></script>
 <script src="data.js"></script>
+<script src="contacts.js"></script>
 <script src="brain.js"></script>
+<script src="fundo.js"></script>
+<script src="sfx.js"></script>
 <script src="avatar.js"></script>
 <script src="voice.js"></script>
 <script src="app.js"></script>

@@ -16,10 +16,15 @@
           gasto_ontem_fmt: brl(gasto), gasto_7d_fmt: brl(gasto7),
           conversas_ontem: conv, cpl_fmt: brl(gasto / conv),
           campanhas_ativas: 5, vendas_semana: 1, receita_semana_fmt: brl(receita),
+          // gasto diário dos últimos 7 dias; soma = gasto_7d e o último = gasto de ontem
+          serie: { rotulo: "Gasto por dia (7 dias)", valores: [118.4, 131.2, 109.75, 142.3, 127.1, 129.4, 103.35] },
         };
       }
       case "social":
-        return { posts_hoje: 10, posts_ok: 8, aguardando_aprovacao: 0, erros_3d: 11 };
+        return {
+          posts_hoje: 10, posts_ok: 8, aguardando_aprovacao: 0, erros_3d: 11,
+          serie: { rotulo: "Posts por dia (7 dias)", valores: [6, 8, 7, 9, 10, 9, 10] },
+        };
       case "gestao": {
         const contas = [
           { quem: "Energia", valor: 412.9, vence: "qui" },
@@ -41,6 +46,7 @@
           ],
           contas,
           total_contas_fmt: brl(contas.reduce((s, c) => s + c.valor, 0)),
+          serie: { rotulo: "Consultas nos próximos 7 dias", valores: [6, 7, 5, 8, 6, 4, 3] },
         };
       }
       case "programador":

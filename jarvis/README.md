@@ -55,6 +55,18 @@ Edge. No iPhone/Safari o reconhecimento de voz é limitado: digite.
 - “Jarvis, desativa o agente social media” / “volta ao normal”
 - Ou clique nos atalhos no topo.
 
+### Importar todos os contatos
+
+No painel **Contatos**, clique em **Importar contatos** e escolha o arquivo
+exportado do celular ou do Google Contatos (`.vcf` ou `.csv`; planilha do
+Clinicorp com colunas Nome e Celular também serve). O arquivo é lido no
+navegador e não vai a nenhum servidor. Telefones fixos e sem DDD são
+ignorados, repetidos não duplicam, e há busca por nome ou número. Funciona
+com milhares de contatos.
+
+Conectar o WhatsApp por QR code para sincronizar sozinho **não** está feito:
+exige um servidor (Evolution API) e é uma conexão não oficial.
+
 ### Mandar mensagem no WhatsApp (funciona hoje, em qualquer modo)
 
 1. Abra **Contatos** (painel à esquerda) e cadastre nome + WhatsApp com DDD.
@@ -75,7 +87,7 @@ exportável em JSON).
 ## Testes
 
 ```bash
-node --test jarvis/tests/brain.test.mjs
+node --test jarvis/tests/brain.test.mjs jarvis/tests/contacts.test.mjs
 ```
 
 Cobrem o interpretador de comandos, incluindo a regra de que “confirma” só
@@ -96,7 +108,7 @@ jarvis/
     voice.js            Web Speech API (entrada e saída)
     config.js           URLs públicas do backend (vazio = demo)
   tools/build-artifact.mjs  junta web/ em um único HTML (para publicar)
-  tests/brain.test.mjs
+  tests/brain.test.mjs contacts.test.mjs
 ```
 
 ## Ligar um backend (Fase 1+)
