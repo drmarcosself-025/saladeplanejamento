@@ -216,7 +216,7 @@
     destravada = true;
     try { const u = new SpeechSynthesisUtterance(" "); u.volume = 0; speechSynthesis.speak(u); } catch (_) {}
   }
-  ["pointerdown", "touchend", "keydown", "click"].forEach((ev) => document.addEventListener(ev, destravar, { once: true, passive: true }));
+  if (typeof document !== "undefined") ["pointerdown", "touchend", "keydown", "click"].forEach((ev) => document.addEventListener(ev, destravar, { once: true, passive: true }));
 
   window.JarvisVoice = {
     _partes: partes,
