@@ -397,6 +397,12 @@
   // Em artefato, o ditado precisa começar DIRETO do clique/tecla: sem await antes.
   const btnPtt = $("btnPtt");
   function pttInicio() {
+    if (!infoVoz.entrada) {      // sem ditado neste aparelho: explica em vez de ficar mudo
+      legenda(infoVoz.artefato
+        ? "Neste aparelho o ditado do link não funciona. Toque no campo de texto e use o microfone do teclado."
+        : "Este navegador não tem reconhecimento de voz. Digite o pedido.");
+      sfx("erro"); $("entrada").focus(); return;
+    }
     if (JarvisVoice.segurando || JarvisVoice.escutando) return;
     btnPtt.classList.add("ptt-on");
     JarvisVoice.segurar().then((ok) => { if (!ok) btnPtt.classList.remove("ptt-on"); });
@@ -407,7 +413,7 @@
   const emCampo = () => /^(input|textarea|select|button|a)$/i.test(document.activeElement && document.activeElement.tagName);
   document.addEventListener("keydown", (e) => {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
-    if (e.code === "Space" && !e.repeat && !emCampo() && !btnPtt.disabled) { e.preventDefault(); pttInicio(); return; }
+    if (e.code === "Space" && !e.repeat && !emCampo()) { e.preventDefault(); pttInicio(); return; }
     if (e.key === "/" && !emCampo()) { e.preventDefault(); $("entrada").focus(); return; }
     if (e.key === "Escape" && !/^(input|textarea|select)$/i.test(document.activeElement.tagName)) {
       if (estado === "falando") { geracao++; JarvisVoice.parar(); setEstado("idle"); }
@@ -446,14 +452,16 @@
   function aplicarVoz(i) {
     infoVoz = i;
     const semEntrada = !i.entrada;
-    btnPtt.disabled = semEntrada;
-    btnPtt.title = semEntrada ? "Ditado indisponível aqui (use Chrome ou Edge no claude.ai, ou localhost). Você pode digitar." : "Segure para falar (ou segure a tecla Espaço)";
+    btnPtt.setAttribute("aria-disabled", String(semEntrada)); btnPtt.classList.toggle("indisp", semEntrada);
+    btnPtt.title = semEntrada ? "Falar não funciona neste aparelho: use o microfone do teclado no campo de texto." : "Segure para falar (ou segure a tecla Espaço)";
+    if (semEntrada) $("entrada").placeholder = i.artefato ? "Digite ou toque no 🎙 do teclado…" : "Digite um pedido…";
     $("btnMic").hidden = !i.continuo; $("btnMic").disabled = !i.continuo;
     $("medidorBox").hidden = i.entrada !== "navegador";
     $("btnMudo").disabled = !i.saida;
     $("vozInfo").textContent =
       (i.saida === "claude" ? "Voz: Claude." : i.saida === "navegador" ? "Voz: do seu sistema." : "Sem voz neste navegador/app: o texto aparece na tela.") + " " +
-      (i.entrada === "ditado" ? "Entrada: ditado do claude.ai." : i.entrada === "navegador" ? "Entrada: reconhecimento do navegador." : "Entrada por voz indisponível: digite.");
+      (i.entrada === "ditado" ? "Entrada: ditado do claude.ai." : i.entrada === "navegador" ? "Entrada: reconhecimento do navegador."
+        : i.artefato ? "Falar com o Jarvis não funciona neste aparelho: toque no campo de texto e use o microfone do teclado." : "Entrada por voz indisponível: digite.");
     $("vozComo").textContent = i.entrada === "ditado"
       ? "Segure 🗣 (ou a tecla Espaço) enquanto fala e solte para enviar."
       : i.continuo ? "🗣 escuta só enquanto você segura. 🎙 fica ouvindo e só responde quando ouvir “Jarvis”." : "";

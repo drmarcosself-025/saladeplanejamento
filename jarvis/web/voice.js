@@ -204,9 +204,19 @@
   // =====================================================================
   function info() {
     const entrada = dict ? "ditado" : (!NO_ARTEFATO && SR) ? "navegador" : null;
-    const saida = ttsCap ? "claude" : (!NO_ARTEFATO && "speechSynthesis" in window) ? "navegador" : null;
+    const saida = ttsCap ? "claude" : ("speechSynthesis" in window) ? "navegador" : null;
     return { artefato: NO_ARTEFATO, entrada, continuo: entrada === "navegador", saida };
   }
+
+  // O iOS/Safari só deixa o sistema falar depois de um gesto do usuário: no primeiro
+  // toque/tecla fazemos uma fala vazia para destravar, e as seguintes já saem.
+  let destravada = false;
+  function destravar() {
+    if (destravada || !("speechSynthesis" in window)) return;
+    destravada = true;
+    try { const u = new SpeechSynthesisUtterance(" "); u.volume = 0; speechSynthesis.speak(u); } catch (_) {}
+  }
+  ["pointerdown", "touchend", "keydown", "click"].forEach((ev) => document.addEventListener(ev, destravar, { once: true, passive: true }));
 
   window.JarvisVoice = {
     _partes: partes,
@@ -306,7 +316,7 @@
         }
         return;
       }
-      if (NO_ARTEFATO || !("speechSynthesis" in window)) return dormir(tempo);
+      if (!("speechSynthesis" in window)) return dormir(tempo);
 
       speechSynthesis.cancel();
       if (continuo) { pausado = true; try { rec.stop(); } catch (_) {} }
@@ -319,7 +329,7 @@
     parar() {
       tokenFala++;
       if (ttsCap) { try { ttsCap.stop().catch(() => {}); } catch (_) {} }
-      if (!NO_ARTEFATO && "speechSynthesis" in window) speechSynthesis.cancel();
+      if ("speechSynthesis" in window) speechSynthesis.cancel();
       if (continuo && pausado) { pausado = false; setTimeout(reiniciarContinuo, 350); }
     },
     testar() { return this.falar("Olá, eu sou o Jarvis. Esta é a minha voz."); },
