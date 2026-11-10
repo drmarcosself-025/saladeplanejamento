@@ -1,0 +1,4 @@
+# Secrets reais nunca entram no repositório.
+.env
+.env.*
+!.env.example

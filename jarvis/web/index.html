@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#05080f">
+<title>Jarvis</title>
+<link rel="stylesheet" href="app.css?v=1">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="dot"></span> JARVIS</div>
+  <nav id="chips" class="chips" aria-label="Agentes"></nav>
+  <div class="top-right">
+    <span id="badgeFonte" class="badge demo" title="De onde vêm os números mostrados">DEMO</span>
+    <span id="cerebro" class="muted small">cérebro: local</span>
+  </div>
+</header>
+
+<main class="stage">
+  <aside class="col left">
+    <section class="panel">
+      <h2 id="agNome">Jarvis</h2>
+      <p id="agStatus" class="tag">ativo</p>
+      <p id="agResumo" class="muted small"></p>
+      <dl id="kpis" class="kpis"></dl>
+    </section>
+    <section class="panel" id="painelPendente" hidden>
+      <h2>Aguardando sua confirmação</h2>
+      <p id="pendTitulo" class="pend-titulo"></p>
+      <ul id="pendDetalhe" class="pend-lista"></ul>
+      <p id="pendExemplo" class="pend-exemplo"></p>
+      <div class="row">
+        <button class="btn ok" id="btnConfirmar" type="button">Confirmar</button>
+        <button class="btn" id="btnCancelar" type="button">Cancelar</button>
+      </div>
+      <p class="muted small" id="pendNota"></p>
+    </section>
+  </aside>
+
+  <section class="center">
+    <canvas id="avatar" aria-label="Avatar do Jarvis"></canvas>
+    <p id="legenda" class="legenda" aria-live="polite"></p>
+  </section>
+
+  <aside class="col right">
+    <section class="panel">
+      <h2>Estado</h2>
+      <div id="relogio" class="relogio">--:--:--</div>
+      <ul id="estados" class="estados">
+        <li data-estado="idle">Idle</li>
+        <li data-estado="ouvindo">Ouvindo</li>
+        <li data-estado="pensando">Pensando</li>
+        <li data-estado="falando">Falando</li>
+      </ul>
+    </section>
+    <section class="panel">
+      <h2>Ferramentas do modo</h2>
+      <ul id="ferramentas" class="ferramentas"></ul>
+      <p class="muted small legenda-niveis">
+        <b class="n READ">READ</b> só lê ·
+        <b class="n PROPOSE">PROPOSE</b> prepara e mostra ·
+        <b class="n EXECUTE">EXECUTE</b> só com “confirma”
+      </p>
+    </section>
+  </aside>
+</main>
+
+<form id="barra" class="barra" autocomplete="off">
+  <button type="button" id="btnMic" class="icon" title="Ligar/desligar microfone" aria-pressed="false">🎙</button>
+  <input id="entrada" type="text" placeholder="Fale ou digite um pedido… ex.: ativa o agente gestão do dia" aria-label="Pedido">
+  <button type="button" id="btnMudo" class="icon" title="Silenciar a voz do Jarvis" aria-pressed="false">🔊</button>
+  <button type="button" id="btnTec" class="icon" title="Detalhes técnicos">⚙</button>
+  <button type="submit" class="btn primary">Enviar</button>
+</form>
+
+<section id="tecnico" class="tecnico" hidden>
+  <div class="row between">
+    <h2>Detalhes técnicos · registro de interações (fica só neste navegador)</h2>
+    <div class="row">
+      <button class="btn" id="btnExportar" type="button">Exportar JSON</button>
+      <button class="btn" id="btnLimpar" type="button">Limpar</button>
+    </div>
+  </div>
+  <ol id="logLista" class="log"></ol>
+</section>
+
+<script src="config.js"></script>
+<script src="modes.js"></script>
+<script src="data.js"></script>
+<script src="brain.js"></script>
+<script src="avatar.js"></script>
+<script src="voice.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

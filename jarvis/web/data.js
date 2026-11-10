@@ -1,0 +1,68 @@
+// Fonte de dados dos modos.
+//
+// HOJE: devolve dados de DEMONSTRAÇÃO (fictícios) para a interface funcionar
+// sem backend. Nomes de pacientes aqui são inventados de propósito.
+// DEPOIS: se APP_CONFIG.DATA_URL estiver preenchido, busca do backend
+// (Edge Function `jarvis-data`), que conversa com Clinicorp, Gmail, Ads etc.
+// O formato devolvido é o mesmo — a interface não muda.
+(function () {
+  const brl = (v) => "R$ " + v.toFixed(2).replace(".", ",");
+
+  function demo(modeId) {
+    switch (modeId) {
+      case "trafego": {
+        const gasto = 103.35, conv = 39, gasto7 = 861.5, receita = 195;
+        return {
+          gasto_ontem_fmt: brl(gasto), gasto_7d_fmt: brl(gasto7),
+          conversas_ontem: conv, cpl_fmt: brl(gasto / conv),
+          campanhas_ativas: 5, vendas_semana: 1, receita_semana_fmt: brl(receita),
+        };
+      }
+      case "social":
+        return { posts_hoje: 10, posts_ok: 8, aguardando_aprovacao: 0, erros_3d: 11 };
+      case "gestao": {
+        const contas = [
+          { quem: "Energia", valor: 412.9, vence: "qui" },
+          { quem: "Internet", valor: 189.9, vence: "sex" },
+        ];
+        return {
+          pacientes: [
+            { hora: "08:00", nome: "Paciente A", proc: "Avaliação", confirmado: true },
+            { hora: "09:00", nome: "Paciente B", proc: "Limpeza", confirmado: false },
+            { hora: "10:30", nome: "Paciente C", proc: "Clareamento", confirmado: false },
+            { hora: "14:00", nome: "Paciente D", proc: "Retorno ortodontia", confirmado: true },
+            { hora: "15:00", nome: "Paciente E", proc: "Avaliação", confirmado: false },
+            { hora: "16:30", nome: "Paciente F", proc: "Restauração", confirmado: false },
+          ],
+          emails: [
+            { de: "Fornecedor X", assunto: "Orçamento resina" },
+            { de: "Contador", assunto: "Documentos de novembro" },
+            { de: "Paciente", assunto: "Dúvida sobre pagamento" },
+          ],
+          contas,
+          total_contas_fmt: brl(contas.reduce((s, c) => s + c.valor, 0)),
+        };
+      }
+      case "programador":
+        return { ultimo_projeto: "projeto-jarvis" };
+      default:
+        return {};
+    }
+  }
+
+  window.JarvisData = {
+    // Devolve { source: "demo" | "live", ...dados }
+    async get(modeId) {
+      const url = window.APP_CONFIG && window.APP_CONFIG.DATA_URL;
+      if (url) {
+        try {
+          const r = await fetch(`${url}?mode=${encodeURIComponent(modeId)}`, {
+            headers: { Authorization: `Bearer ${window.APP_CONFIG.JARVIS_TOKEN || ""}` },
+          });
+          if (r.ok) return { source: "live", ...(await r.json()) };
+        } catch (_) { /* cai para demo e deixa isso visível na tela */ }
+      }
+      return { source: "demo", ...demo(modeId) };
+    },
+  };
+})();
