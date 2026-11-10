@@ -36,6 +36,17 @@
       </div>
       <p class="muted small" id="pendNota"></p>
     </section>
+    <details class="panel" id="painelContatos">
+      <summary><span id="contatosTitulo">Contatos</span></summary>
+      <p class="muted small">Ficam só neste navegador. Não vão para o repositório nem para nenhum servidor.</p>
+      <ul id="contatosLista" class="contatos"></ul>
+      <form id="contatoForm" class="contato-form" autocomplete="off">
+        <input id="contatoNome" type="text" placeholder="Nome (ex.: João Silva)" aria-label="Nome do contato" required>
+        <input id="contatoTel" type="tel" placeholder="WhatsApp com DDD (ex.: 63 99999-0000)" aria-label="Telefone" required>
+        <button class="btn" type="submit">Adicionar</button>
+      </form>
+      <p class="small bad" id="contatoErro" hidden></p>
+    </details>
   </aside>
 
   <section class="center">

@@ -21,8 +21,52 @@
   const CONFIRMA = /^(confirma|confirmo|confirmado|pode enviar|pode mandar|manda|envia|sim|isso|autorizo)$/;
   const CANCELA = /^(cancela|cancelar|nao|deixa|esquece|para|pare)$/;
 
-  // Devolve { tipo, modo?, texto }
-  //  tipo: "sair" | "ativar" | "confirmar" | "cancelar" | "pergunta" | "vazio"
+  // "manda mensagem pro João dizendo que ...", "entra em contato com o fulano".
+  // Roda no texto ORIGINAL (para preservar acento e maiúscula da mensagem);
+  // os verbos e conectores abaixo não têm acento, então i-flag basta.
+  const MSG_PRE = /^\W*(?:jarvis\W+)?(?:(?:entra|abre)\s+(?:no|na)\s+(?:meu\s+)?(?:whatsapp|zap)\s+e\s+)?(?:manda(?:r)?|mande|envia(?:r)?|envie|escreve(?:r)?|escreva|chama(?:r)?|chame|fala(?:r)?|fale|avisa(?:r)?|avise|entra(?:r)?\s+em\s+contato|entre\s+em\s+contato|contata(?:r)?|contate)\s+(?:uma\s+)?(?:mensagem\s+|msg\s+|whatsapp\s+|zap\s+)?(?:no\s+(?:whatsapp|zap)\s+)?(?:para\s+|pra\s+|pro\s+|com\s+|ao\s+|a\s+)?(?:(?:o|a)\s+)?(.+)$/i;
+  const MSG_SEP = /\s+(?:dizendo(?:\s+que)?|falando(?:\s+que)?|avisando(?:\s+que)?|com\s+a\s+mensagem|e\s+diz(?:\s+que)?|e\s+fala(?:\s+que)?)\s+/i;
+
+  function lerMensagem(textoBruto) {
+    const m = String(textoBruto || "").match(MSG_PRE);
+    if (!m) return null;
+    let resto = m[1].trim();
+    let nome = resto, mensagem = null;
+    const s = resto.match(MSG_SEP);
+    if (s) {
+      nome = resto.slice(0, s.index);
+      mensagem = resto.slice(s.index + s[0].length).trim();
+    }
+    nome = nome.replace(/[.,;!?]+$/g, "").trim();
+    if (!nome) return null;
+    if (mensagem) mensagem = mensagem.charAt(0).toUpperCase() + mensagem.slice(1);
+    return { nome, mensagem: mensagem || null };
+  }
+
+  const STOP = new Set(["o", "a", "os", "as", "do", "da", "de", "dos", "das", "meu", "minha"]);
+  // Contatos cujo nome contém todas as palavras pedidas (sem acento/maiúscula).
+  // Nome exatamente igual ganha dos parciais.
+  function acharContato(consulta, contatos) {
+    const q = norm(consulta).split(" ").filter((w) => w && !STOP.has(w));
+    if (!q.length) return [];
+    const exato = contatos.filter((c) => norm(c.nome) === norm(consulta));
+    if (exato.length) return exato;
+    return contatos.filter((c) => {
+      const n = norm(c.nome).split(" ");
+      return q.every((w) => n.some((p) => p.startsWith(w)));
+    });
+  }
+
+  // Link do WhatsApp com a mensagem pronta (você só toca em enviar).
+  function linkWhatsapp(telefone, mensagem) {
+    let d = String(telefone || "").replace(/\D/g, "");
+    if (d.length === 10 || d.length === 11) d = "55" + d;      // DDD sem país → Brasil
+    if (d.length < 12 || d.length > 15) return null;
+    return `https://wa.me/${d}` + (mensagem ? `?text=${encodeURIComponent(mensagem)}` : "");
+  }
+
+  // Devolve { tipo, modo?, texto, nome?, mensagem? }
+  //  tipo: "sair" | "ativar" | "confirmar" | "cancelar" | "mensagem" | "pergunta" | "vazio"
   function interpretar(textoBruto, modos) {
     let t = norm(textoBruto).replace(/\bjarvis\b/g, "").replace(/\s+/g, " ").trim();
     if (!t) return { tipo: "vazio", texto: "" };
@@ -30,6 +74,9 @@
     if (CONFIRMA.test(t)) return { tipo: "confirmar", texto: t };
     if (CANCELA.test(t)) return { tipo: "cancelar", texto: t };
     if (SAIR.test(t)) return { tipo: "sair", texto: t };
+
+    const msg = lerMensagem(textoBruto);
+    if (msg) return { tipo: "mensagem", texto: t, nome: msg.nome, mensagem: msg.mensagem };
 
     // Ativar um modo: precisa de verbo/“modo”/“agente” + apelido do modo.
     // Maior apelido primeiro, para "social media" ganhar de "social".
@@ -82,6 +129,8 @@
   window.JarvisBrain = {
     norm,
     interpretar,
+    acharContato,
+    linkWhatsapp,
     demoResponder,
 
     // Pergunta aberta: backend se existir; senão, demonstração honesta.

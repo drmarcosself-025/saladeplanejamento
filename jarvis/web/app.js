@@ -11,6 +11,24 @@
   let geracao = 0;              // invalida falas antigas quando chega pedido novo
   let estado = "idle";
   let acordadoAte = 0;          // janela em que a voz dispensa dizer "Jarvis"
+  let aguardando = null;        // conversa em andamento: falta o texto da mensagem ou escolher o contato
+
+  // ---------- contatos (só neste navegador) ----------
+  const CT_KEY = "jarvis_contatos_v1";
+  function lerContatos() { try { return JSON.parse(localStorage.getItem(CT_KEY) || "[]"); } catch (_) { return []; } }
+  function gravarContatos(l) { try { localStorage.setItem(CT_KEY, JSON.stringify(l)); } catch (_) {} }
+  function renderContatos() {
+    const l = lerContatos(), ul = $("contatosLista"); ul.textContent = "";
+    $("contatosTitulo").textContent = `Contatos (${l.length})`;
+    l.forEach((c, i) => {
+      const li = document.createElement("li"), s = document.createElement("span"), t = document.createElement("span"), x = document.createElement("button");
+      s.textContent = c.nome; t.className = "tel"; t.textContent = c.tel;
+      x.type = "button"; x.textContent = "✕"; x.title = "Remover"; x.setAttribute("aria-label", "Remover " + c.nome);
+      x.addEventListener("click", () => { const n = lerContatos(); n.splice(i, 1); gravarContatos(n); renderContatos(); });
+      const esq = document.createElement("div"); esq.append(s, document.createElement("br"), t);
+      li.append(esq, x); ul.appendChild(li);
+    });
+  }
 
   // ---------- registro de interações (coleta de dados) ----------
   function lerLog() { try { return JSON.parse(localStorage.getItem(LOG_KEY) || "[]"); } catch (_) { return []; } }
@@ -85,18 +103,53 @@
     const ul = $("pendDetalhe"); ul.textContent = "";
     for (const d of pendente.detalhe || []) { const li = document.createElement("li"); li.textContent = d; ul.appendChild(li); }
     $("pendExemplo").textContent = pendente.exemplo ? "Mensagem: " + pendente.exemplo : "";
-    $("pendNota").textContent = dados.source === "live" ? "" : "Demonstração: confirmar não envia nada de verdade.";
+    $("pendNota").textContent = pendente.url
+      ? "Abre o WhatsApp com a mensagem pronta. Nada é enviado sozinho: você toca em enviar."
+      : dados.source === "live" ? "" : "Demonstração: confirmar não envia nada de verdade.";
   }
 
   // ---------- fluxo principal ----------
   async function ativar(id, g, prefixo) {
     setEstado("pensando");
-    modoId = id; pendente = null; renderPendente();
+    modoId = id; pendente = null; aguardando = null; renderPendente();
     dados = id === "normal" ? {} : await JarvisData.get(id);
     if (g !== geracao) return;
     renderModo();
     gravarLog({ tipo: "ativar", fonte: dados.source });
     await dizer((prefixo ? prefixo + " " : "") + MODOS[id].abertura(dados), g);
+  }
+
+  // Monta a ação "abrir WhatsApp com a mensagem pronta" (precisa do seu confirma).
+  async function prepararMensagem(contato, msg, g) {
+    if (!msg) {
+      aguardando = { tipo: "texto", contato };
+      return dizer(`O que eu digo para ${contato.nome}?`, g);
+    }
+    const url = JarvisBrain.linkWhatsapp(contato.tel, msg);
+    if (!url) {
+      $("painelContatos").open = true;
+      return dizer(`O telefone de ${contato.nome} parece inválido. Corrija no painel de contatos.`, g);
+    }
+    pendente = {
+      id: "whatsapp.abrir", nivel: "EXECUTE", titulo: `Abrir WhatsApp de ${contato.nome}`,
+      detalhe: [`${contato.nome} · ${contato.tel}`], exemplo: msg, url,
+    };
+    renderPendente();
+    return dizer(`Preparei para ${contato.nome}: ${msg}. Diga confirma para abrir o WhatsApp com a mensagem pronta.`, g);
+  }
+
+  async function continuarAguardando(texto, g) {
+    const a = aguardando; aguardando = null;
+    if (a.tipo === "escolha") {
+      const r = JarvisBrain.acharContato(texto, a.opcoes);
+      if (r.length !== 1) {
+        aguardando = a;
+        return dizer(`Não entendi qual. Diga o nome completo: ${a.opcoes.map((c) => c.nome).join(", ")}.`, g);
+      }
+      return prepararMensagem(r[0], a.mensagem, g);
+    }
+    const msg = texto.trim();
+    return prepararMensagem(a.contato, msg.charAt(0).toUpperCase() + msg.slice(1), g);
   }
 
   async function processar(texto, origem) {
@@ -107,6 +160,29 @@
     acordadoAte = Date.now() + 12000;
     gravarLog({ tipo: it.tipo, entrada: texto, fonte: origem });
 
+    // Estamos no meio de um pedido (falta o texto ou a escolha do contato):
+    // a próxima frase é a resposta, a não ser que seja um comando de verdade.
+    if (aguardando) {
+      const comando = ["sair", "cancelar", "ativar", "confirmar"].includes(it.tipo) || (aguardando.tipo === "texto" && it.tipo === "mensagem");
+      if (!comando) return continuarAguardando(texto, g);
+      if (it.tipo !== "confirmar") aguardando = null;
+    }
+
+    if (it.tipo === "mensagem") {
+      const lista = lerContatos();
+      const achados = JarvisBrain.acharContato(it.nome, lista);
+      if (!achados.length) {
+        $("painelContatos").open = true;
+        return dizer(lista.length
+          ? `Não achei ${it.nome} nos seus contatos. Cadastre no painel de contatos e peça de novo.`
+          : "Você ainda não cadastrou nenhum contato. Adicione no painel de contatos e peça de novo.", g);
+      }
+      if (achados.length > 1) {
+        aguardando = { tipo: "escolha", opcoes: achados, mensagem: it.mensagem };
+        return dizer(`Achei ${achados.length}: ${achados.map((c) => c.nome).join(", ")}. Qual deles?`, g);
+      }
+      return prepararMensagem(achados[0], it.mensagem, g);
+    }
     if (it.tipo === "ativar") return ativar(it.modo, g);
     if (it.tipo === "sair") {
       const era = MODOS[modoId];
@@ -119,7 +195,18 @@
     }
     if (it.tipo === "confirmar") {
       if (!pendente) return dizer("Não há nada aguardando confirmação.", g);
-      const p = pendente; pendente = null; renderPendente();
+      const p = pendente;
+      if (p.url) {
+        // Abre o WhatsApp com a mensagem pronta. Se foi confirmado por voz, o
+        // navegador pode bloquear a janela (não houve clique): o botão resolve.
+        const w = window.open(p.url, "_blank");
+        if (!w) return dizer("O navegador bloqueou a abertura. Toque em Confirmar na tela.", g);
+        try { w.opener = null; } catch (_) {}
+        pendente = null; renderPendente();
+        gravarLog({ tipo: "executar", entrada: p.id, fonte: "local" });
+        return dizer("Abri o WhatsApp com a mensagem pronta. É só tocar em enviar.", g);
+      }
+      pendente = null; renderPendente();
       gravarLog({ tipo: "executar", entrada: p.id, fonte: dados.source });
       // Execução real: POST ao backend com o id da ação. Sem backend: simulação explícita.
       return dizer(
@@ -143,6 +230,16 @@
     e.preventDefault();
     const v = $("entrada").value.trim(); $("entrada").value = "";
     if (v) processar(v, "texto");
+  });
+  $("contatoForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const nome = $("contatoNome").value.trim(), tel = $("contatoTel").value.trim(), erro = $("contatoErro");
+    if (!JarvisBrain.linkWhatsapp(tel, "")) {
+      erro.textContent = "Telefone inválido. Use DDD + número, ex.: 63 99999-0000."; erro.hidden = false; return;
+    }
+    erro.hidden = true;
+    const l = lerContatos(); l.push({ nome, tel }); gravarContatos(l);
+    $("contatoNome").value = ""; $("contatoTel").value = ""; renderContatos();
   });
   $("btnConfirmar").addEventListener("click", () => processar("confirma", "clique"));
   $("btnCancelar").addEventListener("click", () => processar("cancela", "clique"));
@@ -179,7 +276,7 @@
   setInterval(() => { $("relogio").textContent = new Date().toLocaleTimeString("pt-BR"); }, 1000);
 
   // ---------- início ----------
-  renderChips(); renderModo(); setEstado("idle"); renderLog();
+  renderChips(); renderModo(); setEstado("idle"); renderLog(); renderContatos();
   legenda("Pronto. Diga “Jarvis, ativa o agente gestão do dia”, escolha um agente acima ou digite um pedido.");
   if (!JarvisVoice.suportaEntrada) $("btnMic").title = "Este navegador não tem reconhecimento de voz (use Chrome ou Edge)";
 })();

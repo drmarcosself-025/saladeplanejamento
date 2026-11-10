@@ -65,6 +65,20 @@ body{
 .pend-lista{font-size:13px;color:var(--muted);margin-bottom:6px}
 .pend-exemplo{font-size:13px;font-style:italic;margin:6px 0 10px;color:var(--text)}
 
+/* contatos */
+details.panel>summary{cursor:pointer;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);list-style:none}
+details.panel>summary::-webkit-details-marker{display:none}
+details.panel>summary::after{content:" ▾";color:var(--muted)}
+details.panel[open]>summary::after{content:" ▴"}
+.contatos{list-style:none;margin:8px 0;padding:0;max-height:180px;overflow:auto}
+.contatos li{display:flex;justify-content:space-between;gap:8px;align-items:center;padding:4px 0;border-bottom:1px dashed var(--line);font-size:13px}
+.contatos .tel{color:var(--muted);font-size:12px}
+.contatos button{background:none;border:0;color:var(--bad);cursor:pointer;font-size:15px}
+.contato-form{display:flex;flex-direction:column;gap:6px}
+.contato-form input{background:rgba(14,24,44,.8);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:8px 10px;font-size:14px;outline:none}
+.contato-form input:focus{border-color:var(--accent)}
+.bad{color:var(--bad)}
+
 /* barra inferior */
 .barra{display:flex;gap:8px;padding:10px 16px calc(12px + env(safe-area-inset-bottom));border-top:1px solid var(--line);background:rgba(5,8,15,.85);position:sticky;bottom:0}
 .barra input{

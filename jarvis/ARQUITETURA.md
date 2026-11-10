@@ -4,6 +4,14 @@
 > demonstração, sem backend). Fases 1 a 5 são desenho. Este documento é a
 > fonte de verdade; atualize o fim dele a cada fase.
 
+> **Atualização:** o Supabase deixou de estar disponível e **não será usado**.
+> As seções que citam Supabase, Edge Functions e schema `jarvis` (§1, §4, §5,
+> o diagrama) descrevem o backend da Fase 1 e serão reescritas para um app
+> local simples (servidor Node no PC, arquivo SQLite, segredos em `.env`),
+> mantendo os mesmos contratos e as mesmas regras de segurança. Nada da
+> Fase 0 depende disso. Já entregue sem backend: mensagens de WhatsApp por
+> link `wa.me` com confirmação (contatos só no navegador).
+
 Projeto **separado** do CRM Maison D'Or (raiz) e do `dental-leads/`. Nenhum
 arquivo, tabela ou função deles é lido ou alterado por este. A integração com
 o `dental-leads` (WhatsApp) é planejada e passa por contrato explícito (§6).

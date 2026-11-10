@@ -27,6 +27,20 @@ Edge para voz; em outros navegadores dá para digitar.
 - “Jarvis, desativa o agente social media” / “volta ao normal”
 - Ou clique nos atalhos no topo.
 
+### Mandar mensagem no WhatsApp (funciona hoje, em qualquer modo)
+
+1. Abra **Contatos** (painel à esquerda) e cadastre nome + WhatsApp com DDD.
+   Os contatos ficam só no seu navegador.
+2. Diga ou digite, por exemplo:
+   - “Jarvis, manda mensagem pro João Silva dizendo que a consulta é amanhã às 9h”
+   - “Jarvis, entra em contato com a Maria” → ele pergunta o que dizer
+3. O Jarvis mostra a mensagem no painel. Diga **“confirma”** (ou clique em
+   Confirmar) e o WhatsApp abre na conversa certa **com o texto pronto**.
+   Você toca em enviar. **Nada é enviado sozinho.**
+
+Se houver dois contatos parecidos (“João”), ele pergunta qual. Se a confirmação
+foi por voz e o navegador bloquear a janela, use o botão Confirmar.
+
 O botão ⚙ abre o registro das suas interações (fica só no navegador;
 exportável em JSON).
 
