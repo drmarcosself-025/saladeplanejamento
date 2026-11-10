@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), "../web");
 const win = {};
 const ctx = vm.createContext({ window: win, fetch: async () => ({ ok: false }) });
-for (const f of ["modes.js", "brain.js"]) vm.runInContext(fs.readFileSync(path.join(dir, f), "utf8"), ctx);
+for (const f of ["modes.js", "brain.js", "voice.js"]) vm.runInContext(fs.readFileSync(path.join(dir, f), "utf8"), ctx);
 const { interpretar } = win.JarvisBrain;
 const M = win.JARVIS_MODES;
 const it = (t) => interpretar(t, M);
@@ -72,4 +72,25 @@ test("linkWhatsapp: DDD vira +55, texto é codificado, número ruim é recusado"
   assert.equal(linkWhatsapp("(63) 99999-0000", "Olá, tudo bem?"), "https://wa.me/5563999990000?text=Ol%C3%A1%2C%20tudo%20bem%3F");
   assert.equal(linkWhatsapp("+55 63 99999-0000", ""), "https://wa.me/5563999990000");
   assert.equal(linkWhatsapp("12345", "x"), null);
+});
+
+// ---------- voz ----------
+test("'Jarvis' mal reconhecido ainda chama e é removido do comando", () => {
+  const { chamou } = win.JarvisBrain;
+  for (const t of ["Jarvis ativa o agente social media", "Jarvi, ativa", "jarves desativa", "Já vis, volta ao normal"])
+    assert.ok(chamou(t), t);
+  assert.ok(!chamou("ativa o agente social media"));
+  assert.equal(it("Jarves, ativa o agente social media").modo, "social");
+  assert.equal(it("Jarvi desativa o agente social media").tipo, "sair");
+  assert.equal(it("jarvi, manda mensagem pro João dizendo oi").tipo, "mensagem");
+});
+test("fala longa é dividida em partes curtas (Chrome corta ~15 s)", () => {
+  const { _partes } = win.JarvisVoice;
+  const longo = "Modo Gestão do Dia ativado. Amanhã você tem 6 pacientes, 4 ainda sem confirmação. " + "Isso é uma frase muito longa, ".repeat(20) + "fim.";
+  const ps = _partes(longo);
+  assert.ok(ps.length >= 4);
+  assert.ok(ps.every((p) => p.length <= 175), ps.map((p) => p.length).join(","));
+  assert.equal(ps.join(" ").replace(/\s+/g, " ").includes("Modo Gestão do Dia ativado."), true);
+  assert.deepEqual(Array.from(_partes("Oi.")), ["Oi."]);
+  assert.deepEqual(Array.from(_partes("")), []);
 });

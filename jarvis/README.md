@@ -18,6 +18,27 @@ python3 -m http.server 8000      # ou qualquer servidor estático
 `localhost` é necessário para o microfone funcionar (ou HTTPS). Use Chrome ou
 Edge para voz; em outros navegadores dá para digitar.
 
+## Voz
+
+| Controle | O que faz |
+|---|---|
+| 🗣 **Segurar** (ou segure **Espaço**, fora de campos de texto) | Escuta só enquanto você aperta. Dispensa dizer “Jarvis”. Mais confiável com barulho. |
+| 🎙 **Contínuo** | Fica ouvindo e só responde quando ouvir “Jarvis” (aceita “Jarvi”, “Jarves”…). Pausa enquanto o Jarvis fala, para não ouvir a si mesmo. |
+| Medidor ao lado do 🎙 | Mostra o nível real do microfone. Se não mexe, o navegador não está ouvindo. |
+| Painel **Voz** | Escolha da voz do Jarvis, velocidade e “Testar voz”. |
+
+Enquanto você fala, o texto aparece ao vivo abaixo do avatar, e o avatar reage
+à sua voz.
+
+**Privacidade:** no Chrome/Edge o reconhecimento de fala é feito pelo servidor
+do navegador (Google/Microsoft): o áudio **sai do seu computador** enquanto o
+microfone está ativo. A voz do Jarvis é local. Para falar nome de paciente,
+use o modo segurar só quando precisar, ou digite.
+
+Se o microfone não funcionar: abra por `http://localhost:8000` (não pelo
+arquivo), permita o microfone no cadeado da barra de endereço, e use Chrome ou
+Edge. No iPhone/Safari o reconhecimento de voz é limitado: digite.
+
 ## Experimente
 
 - “Jarvis, ativa o agente gestão do dia”

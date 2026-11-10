@@ -243,12 +243,42 @@
   });
   $("btnConfirmar").addEventListener("click", () => processar("confirma", "clique"));
   $("btnCancelar").addEventListener("click", () => processar("cancela", "clique"));
-  $("btnMic").addEventListener("click", () => {
-    const on = JarvisVoice.alternarEscuta();
+  $("btnMic").addEventListener("click", async () => {
+    const on = await JarvisVoice.alternarEscuta();
     $("btnMic").setAttribute("aria-pressed", String(!!on));
     $("btnMic").classList.toggle("on", !!on);
-    if (on) setEstado("ouvindo"); else if (estado === "ouvindo") setEstado("idle");
   });
+
+  // Segurar para falar: botão (mouse/toque) ou tecla Espaço fora de campos de texto.
+  const btnPtt = $("btnPtt");
+  async function pttInicio() {
+    if (JarvisVoice.segurando || JarvisVoice.escutando) return;
+    btnPtt.classList.add("ptt-on");
+    await JarvisVoice.segurar();
+  }
+  function pttFim() { btnPtt.classList.remove("ptt-on"); JarvisVoice.soltar(); }
+  btnPtt.addEventListener("pointerdown", (e) => { e.preventDefault(); btnPtt.setPointerCapture(e.pointerId); pttInicio(); });
+  ["pointerup", "pointercancel", "lostpointercapture"].forEach((ev) => btnPtt.addEventListener(ev, pttFim));
+  const emCampo = () => /^(input|textarea|select|button)$/i.test(document.activeElement && document.activeElement.tagName);
+  document.addEventListener("keydown", (e) => {
+    if (e.code !== "Space" || e.repeat || emCampo() || e.ctrlKey || e.metaKey || e.altKey) return;
+    e.preventDefault(); pttInicio();
+  });
+  document.addEventListener("keyup", (e) => { if (e.code === "Space" && JarvisVoice.segurando) pttFim(); });
+
+  // Painel de voz
+  function popularVozes() {
+    const sel = $("vozSel"), nomes = JarvisVoice.vozes();
+    sel.textContent = "";
+    if (!nomes.length) { const o = document.createElement("option"); o.textContent = "(nenhuma voz em português encontrada)"; sel.appendChild(o); sel.disabled = true; return; }
+    sel.disabled = false;
+    for (const n of nomes) { const o = document.createElement("option"); o.value = o.textContent = n; sel.appendChild(o); }
+    sel.value = JarvisVoice.vozAtual;
+  }
+  $("vozSel").addEventListener("change", (e) => JarvisVoice.setVoz(e.target.value));
+  $("velocidade").value = JarvisVoice.velocidade; $("velVal").textContent = JarvisVoice.velocidade.toFixed(2) + "×";
+  $("velocidade").addEventListener("input", (e) => { JarvisVoice.setVelocidade(e.target.value); $("velVal").textContent = JarvisVoice.velocidade.toFixed(2) + "×"; });
+  $("btnTestarVoz").addEventListener("click", () => { const g = ++geracao; legenda("Olá, eu sou o Jarvis. Esta é a minha voz."); setEstado("falando"); JarvisVoice.testar().then(() => { if (g === geracao) setEstado(JarvisVoice.escutando ? "ouvindo" : "idle"); }); });
   $("btnMudo").addEventListener("click", () => {
     JarvisVoice.mudo = !JarvisVoice.mudo;
     $("btnMudo").textContent = JarvisVoice.mudo ? "🔇" : "🔊";
@@ -263,20 +293,30 @@
   });
 
   JarvisVoice.configurar({
-    onTexto(t) {
+    onTexto(t, meta) {
+      // Segurar para falar: foi de propósito, dispensa dizer “Jarvis”.
+      if (meta && meta.ptt) { $("interim").textContent = ""; return processar(t, "voz-ptt"); }
       if (estado === "falando") return;                 // ignora o eco da própria voz
-      const chamou = /\bjarvis\b/i.test(JarvisBrain.norm(t));
-      if (!chamou && Date.now() > acordadoAte) return;  // exige “Jarvis” fora da janela
+      if (!JarvisBrain.chamou(t) && Date.now() > acordadoAte) return;  // contínuo: exige “Jarvis”
       processar(t, "voz");
     },
-    onEstado(on) { $("btnMic").classList.toggle("on", on); },
-    onErro(msg) { legenda(msg); },
+    onInterim(t) { $("interim").textContent = t ? "🎙 " + t : ""; },
+    onNivel(n) { avatar.setNivel(n); $("medidor").style.width = Math.round(n * 100) + "%"; },
+    onEstado(on) {
+      if (on && estado !== "falando") setEstado("ouvindo");
+      else if (!on && estado === "ouvindo") setEstado("idle");
+    },
+    onErro(msg) { legenda(msg); $("btnMic").classList.remove("on"); $("btnMic").setAttribute("aria-pressed", "false"); btnPtt.classList.remove("ptt-on"); },
+    onVozes() { popularVozes(); },
   });
+  popularVozes();
 
   setInterval(() => { $("relogio").textContent = new Date().toLocaleTimeString("pt-BR"); }, 1000);
 
   // ---------- início ----------
   renderChips(); renderModo(); setEstado("idle"); renderLog(); renderContatos();
   legenda("Pronto. Diga “Jarvis, ativa o agente gestão do dia”, escolha um agente acima ou digite um pedido.");
-  if (!JarvisVoice.suportaEntrada) $("btnMic").title = "Este navegador não tem reconhecimento de voz (use Chrome ou Edge)";
+  if (!JarvisVoice.suportaEntrada) {
+    for (const b of [$("btnMic"), btnPtt]) { b.disabled = true; b.title = "Este navegador não tem reconhecimento de voz (use Chrome ou Edge). Você pode digitar."; }
+  }
 })();

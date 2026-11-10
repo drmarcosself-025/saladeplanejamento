@@ -52,6 +52,7 @@
   <section class="center">
     <canvas id="avatar" aria-label="Avatar do Jarvis"></canvas>
     <p id="legenda" class="legenda" aria-live="polite"></p>
+    <p id="interim" class="interim" aria-live="off"></p>
   </section>
 
   <aside class="col right">
@@ -65,6 +66,25 @@
         <li data-estado="falando">Falando</li>
       </ul>
     </section>
+    <details class="panel" id="painelVoz">
+      <summary>Voz</summary>
+      <div class="voz-campos">
+        <label class="small muted" for="vozSel">Voz do Jarvis</label>
+        <select id="vozSel"></select>
+        <label class="small muted" for="velocidade">Velocidade <span id="velVal"></span></label>
+        <input type="range" id="velocidade" min="0.7" max="1.5" step="0.05">
+        <button class="btn" id="btnTestarVoz" type="button">Testar voz</button>
+      </div>
+      <p class="small muted">
+        <b>Segurar para falar</b> (🗣 ou tecla <kbd>Espaço</kbd>) só escuta enquanto você aperta.
+        <b>🎙</b> fica ouvindo e só responde quando ouvir “Jarvis”.
+      </p>
+      <p class="small aviso-priv">
+        Privacidade: no Chrome/Edge o reconhecimento de fala é feito pelo servidor do navegador
+        (Google/Microsoft), então o áudio <b>sai do seu computador</b>. A voz do Jarvis é local.
+        Ao falar nome de paciente, prefira segurar para falar só quando precisar, ou digite.
+      </p>
+    </details>
     <section class="panel">
       <h2>Ferramentas do modo</h2>
       <ul id="ferramentas" class="ferramentas"></ul>
@@ -78,7 +98,9 @@
 </main>
 
 <form id="barra" class="barra" autocomplete="off">
-  <button type="button" id="btnMic" class="icon" title="Ligar/desligar microfone" aria-pressed="false">🎙</button>
+  <button type="button" id="btnPtt" class="icon" title="Segure para falar (ou segure a tecla Espaço)" aria-label="Segurar para falar">🗣</button>
+  <button type="button" id="btnMic" class="icon" title="Microfone sempre ligado (responde quando ouvir “Jarvis”)" aria-pressed="false" aria-label="Microfone contínuo">🎙</button>
+  <span class="medidor" aria-hidden="true" title="Nível do microfone"><i id="medidor"></i></span>
   <input id="entrada" type="text" placeholder="Fale ou digite um pedido… ex.: ativa o agente gestão do dia" aria-label="Pedido">
   <button type="button" id="btnMudo" class="icon" title="Silenciar a voz do Jarvis" aria-pressed="false">🔊</button>
   <button type="button" id="btnTec" class="icon" title="Detalhes técnicos">⚙</button>

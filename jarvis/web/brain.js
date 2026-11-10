@@ -16,7 +16,11 @@
       .replace(/\s+/g, " ")
       .trim();
 
-  const SAIR = /\b(volta(r)? ao normal|modo normal|desativa( o)?( agente| modo)?|desliga( o)?( agente| modo)?|sair do modo|encerra)\b/;
+  // O reconhecimento de voz nem sempre escreve "Jarvis". Variantes comuns:
+  const CHAMADA = /\b(jarvis|jarvi|jarves|jarvez|jarvs|jarviz|jarbis|charvis|ja vis)\b/g;
+  const chamou = (t) => { CHAMADA.lastIndex = 0; return CHAMADA.test(norm(t)); };
+
+  const SAIR =/\b(volta(r)? ao normal|modo normal|desativa( o)?( agente| modo)?|desliga( o)?( agente| modo)?|sair do modo|encerra)\b/;
   const ATIVAR = /\b(ativa|ativar|liga|ligar|abre|abrir|entra|entrar|modo|agente)\b/;
   const CONFIRMA = /^(confirma|confirmo|confirmado|pode enviar|pode mandar|manda|envia|sim|isso|autorizo)$/;
   const CANCELA = /^(cancela|cancelar|nao|deixa|esquece|para|pare)$/;
@@ -24,7 +28,7 @@
   // "manda mensagem pro João dizendo que ...", "entra em contato com o fulano".
   // Roda no texto ORIGINAL (para preservar acento e maiúscula da mensagem);
   // os verbos e conectores abaixo não têm acento, então i-flag basta.
-  const MSG_PRE = /^\W*(?:jarvis\W+)?(?:(?:entra|abre)\s+(?:no|na)\s+(?:meu\s+)?(?:whatsapp|zap)\s+e\s+)?(?:manda(?:r)?|mande|envia(?:r)?|envie|escreve(?:r)?|escreva|chama(?:r)?|chame|fala(?:r)?|fale|avisa(?:r)?|avise|entra(?:r)?\s+em\s+contato|entre\s+em\s+contato|contata(?:r)?|contate)\s+(?:uma\s+)?(?:mensagem\s+|msg\s+|whatsapp\s+|zap\s+)?(?:no\s+(?:whatsapp|zap)\s+)?(?:para\s+|pra\s+|pro\s+|com\s+|ao\s+|a\s+)?(?:(?:o|a)\s+)?(.+)$/i;
+  const MSG_PRE = /^\W*(?:(?:jarvis|jarvi|jarves|jarvez|jarvs|jarviz|jarbis|charvis)\W+)?(?:(?:entra|abre)\s+(?:no|na)\s+(?:meu\s+)?(?:whatsapp|zap)\s+e\s+)?(?:manda(?:r)?|mande|envia(?:r)?|envie|escreve(?:r)?|escreva|chama(?:r)?|chame|fala(?:r)?|fale|avisa(?:r)?|avise|entra(?:r)?\s+em\s+contato|entre\s+em\s+contato|contata(?:r)?|contate)\s+(?:uma\s+)?(?:mensagem\s+|msg\s+|whatsapp\s+|zap\s+)?(?:no\s+(?:whatsapp|zap)\s+)?(?:para\s+|pra\s+|pro\s+|com\s+|ao\s+|a\s+)?(?:(?:o|a)\s+)?(.+)$/i;
   const MSG_SEP = /\s+(?:dizendo(?:\s+que)?|falando(?:\s+que)?|avisando(?:\s+que)?|com\s+a\s+mensagem|e\s+diz(?:\s+que)?|e\s+fala(?:\s+que)?)\s+/i;
 
   function lerMensagem(textoBruto) {
@@ -68,7 +72,7 @@
   // Devolve { tipo, modo?, texto, nome?, mensagem? }
   //  tipo: "sair" | "ativar" | "confirmar" | "cancelar" | "mensagem" | "pergunta" | "vazio"
   function interpretar(textoBruto, modos) {
-    let t = norm(textoBruto).replace(/\bjarvis\b/g, "").replace(/\s+/g, " ").trim();
+    let t = norm(textoBruto).replace(CHAMADA, "").replace(/\s+/g, " ").trim();
     if (!t) return { tipo: "vazio", texto: "" };
 
     if (CONFIRMA.test(t)) return { tipo: "confirmar", texto: t };
@@ -128,6 +132,7 @@
 
   window.JarvisBrain = {
     norm,
+    chamou,
     interpretar,
     acharContato,
     linkWhatsapp,

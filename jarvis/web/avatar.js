@@ -23,7 +23,7 @@
     let W = 0, H = 0, dpr = 1;
     let estado = "idle";
     let corAtual = hex("#35b8ff"), corAlvo = corAtual;
-    let amp = AMPL.idle, nivelFala = 0;
+    let amp = AMPL.idle, nivelFala = 0, nivelMic = 0;
     const parts = [];
     for (let i = 0; i < 220; i++) parts.push(novaParticula(true));
 
@@ -52,9 +52,12 @@
       const t = (now - t0) / 1000;
       // transição de cor e amplitude
       for (let i = 0; i < 3; i++) corAtual[i] += (corAlvo[i] - corAtual[i]) * 0.06;
-      const alvoAmp = AMPL[estado] || AMPL.idle;
-      amp += (alvoAmp - amp) * 0.08;
-      nivelFala += ((estado === "falando" ? 0.5 + 0.5 * Math.abs(Math.sin(t * 7.3) * Math.sin(t * 2.1)) : 0) - nivelFala) * 0.15;
+      // ouvindo: o avatar reage ao nível REAL do seu microfone
+      const alvoAmp = (AMPL[estado] || AMPL.idle) + (estado === "ouvindo" ? nivelMic * 0.006 : 0);
+      amp += (alvoAmp - amp) * 0.12;
+      const alvoNivel = estado === "falando" ? 0.5 + 0.5 * Math.abs(Math.sin(t * 7.3) * Math.sin(t * 2.1))
+                      : estado === "ouvindo" ? nivelMic : 0;
+      nivelFala += (alvoNivel - nivelFala) * 0.15;
 
       ctx.clearRect(0, 0, W, H);
       const s = Math.min(H * 0.92, W * 1.6);       // escala: altura total da figura
@@ -130,6 +133,7 @@
     return {
       setCor(h) { corAlvo = hex(h); },
       setEstado(e) { estado = AMPL[e] != null ? e : "idle"; },
+      setNivel(n) { nivelMic = Math.max(0, Math.min(1, n || 0)); },
     };
   }
 
