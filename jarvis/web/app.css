@@ -381,3 +381,8 @@ body[data-vista="espacos"] .source-line,body[data-vista="pessoal"] .source-line,
 /* Conversa contida; campos de 16px evitam zoom automático no Safari. */
 .conversa{max-height:430px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#3b5666 transparent}
 @media(max-width:900px){.conversa{max-height:350px}.conversa li{font-size:13px;line-height:1.7}.resposta-card li{font-size:13px}.barra input,.task-form input,#utilityConteudo input,#utilityConteudo textarea,#utilityConteudo select{font-size:16px}.main-nav button{font-size:10px}.sug{font-size:10px}.personal-form label{font-size:12px}}
+/* Presença holográfica: busto ciano e núcleo âmbar, conforme a referência. */
+.center{background:radial-gradient(ellipse 67% 47% at 50% 38%,#073e6250,transparent 90%)}
+#avatar{height:420px}.avatar-halo{height:340px;background:radial-gradient(ellipse,#2dbfee10,transparent 70%)}
+body[data-vista="conversa"] #avatar{height:290px}
+@media(max-width:900px){#avatar{height:310px}.avatar-halo{height:270px}body[data-vista="conversa"] #avatar{height:175px}}

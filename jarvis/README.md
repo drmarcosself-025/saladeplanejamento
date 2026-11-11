@@ -2,7 +2,7 @@
 
 ## Interface 3.0
 
-Navegação **Hoje / Conversa / Espaços / Você**, rosto em malha tridimensional e compositor separado da navegação no celular. Hoje reúne retornos reais, contas pendentes e prioridades que você cadastra. A área Você guarda nome, tom, foco e rotina apenas neste navegador. O contexto pessoal só acompanha perguntas ao Claude se você ativar a opção correspondente. As tarefas pessoais também ficam neste navegador; leads e financeiro preservam o armazenamento do artefato.
+Navegação **Hoje / Conversa / Espaços / Você**, busto holográfico azul com núcleo âmbar e compositor separado da navegação no celular. Hoje reúne retornos reais, contas pendentes e prioridades que você cadastra. A área Você guarda nome, tom, foco e rotina apenas neste navegador. O contexto pessoal só acompanha perguntas ao Claude se você ativar a opção correspondente. As tarefas pessoais também ficam neste navegador; leads e financeiro preservam o armazenamento do artefato.
 
 O arquivo único agora inclui viewport para abertura em celulares. A atualização do código não altera automaticamente o artefato já publicado no Claude.
 
