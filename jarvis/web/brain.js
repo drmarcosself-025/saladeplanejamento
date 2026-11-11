@@ -70,9 +70,10 @@
   }
 
 
-  // ---------- leads: novo, lista, etapa, adiar, retorno ----------
+  // ---------- leads, CRM e financeiro ----------
   const CHAMA = "(?:jarvis|jarvi|jarves|jarvez|jarvs|jarviz|jarbis|charvis)";
-  const NOVO_LEAD = new RegExp("^\\W*(?:" + CHAMA + "\\W+)?(?:novo|nova|cadastra|cadastrar|cadastre|adiciona|adicionar|adicione|anota|anotar|anote|registra|registrar|registre|salva|salvar)\\s+(?:um\\s+|uma\\s+|o\\s+|a\\s+)?(?:novo\\s+|nova\\s+)?lead\\b\\W*(.*)$", "i");
+  const PRE = "^\\W*(?:" + CHAMA + "\\W+)?";
+  const NOVO_LEAD = new RegExp(PRE + "(?:novo|nova|cadastra|cadastrar|cadastre|adiciona|adicionar|adicione|anota|anotar|anote|registra|registrar|registre|salva|salvar)\\s+(?:um\\s+|uma\\s+|o\\s+|a\\s+)?(?:novo\\s+|nova\\s+)?lead\\b\\W*(.*)$", "i");
   const KW = /\b(?:veio|vem|chegou|quer|interessad[oa]s?|procura|pergunt\w+)\b/i;
 
   function lerNovoLead(resto) {
@@ -88,9 +89,20 @@
     return { tipo: "lead_novo", nome, tel, origem: mo ? mo[1].trim() : null, interesse: mi ? mi[1].trim() : null };
   }
 
-  const ETAPA_MAP = { novo: "novo", conversando: "conversando", orcamento: "orcamento", "orcamento enviado": "orcamento", agendou: "agendou", agendado: "agendou", fechou: "fechou", fechado: "fechou", perdido: "perdido", perdeu: "perdido", fechamos: "fechou", desistiu: "perdido", sumiu: "perdido" };
-  const ETAPA_RE = /^(?:marca|marcar|marque|move|mover|mova|muda|mudar|mude|atualiza|atualizar|atualize|passa|passar|passe|coloca|colocar|coloque)\s+(?:o\s+|a\s+)?(.+?)\s+(?:como|para|pra|em)\s+(novo|conversando|orcamento(?: enviado)?|agendou|agendado|fechou|fechado|perdido|perdeu)$/;
-  const ETAPA_SOLTA = /^(?:o\s+|a\s+)?(.+?)\s+(agendou|fechou|fechamos|perdeu|desistiu|sumiu)$/;
+  // Etapas aceitas por voz: o que você diz → etapa do funil.
+  const ETAPA_MAP = { novo: "novo", interessado: "interessado", conversando: "interessado", proposta: "proposta", "proposta enviada": "proposta", orcamento: "proposta", "orcamento enviado": "proposta", aguardando: "aguardando", "aguardando retorno": "aguardando", agendou: "agendou", agendado: "agendou", fechou: "fechou", fechado: "fechou", "sem interesse": "sem_interesse", perdido: "sem_interesse", perdeu: "sem_interesse" };
+  const ETAPA_ALT = "novo|interessado|conversando|proposta(?: enviada)?|orcamento(?: enviado)?|aguardando(?: retorno)?|agendou|agendado|fechou|fechado|sem interesse|perdido|perdeu";
+  const ETAPA_RE = new RegExp("^(?:marca|marcar|marque|move|mover|mova|muda|mudar|mude|atualiza|atualizar|atualize|passa|passar|passe|coloca|colocar|coloque)\\s+(?:o\\s+|a\\s+)?(.+?)\\s+(?:como|para|pra|em)\\s+(" + ETAPA_ALT + ")$");
+  // "o João demonstrou interesse", "passei a proposta pro João"... (o nome só vale se existir um lead com ele)
+  const SOLTAS = [
+    [/^(?:o\s+|a\s+)?(.+?)\s+(?:agendou|marcou consulta|marcou)$/, "agendou"],
+    [/^(?:o\s+|a\s+)?(.+?)\s+(?:fechou|fechamos|fechou o tratamento)$/, "fechou"],
+    [/^(?:o\s+|a\s+)?(.+?)\s+(?:nao tem interesse|nao quis|nao quer|nao se interessou|recusou|perdeu|desistiu|sumiu)$/, "sem_interesse"],
+    [/^(?:o\s+|a\s+)?(.+?)\s+(?:demonstrou interesse|se interessou|tem interesse|quer saber mais|gostou)$/, "interessado"],
+    [/^(?:o\s+|a\s+)?(.+?)\s+(?:ficou de dar retorno|ficou de responder|vai pensar|vai ver|pediu um tempo)$/, "aguardando"],
+    [/^(?:passei|mandei|enviei)\s+(?:a\s+)?(?:proposta|orcamento)\s+(?:pro|pra|para|ao|a|o)\s+(?:o\s+|a\s+)?(.+)$/, "proposta"],
+    [/^(?:agendei|marquei consulta (?:pro|pra|para|do|da))\s+(?:o\s+|a\s+)?(.+)$/, "agendou"],
+  ];
   const SUF = /\s+(?:(?:para|pra|so|somente|em|no|na|dia|daqui a|daqui)\s+)?((?:depois de )?amanha|hoje|(?:(?:daqui a|em)\s+)?\d{1,3}\s+dias?|(?:segunda|terca|quarta|quinta|sexta|sabado|domingo)(?:\s+feira)?|(?:a\s+)?(?:semana que vem|proxima semana)|\d{1,2}\/\d{1,2})$/;
   const ADIAR_RE = /^(?:adia|adiar|adie|reagenda|reagendar|reagende|remarca|remarcar|remarque|empurra|empurrar|empurre)\s+(?:o\s+|a\s+|pro\s+|pra\s+|para\s+)?(.+)$/;
   const RETORNO_RE = /^(?:retorna|retornar|retorne|cobra|cobrar|cobre|da retorno|dar retorno|faz retorno|fazer retorno|follow up)\s+(?:(?:pro|pra|para|ao|a|o)\s+)?(?:(?:o|a)\s+)?(.+)$/;
@@ -100,14 +112,27 @@
     /\b(meus|mostra|mostrar|lista|listar|ver|abre|abrir)\b.*\b(leads?|funil|retornos)\b/,
     /\bleads?\b.*\b(hoje|atrasad\w+|pendente\w*)\b/,
   ];
+  const NOTA_RE = new RegExp(PRE + "(?:anota|anotar|anote|registra|registrar|registre)\\s+(?:pro|pra|para|no|na)\\s+(?:o\\s+|a\\s+)?(.+?)\\s*[:,-]\\s*(.+)$", "i");
+  const VALOR_RE = new RegExp(PRE + "(?:o\\s+|a\\s+)?(.+?)\\s+(?:vale|tem valor de|proposta de|or[çc]amento de|proposta ficou em|or[çc]amento ficou em)\\s+(.+)$", "i");
 
   // t = texto normalizado (sem "jarvis"); original = texto como falado/digitado.
   function lerLead(original, t, hoje) {
+    if (/\bcrm\b|\bkanban\b|\bpipeline\b/.test(t)) {
+      if (/\b(fecha|fechar|feche|sai|sair)\b/.test(t)) return { tipo: "crm_fechar" };
+      return { tipo: "crm_abrir" };
+    }
     const nl = String(original || "").match(NOVO_LEAD);
     if (nl) return lerNovoLead(nl[1] || "");
+    let m = String(original || "").match(NOTA_RE);
+    if (m) return { tipo: "lead_nota", nome: norm(m[1]), nota: m[2].trim() };   // `nota` (e não `texto`, que o roteador sobrescreve)
+    m = t.match(/^(?:detalhes|ficha|historico|perfil)\s+(?:d[oae]s?\s+|de\s+)?(?:lead\s+)?(.+)$/) || t.match(/^(?:abre|abrir|abra|mostra|mostrar)\s+(?:o\s+)?lead\s+(?:d[oae]\s+)?(.+)$/);
+    if (m) return { tipo: "lead_detalhe", nome: m[1].trim() };
     if (LISTA_RE.some((r) => r.test(t))) return { tipo: "lead_lista", filtro: /atrasad/.test(t) ? "atrasados" : /\b(todos|meus|funil|lista|listar|mostra|mostrar|ver|abre|abrir)\b/.test(t) ? "todos" : "devidos" };
-    let m = t.match(ETAPA_RE);
+    m = t.match(ETAPA_RE);
     if (m) return { tipo: "lead_etapa", nome: m[1].trim(), etapa: ETAPA_MAP[m[2]] };
+    m = String(original || "").match(VALOR_RE);
+    const F = window.JarvisFin;
+    if (m && F && F.lerValor(m[2]) > 0) return { tipo: "lead_valor", nome: norm(m[1]), valor: F.lerValor(m[2]) };
     m = t.match(ADIAR_RE) || t.match(RETORNO_RE);
     if (m) {
       const resto = m[1].trim(), sf = resto.match(SUF);
@@ -118,8 +143,44 @@
       }
       return ehAdiar ? { tipo: "lead_adiar", nome: resto, quando: null } : { tipo: "lead_retorno", nome: resto };
     }
-    m = t.match(ETAPA_SOLTA);
-    if (m && t.split(" ").length <= 5) return { tipo: "lead_etapa", nome: m[1].trim(), etapa: ETAPA_MAP[m[2]], solto: true };
+    if (t.split(" ").length <= 8) for (const [re, etapa] of SOLTAS) { m = t.match(re); if (m) return { tipo: "lead_etapa", nome: m[1].trim(), etapa, solto: true }; }
+    return null;
+  }
+
+  // ---------- financeiro (modo Contador) ----------
+  // Monta { tipo, valor, descricao, status, data, vencimento } a partir do texto depois do verbo.
+  function montarLanc(rest, tipo, status, hoje) {
+    const F = window.JarvisFin, L = window.JarvisLeads;
+    let s = " " + rest + " ", venc = null, data = null;
+    const mv = s.match(/\bvenc\w*\s+(?:no\s+|em\s+)?(.+?)\s*$/i);
+    if (mv) { venc = L.dataDe(mv[1], hoje); s = s.slice(0, mv.index); status = "pendente"; }
+    const md = s.match(/\b(anteontem|ontem|hoje|dia\s+\d{1,2}|\d{1,2}\/\d{1,2})\b/i);
+    if (md && !mv) { data = L.dataDe(md[1], hoje); s = s.replace(md[0], " "); }
+    const valor = F.lerValor(s);
+    if (valor == null) return { tipo: "fin_lancar", erro: "valor", lanc: { tipo, status, descricao: s.trim() } };
+    s = s.replace(/R\$\s*/gi, "").replace(/(\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?|\d+(?:[.,]\d+)?)(\s*mil\b)?(\s*reais?)?/i, " ");
+    const descricao = s.replace(/\s+/g, " ").trim().replace(/^(?:de|do|da|dos|das|com|no|na|em|pra|pro|para|um|uma|o|a|valor)\s+/i, "").replace(/\s+(?:de|do|da|com|no|na|em)$/i, "").trim();
+    return { tipo: "fin_lancar", lanc: { tipo, valor, descricao, status, data, vencimento: venc } };
+  }
+  function lerFin(original, t, hoje) {
+    const F = window.JarvisFin; if (!F) return null;
+    if (/\b(fecha|fechar|feche|fechamento)\b.*\b(mes|caixa|financeiro)\b/.test(t)) return { tipo: "fin_fechar", mes: F.mesDeTexto(t, hoje) };
+    const temNumero = /\d/.test(original);      // com valor, "conta de X 189,90" é lançamento; sem valor, é consulta
+    if (!temNumero && (/\b(contas?|boletos?|despesas?)\b.*\b(pagar|vencer|vencem|vence|atrasad\w+|pendentes?)\b/.test(t) || /\b(o que|quanto)\b.*\b(tenho|falta|preciso|devo)\b.*\bpagar\b/.test(t))) return { tipo: "fin_pendentes" };
+    if (/\b(quanto|resumo|balanco|como (?:esta|foi|ficou|anda))\b.*\b(gastei|gasto|gastos|recebi|faturei|faturamento|lucro|financeiro|financas|caixa|saldo|receita|receitas|despesa|despesas)\b/.test(t)
+      || /^(?:resumo|balanco)\s+(?:do\s+|de\s+)?(?:mes|financeiro)/.test(t) || /\bfinanceiro\b.*\b(mes|resumo)\b/.test(t)) return { tipo: "fin_resumo", mes: F.mesDeTexto(t, hoje) };
+    let m = original.match(new RegExp(PRE + "(?:lan[çc]a|lan[çc]ar|lance|registra|registrar|registre|anota|anotar|anote|adiciona|adicionar|adicione)\\s+(?:uma\\s+|um\\s+)?(despesa|gasto|conta|boleto|receita|entrada|recebimento|pagamento)\\b\\s*(.*)$", "i"));
+    if (m) { const rec = /receita|entrada|recebimento/i.test(m[1]); return montarLanc(m[2], rec ? "receita" : "despesa", /conta|boleto/i.test(m[1]) ? "pendente" : "pago", hoje); }
+    m = original.match(new RegExp(PRE + "(?:recebi|entrou|caiu|ganhei|faturei)\\s+(.+)$", "i"));
+    if (m) return montarLanc(m[1], "receita", "pago", hoje);
+    m = original.match(new RegExp(PRE + "(?:paguei|quitei|dei baixa(?:\\s+n[ao])?|baixa|gastei|comprei)\\s+(.+)$", "i"));
+    if (m) {
+      const r = montarLanc(m[1], "despesa", "pago", hoje);
+      if (r.erro === "valor" && /^(?:paguei|quitei|dei baixa|baixa)/i.test(original.replace(new RegExp(PRE, "i"), ""))) return { tipo: "fin_pagar", nome: norm(m[1]).replace(/^(?:a|o|as|os)\s+/, "").replace(/^(?:conta|boleto|fatura)\s+(?:de|da|do)\s+/, "").replace(/^(?:conta|boleto|fatura)\s+/, "") };
+      return r;
+    }
+    m = original.match(new RegExp(PRE + "(?:conta|boleto|fatura)\\s+(?:de\\s+|da\\s+|do\\s+)?(.+)$", "i"));
+    if (m) return montarLanc(m[1], "despesa", "pendente", hoje);
     return null;
   }
 
@@ -135,6 +196,8 @@
 
     const lead = lerLead(textoBruto, t, hoje);
     if (lead) return { ...lead, texto: t };
+    const fin = lerFin(textoBruto, t, hoje);
+    if (fin) return { ...fin, texto: t };
 
     const msg = lerMensagem(textoBruto);
     if (msg) return { tipo: "mensagem", texto: t, nome: msg.nome, mensagem: msg.mensagem };
@@ -187,12 +250,67 @@
     return null;
   }
 
+
+  // ---------- cérebro: Claude (capacidade `sample` do claude.ai) ----------
+  // Só informa, orienta e propõe. NUNCA executa: ações passam pelo roteador
+  // determinístico, com o seu "confirma" quando for o caso.
+  let amostra;
+  async function obterAmostra() {
+    if (amostra !== undefined) return amostra;
+    try { amostra = window.claude && typeof window.claude.use === "function" ? await window.claude.use("sample") : null; } catch (_) { amostra = null; }
+    return amostra;
+  }
+  const COMANDOS = ["quem preciso retornar hoje", "meus leads", "abre o CRM", "retorna pro <nome>", "adia o <nome> para <data>", "o <nome> demonstrou interesse", "passei a proposta pro <nome>",
+    "contas a pagar", "resumo do mês", "lança despesa <valor> <descrição>", "recebi <valor> de <descrição>", "fecha o mês", "ativa o agente <nome do agente>", "volta ao normal"];
+  function montarPrompt(a) {
+    const hojeExt = new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+    const conversa = (a.historico || []).slice(-4).map((h) => `${h.quem === "voce" ? "Usuário" : "Jarvis"}: ${h.texto}`).join("\n");
+    return [
+      "Você é o Jarvis, assistente pessoal de voz de um(a) dono(a) de clínica odontológica no Brasil. Trate-o(a) por você, de forma direta, objetiva e útil, como um chefe de gabinete muito eficiente.",
+      `Hoje é ${hojeExt}.`,
+      `Modo ativo: ${a.modo.nome}. ${a.modo.instrucao || ""}`,
+      "REGRAS: responda em português do Brasil. Você NÃO executa nada: só informa, orienta e propõe. Nunca diga que enviou, pagou, agendou, publicou ou alterou algo. Não invente dados: use só o CONTEXTO; se faltar algo, diga o que falta. Não peça dados clínicos nem sensíveis de pacientes.",
+      'FORMATO: responda SOMENTE um JSON {"fala": string, "titulo": string|null, "itens": string[]|null, "acoes": string[]|null}.',
+      "- fala: no máximo 2 frases curtas para serem lidas em voz alta (sem listas, sem markdown, sem emojis).",
+      "- titulo: título curto do que aparece na tela, ou null.",
+      "- itens: até 8 linhas curtas com os detalhes. Se o pedido for para CRIAR texto (legenda, roteiro, mensagem, prompt), cada item é uma opção completa, pronta para copiar. null se não precisar.",
+      "- acoes: até 4 comandos que o usuário pode dizer em seguida, escolhidos APENAS desta lista (troque <...> por valores reais do contexto): " + COMANDOS.join(" | ") + ". null se não houver.",
+      "",
+      "CONTEXTO:", a.contexto || "(sem dados)", "",
+      conversa ? "CONVERSA RECENTE:\n" + conversa + "\n" : "",
+      "PEDIDO DO USUÁRIO: " + a.texto,
+    ].join("\n");
+  }
+  function limparResposta(r) {
+    if (typeof r === "string") r = { fala: r };
+    if (!r || typeof r !== "object") return null;
+    const arr = (x, n, max) => (Array.isArray(x) ? x.map((i) => String(i == null ? "" : i).trim().slice(0, max)).filter(Boolean).slice(0, n) : []);
+    const fala = String(r.fala || "").trim().slice(0, 500);
+    if (!fala) return null;
+    return { fala, titulo: r.titulo ? String(r.titulo).trim().slice(0, 80) : null, itens: arr(r.itens, 8, 600), acoes: arr(r.acoes, 4, 70) };
+  }
+  // Devolve { fala, titulo, itens, acoes } | { erro: "indisponivel"|"limite"|"falha" } | null (sem Claude aqui)
+  async function perguntarClaude(a) {
+    const s = await obterAmostra();
+    if (!s) return null;
+    try { return limparResposta(await s.json(montarPrompt(a), { modelTier: "quick", cache: false })) || { erro: "falha" }; }
+    catch (e) {
+      const c = e && e.code;
+      if (["not_granted", "sampling_disabled", "not_declared", "capability_disabled", "capability_removed"].includes(c)) { amostra = null; return { erro: "indisponivel" }; }
+      if (c === "rate_limited") return { erro: "limite" };
+      if (c === "invalid_json" && e.text) return limparResposta({ fala: String(e.text).replace(/[{}"]/g, "").slice(0, 400) }) || { erro: "falha" };
+      return { erro: "falha" };
+    }
+  }
+
   window.JarvisBrain = {
     norm,
     chamou,
     interpretar,
     acharContato,
     linkWhatsapp,
+    perguntarClaude,
+    montarPrompt,
     demoResponder,
 
     // Pergunta aberta: backend se existir; senão, demonstração honesta.

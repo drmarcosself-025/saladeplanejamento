@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), "../web");
 const win = {};
 const ctx = vm.createContext({ window: win, TextDecoder, localStorage: undefined });
-for (const f of ["modes.js", "contacts.js", "leads.js", "brain.js"]) vm.runInContext(fs.readFileSync(path.join(dir, f), "utf8"), ctx);
+for (const f of ["modes.js", "contacts.js", "store.js", "leads.js", "fin.js", "brain.js"]) vm.runInContext(fs.readFileSync(path.join(dir, f), "utf8"), ctx);
 const L = win.JarvisLeads, B = win.JarvisBrain, M = win.JARVIS_MODES;
 const j = (x) => JSON.parse(JSON.stringify(x));
 const QUA = new Date(2026, 10, 11, 10, 0);      // quarta, 11/11/2026
@@ -51,19 +51,22 @@ test("novo lead nasce 'novo' com retorno hoje; telefone ruim é recusado", () =>
 test("fechou/perdido não cobram; reativar devolve data; ativo sem data ganha hoje", () => {
   const l = L.novo({ nome: "Ana", tel: "63 97777-1111" }, QUA);
   const f = j(L.comEtapa(l, "fechou", QUA)); assert.equal(f.proximo, "");
-  const r = j(L.comEtapa(f, "conversando", QUA)); assert.equal(r.proximo, "2026-11-11");
-  assert.equal(L.garantirRegra({ etapa: "orcamento", proximo: "" }, QUA).proximo, "2026-11-11");
+  const r = j(L.comEtapa(f, "interessado", QUA)); assert.equal(r.proximo, "2026-11-13");   // entra na etapa: cobra em 2 dias
+  assert.equal(L.garantirRegra({ etapa: "proposta", proximo: "" }, QUA).proximo, "2026-11-11");
+  assert.equal(L.migrar({ etapa: "conversando" }).etapa, "interessado");          // nomes antigos migram
+  assert.equal(L.migrar({ etapa: "orcamento" }).etapa, "proposta");
+  assert.equal(L.migrar({ etapa: "perdido" }).etapa, "sem_interesse");
 });
-test("depois do contato: registra, novo→conversando e próximo em +2 dias", () => {
+test("depois do contato: registra o contato e o próximo em +2 dias (etapa não muda sozinha)", () => {
   const l = L.novo({ nome: "Ana", tel: "63 97777-1111" }, QUA);
   const a = j(L.aposContato(l, QUA));
-  assert.equal(a.ultimoContato, "2026-11-11"); assert.equal(a.etapa, "conversando"); assert.equal(a.proximo, "2026-11-13");
-  assert.equal(j(L.aposContato({ ...l, etapa: "orcamento" }, QUA)).etapa, "orcamento");   // outras etapas não mudam
+  assert.equal(a.ultimoContato, "2026-11-11"); assert.equal(a.etapa, "novo"); assert.equal(a.proximo, "2026-11-13");
+  assert.match(a.historico[a.historico.length - 1].texto, /Retorno enviado/);
 });
 test("filtros e resumo: atrasados, hoje, devidos, encerrados fora", () => {
   const mk = (n, tel, etapa, proximo) => ({ ...L.novo({ nome: n, tel }, QUA), etapa, proximo });
-  const ls = [mk("A", "63 91111-0001", "novo", "2026-11-09"), mk("B", "63 91111-0002", "conversando", "2026-11-11"),
-              mk("C", "63 91111-0003", "orcamento", "2026-11-15"), mk("D", "63 91111-0004", "fechou", ""), mk("E", "63 91111-0005", "perdido", "")];
+  const ls = [mk("A", "63 91111-0001", "novo", "2026-11-09"), mk("B", "63 91111-0002", "interessado", "2026-11-11"),
+              mk("C", "63 91111-0003", "proposta", "2026-11-15"), mk("D", "63 91111-0004", "fechou", ""), mk("E", "63 91111-0005", "sem_interesse", "")];
   assert.deepEqual(j(L.filtrar(ls, "atrasados", QUA)).map((l) => l.nome), ["A"]);
   assert.deepEqual(j(L.filtrar(ls, "hoje", QUA)).map((l) => l.nome), ["B"]);
   assert.deepEqual(j(L.filtrar(ls, "devidos", QUA)).map((l) => l.nome), ["A", "B"]);
@@ -74,7 +77,7 @@ test("filtros e resumo: atrasados, hoje, devidos, encerrados fora", () => {
 test("mensagem de retorno por etapa, sem prometer preço", () => {
   const base = L.novo({ nome: "Maria Souza", tel: "63 98888-7777", interesse: "Lentes" }, QUA);
   assert.match(L.mensagemRetorno(base), /Olá, Maria!.*interesse em lentes/);
-  assert.match(L.mensagemRetorno({ ...base, etapa: "orcamento" }), /avaliar o orçamento sobre lentes/);
+  assert.match(L.mensagemRetorno({ ...base, etapa: "proposta" }), /avaliar a proposta sobre lentes/);
   assert.match(L.mensagemRetorno({ ...base, etapa: "agendou" }), /confirmar a sua consulta/);
   assert.doesNotMatch(L.mensagemRetorno(base), /R\$|desconto|promo/i);
 });
@@ -107,9 +110,11 @@ test("retornar, adiar e mudar etapa", () => {
   r = it("adia a Maria"); assert.deepEqual([r.tipo, r.nome, r.quando], ["lead_adiar", "maria", null]);   // app pergunta a data
   r = it("cobra a Maria daqui a 3 dias"); assert.equal(r.quando, "2026-11-14");
   r = it("marca o João como agendou"); assert.deepEqual([r.tipo, r.etapa], ["lead_etapa", "agendou"]);
-  r = it("marca a Maria como orçamento enviado"); assert.equal(r.etapa, "orcamento");
+  r = it("marca a Maria como orçamento enviado"); assert.equal(r.etapa, "proposta");
   r = it("o João fechou"); assert.deepEqual([r.tipo, r.etapa, r.solto], ["lead_etapa", "fechou", true]);
-  assert.equal(it("a Maria desistiu").etapa, "perdido");
+  assert.equal(it("a Maria desistiu").etapa, "sem_interesse");
+  for (const [t, e] of [["o João demonstrou interesse", "interessado"], ["passei a proposta pro João", "proposta"], ["o João não quis", "sem_interesse"], ["o João ficou de dar retorno", "aguardando"], ["agendei a Maria", "agendou"]])
+    assert.equal(it(t).etapa, e, t);
 });
 test("não rouba comandos já existentes", () => {
   assert.equal(it("retorna ao normal").tipo, "sair"); assert.equal(it("volta ao normal").tipo, "sair");
@@ -117,7 +122,7 @@ test("não rouba comandos já existentes", () => {
   assert.equal(it("manda mensagem pro João dizendo oi").tipo, "mensagem");
   assert.equal(it("como está o tráfego hoje").tipo, "pergunta");
   assert.equal(it("E-mails para responder").tipo, "pergunta");
-  assert.equal(it("Quais contas vencem esta semana?").tipo, "pergunta");
+  assert.equal(it("Quais contas vencem esta semana?").tipo, "fin_pendentes");   // agora é do Contador
   assert.equal(it("Confirmar pacientes de amanhã").tipo, "pergunta");
 });
 test("modo Leads existe, é ativo e substituiu o WhatsApp planejado", () => {

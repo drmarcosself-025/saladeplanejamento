@@ -1,21 +1,20 @@
-// Leads: funil simples com data de retorno obrigatória.
-// REGRA CENTRAL: todo lead ativo tem uma data de próximo contato. É isso que
-// impede que ele se perca: o que passou da data aparece como "atrasado".
-//
-// Armazenamento:
-//   - dentro do claude.ai: capacidade `db` (sincroniza iPhone e computador;
-//     um documento por lead, id = telefone, então não há duplicata);
-//   - fora (ou se o db não estiver disponível): localStorage deste navegador.
-// A parte pura (datas, funil, mensagens, CSV) é testável em Node.
+// Leads: funil com data de retorno obrigatória, histórico e valor.
+// REGRA CENTRAL: todo lead ativo tem uma data de próximo contato. O que passou
+// da data aparece como atrasado. É isso que impede que ele se perca.
+// A parte pura (datas, funil, mensagens, CSV) é testável em Node; o
+// armazenamento vem de store.js.
 (function () {
   const ETAPAS = [
-    { id: "novo", nome: "Novo" }, { id: "conversando", nome: "Conversando" },
-    { id: "orcamento", nome: "Orçamento enviado" }, { id: "agendou", nome: "Agendou" },
-    { id: "fechou", nome: "Fechou" }, { id: "perdido", nome: "Perdido" },
+    { id: "novo", nome: "Novo contato" }, { id: "interessado", nome: "Interessado" },
+    { id: "proposta", nome: "Proposta enviada" }, { id: "aguardando", nome: "Aguardando retorno" },
+    { id: "agendou", nome: "Agendou" }, { id: "fechou", nome: "Fechou" }, { id: "sem_interesse", nome: "Sem interesse" },
   ];
-  const ATIVAS = new Set(["novo", "conversando", "orcamento", "agendou"]);
+  const ATIVAS = new Set(["novo", "interessado", "proposta", "aguardando", "agendou"]);
+  const ALIAS = { conversando: "interessado", orcamento: "proposta", perdido: "sem_interesse" };   // nomes antigos
+  // Em quantos dias cobrar de novo quando o lead entra na etapa (se o retorno já venceu).
+  const DIAS_PADRAO = { novo: 0, interessado: 2, proposta: 2, aguardando: 3, agendou: 1 };
   const ORIGENS = ["Instagram", "Google", "Facebook", "Indicação", "WhatsApp", "Outro"];
-  const nomeEtapa = (id) => (ETAPAS.find((e) => e.id === id) || { nome: id }).nome;
+  const nomeEtapa = (id) => (ETAPAS.find((e) => e.id === (ALIAS[id] || id)) || { nome: id }).nome;
   const ativo = (l) => ATIVAS.has(l.etapa);
   const norm = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9 /]/g, " ").replace(/\s+/g, " ").trim();
 
@@ -35,12 +34,14 @@
     return `${proximo.slice(8, 10)}/${proximo.slice(5, 7)}`;
   }
   const DIAS = { domingo: 0, segunda: 1, terca: 2, quarta: 3, quinta: 4, sexta: 5, sabado: 6 };
-  // "amanhã", "daqui a 3 dias", "sexta", "15/12", "dia 20", "semana que vem" → AAAA-MM-DD (ou null)
+  // "amanhã", "ontem", "daqui a 3 dias", "sexta", "15/12", "dia 20", "semana que vem" → AAAA-MM-DD (ou null)
   function dataDe(texto, agora) {
     agora = agora || new Date();
     const t = norm(texto), hoje = iso(agora);
     if (/\bdepois de amanha\b/.test(t)) return somar(hoje, 2);
     if (/\bamanha\b/.test(t)) return somar(hoje, 1);
+    if (/\bantes de ontem\b|\banteontem\b/.test(t)) return somar(hoje, -2);
+    if (/\bontem\b/.test(t)) return somar(hoje, -1);
     if (/\bhoje\b/.test(t)) return hoje;
     let m = t.match(/\b(?:daqui a|em)\s+(\d{1,3})\s+dias?\b/) || t.match(/^(\d{1,3})\s+dias?$/);
     if (m) return somar(hoje, +m[1]);
@@ -50,7 +51,7 @@
     m = t.match(/\b(\d{1,2})\/(\d{1,2})\b/);
     if (m) {
       const dia = +m[1], mes = +m[2]; if (mes < 1 || mes > 12 || dia < 1 || dia > 31) return null;
-      let a = agora.getFullYear(), s = `${a}-${p2(mes)}-${p2(dia)}`;
+      const a = agora.getFullYear(); let s = `${a}-${p2(mes)}-${p2(dia)}`;
       if (s < hoje) s = `${a + 1}-${p2(mes)}-${p2(dia)}`;
       return iso(deIso(s)) === s ? s : null;
     }
@@ -69,19 +70,29 @@
   const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
   const primeiroNome = (n) => limpa(n).split(" ")[0];
 
-  // Cria o objeto de um lead novo, ou { erro } se o telefone não serve.
+  // Acrescenta uma linha ao histórico (as 40 mais recentes ficam).
+  function comHist(l, texto, agora) {
+    const h = (l.historico || []).concat([{ ts: (agora || new Date()).toISOString(), texto }]);
+    return { ...l, historico: h.slice(-40) };
+  }
+  // Lê o que veio do armazenamento: nomes antigos de etapa, campos novos.
+  function migrar(l) {
+    const etapa = ALIAS[l.etapa] || l.etapa || "novo";
+    return { ...l, etapa, historico: Array.isArray(l.historico) ? l.historico : [], valor: typeof l.valor === "number" ? l.valor : null, notas: l.notas || "" };
+  }
   function novo(d, agora) {
     agora = agora || new Date();
-    const C = window.JarvisContatos;
-    const n = C.normalizarTel(d.tel);
+    const C = window.JarvisContatos, n = C.normalizarTel(d.tel);
     if (!n.tel) return { erro: n.motivo === "fixo" ? "fixo" : "telefone" };
     const nome = limpa(d.nome).slice(0, 60) || C.formatarTel(n.tel);
-    return {
+    const l = {
       id: n.tel, nome, tel: C.formatarTel(n.tel), origem: cap(limpa(d.origem)).slice(0, 40), interesse: limpa(d.interesse).slice(0, 80),
       etapa: "novo", proximo: iso(agora), criado: agora.toISOString(), atualizado: agora.toISOString(), ultimoContato: "", notas: "",
+      valor: typeof d.valor === "number" && d.valor > 0 ? d.valor : null, historico: [],
     };
+    return comHist(l, "Entrou como lead" + (l.origem ? ` (${l.origem})` : ""), agora);
   }
-  // Garante a regra central: lead ativo sempre tem data; fechado/perdido não cobra.
+  // Garante a regra central: lead ativo sempre tem data; encerrado não cobra.
   function garantirRegra(l, agora) {
     const hoje = iso(agora || new Date()), r = { ...l };
     if (ativo(r) && !r.proximo) r.proximo = hoje;
@@ -89,23 +100,39 @@
     return r;
   }
   function comEtapa(l, etapa, agora) {
-    agora = agora || new Date();
-    return garantirRegra({ ...l, etapa, atualizado: agora.toISOString() }, agora);
+    agora = agora || new Date(); etapa = ALIAS[etapa] || etapa;
+    if (l.etapa === etapa) return l;
+    const hoje = iso(agora);
+    let r = { ...l, etapa, atualizado: agora.toISOString() };
+    if (ativo(r)) { if (!r.proximo || r.proximo <= hoje) r.proximo = somar(hoje, DIAS_PADRAO[etapa] || 0); } else r.proximo = "";
+    return comHist(r, `Etapa: ${nomeEtapa(l.etapa)} → ${nomeEtapa(etapa)}`, agora);
   }
   function comProximo(l, proximo, agora) {
     agora = agora || new Date();
-    return garantirRegra({ ...l, proximo, atualizado: agora.toISOString() }, agora);
+    const r = garantirRegra({ ...l, proximo, atualizado: agora.toISOString() }, agora);
+    return comHist(r, `Retorno marcado para ${proximo.slice(8, 10)}/${proximo.slice(5, 7)}`, agora);
+  }
+  function comNota(l, texto, agora) {
+    agora = agora || new Date();
+    return comHist({ ...l, atualizado: agora.toISOString() }, "Nota: " + limpa(texto).slice(0, 300), agora);
+  }
+  function comValor(l, valor, agora) {
+    agora = agora || new Date();
+    const v = typeof valor === "number" && valor > 0 ? valor : null;
+    if (v === l.valor) return l;
+    return comHist({ ...l, valor: v, atualizado: agora.toISOString() }, v ? `Valor estimado: R$ ${v.toFixed(2).replace(".", ",")}` : "Valor removido", agora);
   }
   // Depois de contatar: registra o contato e já marca o próximo (padrão: +2 dias).
   function aposContato(l, agora, dias) {
     agora = agora || new Date();
     const hoje = iso(agora);
-    return garantirRegra({ ...l, ultimoContato: hoje, etapa: l.etapa === "novo" ? "conversando" : l.etapa, proximo: somar(hoje, dias || 2), atualizado: agora.toISOString() }, agora);
+    const r = garantirRegra({ ...l, ultimoContato: hoje, proximo: somar(hoje, dias || 2), atualizado: agora.toISOString() }, agora);
+    return comHist(r, "Retorno enviado por WhatsApp", agora);
   }
   function ordenar(ls) {
     return ls.slice().sort((a, b) => (a.proximo || "9999").localeCompare(b.proximo || "9999") || String(a.criado).localeCompare(String(b.criado)));
   }
-  // filtro: "hoje" (vence hoje), "atrasados", "devidos" (hoje + atrasados), "todos" (ativos)
+  // filtro: "hoje", "atrasados", "devidos" (hoje + atrasados), "todos" (ativos)
   function filtrar(ls, filtro, agora) {
     const hoje = iso(agora || new Date());
     const a = ls.filter(ativo);
@@ -117,14 +144,25 @@
   }
   function resumo(ls, agora) {
     const hoje = iso(agora || new Date());
-    const a = ls.filter(ativo), funil = {};
-    for (const e of ETAPAS) funil[e.id] = ls.filter((l) => l.etapa === e.id).length;
+    const a = ls.filter(ativo), funil = {}, valorPorEtapa = {};
+    for (const e of ETAPAS) {
+      const ds = ls.filter((l) => l.etapa === e.id);
+      funil[e.id] = ds.length; valorPorEtapa[e.id] = ds.reduce((s, l) => s + (l.valor || 0), 0);
+    }
+    const encerrados = funil.fechou + funil.sem_interesse;
+    const porOrigem = {};
+    for (const l of ls) { const o = l.origem || "Sem origem"; (porOrigem[o] = porOrigem[o] || { total: 0, fechou: 0 }).total++; if (l.etapa === "fechou") porOrigem[o].fechou++; }
+    const fechados = ls.filter((l) => l.etapa === "fechou");
     return {
-      total: ls.length, ativos: a.length, funil,
+      total: ls.length, ativos: a.length, funil, valorPorEtapa,
       hoje: a.filter((l) => l.proximo === hoje).length,
       atrasados: a.filter((l) => l.proximo && l.proximo < hoje).length,
       semData: a.filter((l) => !l.proximo).length,
-      fechados: funil.fechou, perdidos: funil.perdido,
+      fechados: funil.fechou, perdidos: funil.sem_interesse, semInteresse: funil.sem_interesse,
+      emAberto: a.reduce((s, l) => s + (l.valor || 0), 0),                       // valor estimado de tudo que está ativo
+      conversao: encerrados ? funil.fechou / encerrados : null,                    // fechou ÷ (fechou + sem interesse)
+      ticket: fechados.length && fechados.some((l) => l.valor) ? fechados.reduce((s, l) => s + (l.valor || 0), 0) / fechados.filter((l) => l.valor).length : null,
+      porOrigem,
     };
   }
   // Sugestão de mensagem de retorno por etapa (curta, sem prometer preço nem resultado).
@@ -132,80 +170,29 @@
     const nome = primeiroNome(l.nome), tema = l.interesse ? l.interesse.toLowerCase() : "";
     const sobre = tema ? ` sobre ${tema}` : "";
     switch (l.etapa) {
-      case "orcamento": return `Oi, ${nome}! Conseguiu avaliar o orçamento${sobre}? Se tiver qualquer dúvida, posso te explicar tudo por aqui. 😊`;
+      case "proposta": return `Oi, ${nome}! Conseguiu avaliar a proposta${sobre}? Se tiver qualquer dúvida, posso te explicar tudo por aqui. 😊`;
+      case "aguardando": return `Oi, ${nome}! Passando para saber se você conseguiu pensar com calma${sobre}. Posso te ajudar em algo? 😊`;
       case "agendou": return `Oi, ${nome}! Passando para confirmar a sua consulta. Está tudo certo para você?`;
-      case "conversando": return `Oi, ${nome}! Passando para saber se ficou alguma dúvida${sobre}. Posso te ajudar a escolher um horário? 😊`;
+      case "interessado": return `Oi, ${nome}! Passando para saber se ficou alguma dúvida${sobre}. Posso te ajudar a escolher um horário? 😊`;
       default: return `Olá, ${nome}! Aqui é da clínica. Vi que você tem interesse${tema ? " em " + tema : ""}. Posso te passar mais informações ou já agendar uma avaliação? 😊`;
     }
   }
   function csv(ls) {
-    const cab = ["Nome", "Telefone", "Origem", "Interesse", "Etapa", "Próximo contato", "Último contato", "Criado em"];
+    const cab = ["Nome", "Telefone", "Origem", "Interesse", "Etapa", "Valor estimado", "Próximo contato", "Último contato", "Criado em"];
     const q = (v) => `"${String(v == null ? "" : v).replace(/"/g, '""')}"`;
-    const linhas = ordenar(ls).map((l) => [l.nome, l.tel, l.origem, l.interesse, nomeEtapa(l.etapa), l.proximo, l.ultimoContato, String(l.criado || "").slice(0, 10)].map(q).join(";"));
+    const linhas = ordenar(ls).map((l) => [l.nome, l.tel, l.origem, l.interesse, nomeEtapa(l.etapa), l.valor == null ? "" : String(l.valor).replace(".", ","), l.proximo, l.ultimoContato, String(l.criado || "").slice(0, 10)].map(q).join(";"));
     return "﻿" + [cab.map(q).join(";"), ...linhas].join("\r\n") + "\r\n";
   }
 
-  // ---------- armazenamento ----------
-  const LS = "jarvis_leads_v1";
-  const S = { modo: "local", db: null, leads: [], ouvintes: [], aviso: "", confirmado: false, timer: 0, filas: {} };
-  const avisar = () => S.ouvintes.forEach((f) => { try { f(); } catch (_) {} });
-  function msgErro(e) {
-    const c = e && e.code;
-    if (c === "quota_exceeded") return "O armazenamento do claude.ai está cheio. Apague leads antigos (fechados ou perdidos).";
-    if (c === "resource_exhausted") return "Muitas alterações seguidas. Espere um instante e tente de novo.";
-    if (c === "invalid_argument") return "Só o dono do artefato pode gravar leads.";
-    if (c === "revoked" || c === "not_granted") return "Sem acesso ao armazenamento do claude.ai nesta sessão.";
-    return "Não consegui salvar agora. Tente de novo.";
-  }
-  function lerLocal() { try { return JSON.parse(localStorage.getItem(LS) || "[]"); } catch (_) { return []; } }
-  function gravarLocal() { try { localStorage.setItem(LS, JSON.stringify(S.leads)); return true; } catch (_) { S.aviso = "Não coube no armazenamento do navegador."; return false; } }
-  const enfileirar = (id, fn) => {
-    const p = (S.filas[id] || Promise.resolve()).then(fn, fn);
-    S.filas[id] = p.catch(() => {}); return p;
-  };
-
-  async function iniciar() {
-    let db = null;
-    try { if (window.claude && typeof window.claude.use === "function") db = await window.claude.use("db"); } catch (_) { db = null; }
-    if (!db) { S.modo = "local"; S.leads = lerLocal(); avisar(); return S.modo; }
-    S.modo = "claude"; S.db = db;
-    S.timer = setTimeout(() => { if (!S.confirmado) { S.aviso = "Ainda não consegui alcançar o armazenamento do claude.ai. Os leads podem estar desatualizados."; avisar(); } }, 10000);
-    db.collection("leads").onSnapshot((snap) => {
-      S.leads = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      if (!snap.metadata.fromCache) { S.confirmado = true; clearTimeout(S.timer); S.aviso = ""; }
-      avisar();
-    }, (e) => { S.aviso = msgErro(e); avisar(); });
-    return S.modo;
-  }
-  // Grava (cria ou substitui) um lead. Devolve true/false.
-  async function salvar(lead) {
-    const { id, ...corpo } = lead;
-    if (S.modo === "claude") {
-      try { await enfileirar(id, () => S.db.doc("leads/" + id).set(corpo)); S.aviso = ""; return true; }
-      catch (e) { S.aviso = msgErro(e); avisar(); return false; }
-    }
-    const i = S.leads.findIndex((l) => l.id === id);
-    if (i >= 0) S.leads[i] = lead; else S.leads.push(lead);
-    const ok = gravarLocal(); avisar(); return ok;
-  }
-  async function remover(id) {
-    if (S.modo === "claude") {
-      try { await enfileirar(id, () => S.db.doc("leads/" + id).delete()); return true; }
-      catch (e) { S.aviso = msgErro(e); avisar(); return false; }
-    }
-    S.leads = S.leads.filter((l) => l.id !== id); gravarLocal(); avisar(); return true;
-  }
+  const store = window.JarvisStore.criar({ colecao: "leads", chaveLocal: "jarvis_leads_v1", normalizar: migrar });
 
   window.JarvisLeads = {
-    ETAPAS, ORIGENS, nomeEtapa, ativo,
+    ETAPAS, ORIGENS, nomeEtapa, ativo, migrar, DIAS_PADRAO,
     // puras
-    iso, somar, rotulo, dataDe, novo, garantirRegra, comEtapa, comProximo, aposContato, ordenar, filtrar, resumo, mensagemRetorno, csv,
+    iso, deIso, somar, dif, rotulo, dataDe, novo, garantirRegra, comEtapa, comProximo, comNota, comValor, aposContato, ordenar, filtrar, resumo, mensagemRetorno, csv,
     // armazenamento
-    iniciar, salvar, remover,
-    lista: () => S.leads.slice(),
-    get modo() { return S.modo; }, get aviso() { return S.aviso; },
-    aoMudar(f) { S.ouvintes.push(f); },
-    buscar(consulta) { return window.JarvisBrain.acharContato(consulta, S.leads); },
-    porId: (id) => S.leads.find((l) => l.id === id) || null,
+    iniciar: store.iniciar, salvar: store.salvar, remover: store.remover, lista: store.lista, porId: store.porId, aoMudar: store.aoMudar,
+    get modo() { return store.modo; }, get aviso() { return store.aviso; },
+    buscar(consulta) { return window.JarvisBrain.acharContato(consulta, store.lista()); },
   };
 })();
