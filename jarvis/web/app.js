@@ -34,17 +34,20 @@
       ol.appendChild(li);
     }
   }
-  async function exportarLog() {
-    const json = JSON.stringify(ler(LOG_KEY), null, 2);
-    try {   // dentro do artefato: save() com confirmação do usuário
+  // Salva um arquivo: no claude.ai pede confirmação (downloads); fora dele, baixa; senão copia.
+  async function salvarArquivo(nome, conteudo, tipo) {
+    try {
       const dl = window.claude && window.claude.use ? await window.claude.use("downloads") : null;
-      if (dl) { await dl.save({ filename: "jarvis-log.json", data: json }); return; }
+      if (dl) { await dl.save({ filename: nome, data: conteudo }); return; }
     } catch (e) { if (e && e.code === "declined") return; }
-    try { await navigator.clipboard.writeText(json); legenda("Registro copiado para a área de transferência."); return; } catch (_) {}
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([json], { type: "application/json" })); a.download = "jarvis-log.json"; a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    try {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([conteudo], { type: tipo })); a.download = nome; a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000); return;
+    } catch (_) {}
+    try { await navigator.clipboard.writeText(conteudo); legenda("Conteúdo copiado para a área de transferência."); } catch (_) {}
   }
+  const exportarLog = () => salvarArquivo("jarvis-log.json", JSON.stringify(ler(LOG_KEY), null, 2), "application/json");
 
   // ---------- conversa (só na tela, não é guardada) ----------
   const conversa = [];
@@ -101,6 +104,171 @@
     renderContatos(); renderSugestoes(); sfx("confirmar");
     const extra = [r.fixos && `${r.fixos} fixos ignorados`, r.semTelefone && `${r.semTelefone} sem telefone`, r.invalidos && `${r.invalidos} inválidos`, (r.repetidosNoArquivo + m.repetidos) && `${r.repetidosNoArquivo + m.repetidos} repetidos`].filter(Boolean);
     msgImporta(`${m.adicionados} contatos importados` + (extra.length ? " · " + extra.join(" · ") : "") + ".", "ok");
+  }
+
+  // ---------- leads ----------
+  const L = JarvisLeads, NAO_LEAD = Symbol("nao-lead");
+  let filtroLeads = "devidos";
+  const hojeISO = () => L.iso(new Date());
+  // "hoje", "amanhã" ou "sexta-feira, 13/11" (para frases faladas)
+  function quandoHumano(d) {
+    const dif = Math.round((new Date(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10)) - new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate())) / 86400000);
+    if (dif === 0) return "hoje"; if (dif === 1) return "amanhã";
+    const sem = ["domingo", "segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado"][new Date(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10)).getDay()];
+    return `${sem}, ${d.slice(8, 10)}/${d.slice(5, 7)}`;
+  }
+  const primeiro = (n) => String(n).split(" ")[0];
+  function listaDoFiltro(todos) {
+    if (filtroLeads === "fechados") return todos.filter((l) => !L.ativo(l)).sort((a, b) => String(b.atualizado).localeCompare(String(a.atualizado)));
+    if (filtroLeads.startsWith("etapa:")) return L.ordenar(todos.filter((l) => l.etapa === filtroLeads.slice(6)));
+    return L.filtrar(todos, filtroLeads);
+  }
+  const mk = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
+
+  function renderLeads() {
+    const todos = L.lista(), r = L.resumo(todos), hoje = hojeISO();
+    $("leadsTitulo").textContent = `Leads (${r.ativos})`;
+    const urgentes = r.hoje + r.atrasados + r.semData;
+    $("leadsBadge").hidden = !urgentes; $("leadsBadge").textContent = String(urgentes);
+    $("leadsBadge").title = `${urgentes} para retornar (hoje ou atrasados)`;
+    $("leadsStatus").textContent = L.aviso || (L.modo === "claude"
+      ? "Salvo no claude.ai: aparece igual no iPhone e no computador."
+      : "Salvo só neste navegador (o armazenamento do claude.ai não está disponível aqui).");
+    $("leadsStatus").className = "small " + (L.aviso ? "bad" : "muted");
+    // funil
+    const fu = $("funil"); fu.textContent = "";
+    for (const e of L.ETAPAS) {
+      const b = mk("button", (filtroLeads === "etapa:" + e.id ? "on " : "") + (r.funil[e.id] ? "" : "zero"));
+      b.type = "button"; b.append(mk("b", "", String(r.funil[e.id])), document.createTextNode(e.nome));
+      b.addEventListener("click", () => { filtroLeads = "etapa:" + e.id; renderLeads(); });
+      fu.appendChild(b);
+    }
+    document.querySelectorAll("#leadsFiltros .fil").forEach((b) => b.classList.toggle("on", b.dataset.f === filtroLeads));
+    // lista
+    const ul = $("leadsLista"); ul.textContent = "";
+    const ls = listaDoFiltro(todos);
+    for (const l of ls.slice(0, 60)) {
+      const atrasado = L.ativo(l) && l.proximo && l.proximo < hoje, deHoje = L.ativo(l) && l.proximo === hoje;
+      const li = mk("li", "lead" + (atrasado ? " atrasado" : deHoje ? " hoje" : ""));
+      const topo = mk("div", "lead-topo"); topo.append(mk("strong", "", l.nome), mk("span", "lead-quando", L.ativo(l) ? L.rotulo(l.proximo, hoje) : L.nomeEtapa(l.etapa)));
+      const meta = mk("div", "lead-meta", [l.interesse, l.origem, l.tel].filter(Boolean).join(" · "));
+      const ac = mk("div", "lead-acoes");
+      const sel = mk("select"); sel.setAttribute("aria-label", "Etapa de " + l.nome);
+      for (const e of L.ETAPAS) { const o = mk("option", "", e.nome); o.value = e.id; sel.appendChild(o); }
+      sel.value = l.etapa; sel.addEventListener("change", () => L.salvar(L.comEtapa(l, sel.value)));
+      ac.appendChild(sel);
+      if (L.ativo(l)) {
+        const ret = mk("button", "btn", "Retornar"); ret.type = "button"; ret.addEventListener("click", () => acaoRetornar(l));
+        const mais = mk("button", "btn", "+1 dia"); mais.type = "button"; mais.title = "Adiar o retorno em um dia";
+        mais.addEventListener("click", () => L.salvar(L.comProximo(l, L.somar(l.proximo && l.proximo > hoje ? l.proximo : hoje, 1))));
+        ac.append(ret, mais);
+      }
+      const rm = mk("button", "rm", "✕"); rm.type = "button"; rm.title = "Apagar lead"; rm.setAttribute("aria-label", "Apagar " + l.nome);
+      rm.addEventListener("click", () => {            // apagar em dois toques, sem janela de confirmação
+        if (rm.dataset.armado) { L.remover(l.id); return; }
+        rm.dataset.armado = "1"; rm.textContent = "Apagar?"; setTimeout(() => { if (rm.isConnected) { delete rm.dataset.armado; rm.textContent = "✕"; } }, 3000);
+      });
+      ac.appendChild(rm);
+      li.append(topo, meta, ac); ul.appendChild(li);
+    }
+    $("leadsVazio").textContent = !todos.length ? "Nenhum lead ainda. Diga “novo lead…” ou adicione abaixo."
+      : !ls.length ? (filtroLeads === "devidos" ? "Nenhum retorno pendente. Tudo em dia." : "Nenhum lead neste filtro.")
+      : ls.length > 60 ? `Mostrando 60 de ${ls.length}.` : "";
+  }
+  // Mantém os números do modo Leads em dia quando algo muda.
+  function atualizarModoLeads() {
+    if (modoId !== "leads") return;
+    dados = { source: "seus", ...L.resumo(L.lista()) }; renderModo();
+  }
+
+  // Marca o contato feito e já define o próximo retorno (para nenhum lead ficar sem data).
+  async function registrarRetorno(p) {
+    if (!p || !p.leadId) return "";
+    const l = L.porId(p.leadId); if (!l) return "";
+    const novo = L.aposContato(l);
+    if (!(await L.salvar(novo))) return " Não consegui salvar o próximo retorno.";
+    return ` Próximo retorno marcado: ${quandoHumano(novo.proximo)}. Para outra data, diga: adia o ${primeiro(l.nome)} para sexta.`;
+  }
+  async function prepararRetorno(lead, g) {
+    const msg = L.mensagemRetorno(lead), url = JarvisBrain.linkWhatsapp(lead.tel, msg);
+    if (!url) return dizer(`O telefone de ${lead.nome} parece inválido. Corrija o lead.`, g);
+    definirPendente({
+      id: "whatsapp.abrir", nivel: "EXECUTE", titulo: `Retornar para ${lead.nome}`,
+      detalhe: [`${lead.nome} · ${lead.tel}`, [L.nomeEtapa(lead.etapa), lead.interesse].filter(Boolean).join(" · ")], exemplo: msg, url, leadId: lead.id,
+    });
+    return dizer(`Preparei o retorno para ${lead.nome}: ${msg} Diga confirma para abrir o WhatsApp com a mensagem pronta.`, g);
+  }
+  function acaoRetornar(lead) { const g = ++geracao; JarvisVoice.parar(); return prepararRetorno(lead, g); }
+
+  async function criarLeadComDados(d, g) {
+    const novo = L.novo(d);
+    if (novo.erro === "fixo") return dizer("Esse parece ser telefone fixo, e fixo não tem WhatsApp. Me passe o celular.", g);
+    if (novo.erro) { aguardando = { tipo: "lead_tel", dados: d }; return dizer(`Não entendi o telefone de ${d.nome || "o lead"}. Diga o número com DDD.`, g); }
+    $("painelLeads").open = true; filtroLeads = "devidos";
+    const ex = L.porId(novo.id);
+    if (ex) {
+      const ok = await L.salvar(L.garantirRegra({ ...ex, origem: ex.origem || novo.origem, interesse: novo.interesse || ex.interesse, atualizado: novo.atualizado }));
+      return dizer(ok ? `${ex.nome} já estava nos leads. Atualizei os dados.` : (L.aviso || "Não consegui salvar."), g);
+    }
+    if (!(await L.salvar(novo))) return dizer(L.aviso || "Não consegui salvar o lead.", g);
+    sfx("confirmar");
+    const partes = [novo.origem && `origem ${novo.origem}`, novo.interesse && `interesse em ${novo.interesse}`].filter(Boolean);
+    return dizer(`Anotei ${novo.nome} como lead novo${partes.length ? ", " + partes.join(", ") : ""}. Retorno marcado para hoje.`, g);
+  }
+  // Acha o lead pelo nome (pergunta qual se houver mais de um) e aplica `depois`.
+  async function comLead(it, g, depois) {
+    const achados = L.buscar(it.nome);
+    if (!achados.length) {
+      if (it.solto) return NAO_LEAD;                    // "o João fechou" sem lead João: era conversa comum
+      $("painelLeads").open = true;
+      return dizer(L.lista().length ? `Não achei ${it.nome} nos seus leads.` : "Você ainda não tem leads. Diga: novo lead, nome, telefone, de onde veio e o que quer.", g);
+    }
+    if (achados.length > 1) {
+      aguardando = { tipo: "lead_escolha", opcoes: achados, depois };
+      return dizer(`Achei ${achados.length}: ${achados.map((c) => c.nome).join(", ")}. Qual deles?`, g);
+    }
+    return depois(achados[0], g);
+  }
+  const aplicarEtapa = (etapa) => async (lead, g) => {
+    const novo = L.comEtapa(lead, etapa);
+    if (!(await L.salvar(novo))) return dizer(L.aviso || "Não consegui salvar.", g);
+    sfx("confirmar");
+    if (etapa === "fechou") return dizer(`Parabéns! Marquei ${lead.nome} como fechado. Ele sai da lista de retornos.`, g);
+    if (etapa === "perdido") return dizer(`Marquei ${lead.nome} como perdido. Ele sai da lista de retornos.`, g);
+    if (etapa === "agendou") return dizer(`Marquei ${lead.nome} como agendado. Para marcar o retorno de confirmação, diga: adia o ${primeiro(lead.nome)} para a data da consulta.`, g);
+    return dizer(`Marquei ${lead.nome} como ${L.nomeEtapa(etapa).toLowerCase()}. Próximo retorno: ${quandoHumano(novo.proximo)}.`, g);
+  };
+  const aplicarData = (quando) => async (lead, g) => {
+    if (!L.ativo(lead)) return dizer(`${lead.nome} está encerrado (${L.nomeEtapa(lead.etapa).toLowerCase()}). Mude a etapa antes de marcar retorno.`, g);
+    if (!(await L.salvar(L.comProximo(lead, quando)))) return dizer(L.aviso || "Não consegui salvar.", g);
+    sfx("confirmar");
+    return dizer(`Certo. Retorno de ${lead.nome} marcado para ${quandoHumano(quando)}.`, g);
+  };
+
+  async function comandoLead(it, g) {
+    if (it.tipo === "lead_novo") {
+      if (!it.nome) return dizer("Qual o nome e o telefone do lead?", g);
+      if (!it.tel) { aguardando = { tipo: "lead_tel", dados: it }; return dizer(`Qual o telefone de ${it.nome}?`, g); }
+      return criarLeadComDados(it, g);
+    }
+    if (it.tipo === "lead_lista") {
+      const todos = L.lista(); $("painelLeads").open = true;
+      if (!todos.length) { renderLeads(); return dizer("Você ainda não tem leads. Diga: novo lead, nome, telefone, de onde veio e o que quer.", g); }
+      const todosAtivos = it.filtro === "todos";
+      filtroLeads = todosAtivos ? "todos" : "devidos"; renderLeads();
+      const ls = L.filtrar(todos, it.filtro === "atrasados" ? "atrasados" : todosAtivos ? "todos" : "devidos");
+      if (!ls.length) return dizer(todosAtivos ? "Nenhum lead ativo no momento." : "Nenhum retorno pendente agora. Tudo em dia.", g);
+      const nomes = ls.slice(0, 5).map((l) => (l.interesse ? `${l.nome}, ${l.interesse}` : l.nome)).join("; ");
+      const mais = ls.length > 5 ? ` e mais ${ls.length - 5}` : "", atr = L.filtrar(todos, "atrasados").length;
+      return dizer(`${todosAtivos ? `Você tem ${ls.length} ${ls.length === 1 ? "lead ativo" : "leads ativos"}` : `Você tem ${ls.length} ${ls.length === 1 ? "retorno pendente" : "retornos pendentes"}${atr ? `, ${atr} atrasado${atr > 1 ? "s" : ""}` : ""}`}: ${nomes}${mais}.`, g);
+    }
+    if (it.tipo === "lead_etapa") return comLead(it, g, aplicarEtapa(it.etapa));
+    if (it.tipo === "lead_adiar") {
+      if (!it.quando) return comLead(it, g, async (lead, g2) => { aguardando = { tipo: "lead_data", lead }; return dizer(`Para quando marco o retorno de ${lead.nome}? Diga amanhã, sexta, daqui a 3 dias ou dia 20.`, g2); });
+      return comLead(it, g, aplicarData(it.quando));
+    }
+    if (it.tipo === "lead_retorno") return comLead(it, g, prepararRetorno);
+    return NAO_LEAD;
   }
 
   // ---------- estado visual ----------
@@ -170,9 +338,9 @@
       n.className = "n " + f.nivel; n.textContent = f.nivel; li.append(n, " " + f.desc); li.title = f.id; ul.appendChild(li);
     }
     document.querySelectorAll(".chip").forEach((c) => c.classList.toggle("on", c.dataset.modo === modoId));
-    const badge = $("badgeFonte"), live = dados.source === "live";
+    const badge = $("badgeFonte"), src = dados.source;
     badge.hidden = modoId === "normal";
-    badge.textContent = live ? "AO VIVO" : "DEMO"; badge.className = "badge " + (live ? "live" : "demo");
+    badge.textContent = src === "live" ? "AO VIVO" : src === "seus" ? "SEUS DADOS" : "DEMO"; badge.className = "badge " + (src === "demo" ? "demo" : "live");
     $("cerebro").textContent = "cérebro: " + (window.APP_CONFIG.BRAIN_URL ? "Claude (backend)" : "local");
     renderSugestoes();
   }
@@ -236,6 +404,7 @@
     modoId = id; pendente = null; aguardando = null; renderPendente();
     dados = id === "normal" ? {} : await JarvisData.get(id);
     if (g !== geracao) return;
+    if (id === "leads") { $("painelLeads").open = true; renderLeads(); }
     renderModo(); sfx("ativar"); entrada(".col.left > .panel:not([hidden]), .sugestoes .sug");
     gravarLog({ tipo: "ativar", fonte: dados.source });
     await dizer((prefixo ? prefixo + " " : "") + MODOS[id].abertura(dados), g);
@@ -251,6 +420,17 @@
   }
   async function continuarAguardando(texto, g) {
     const a = aguardando; aguardando = null;
+    if (a.tipo === "lead_tel") return criarLeadComDados({ ...a.dados, tel: texto }, g);
+    if (a.tipo === "lead_escolha") {
+      const r = JarvisBrain.acharContato(texto, a.opcoes);
+      if (r.length !== 1) { aguardando = a; return dizer(`Não entendi qual. Diga o nome completo: ${a.opcoes.map((c) => c.nome).join(", ")}.`, g); }
+      return a.depois(r[0], g);
+    }
+    if (a.tipo === "lead_data") {
+      const d = L.dataDe(texto);
+      if (!d) { aguardando = a; return dizer("Não entendi a data. Diga amanhã, sexta, daqui a 3 dias ou dia 20.", g); }
+      return aplicarData(d)(a.lead, g);
+    }
     if (a.tipo === "escolha") {
       const r = JarvisBrain.acharContato(texto, a.opcoes);
       if (r.length !== 1) { aguardando = a; return dizer(`Não entendi qual. Diga o nome completo: ${a.opcoes.map((c) => c.nome).join(", ")}.`, g); }
@@ -272,12 +452,17 @@
     // Meio de um pedido (falta o texto ou a escolha do contato): a próxima frase
     // é a resposta, a não ser que seja um comando de verdade.
     if (aguardando) {
-      const comando = ["sair", "cancelar", "ativar", "confirmar"].includes(it.tipo) || (aguardando.tipo === "texto" && it.tipo === "mensagem");
+      const comando = ["sair", "cancelar", "ativar", "confirmar"].includes(it.tipo) || (aguardando.tipo === "texto" && it.tipo === "mensagem")
+        || (it.tipo.startsWith("lead_") && !it.solto);
       if (!comando) return continuarAguardando(texto, g);
       if (it.tipo === "cancelar") { aguardando = null; return dizer("Cancelado.", g); }
       if (it.tipo !== "confirmar") aguardando = null;
     }
 
+    if (it.tipo.startsWith("lead_")) {
+      const r = await comandoLead(it, g);
+      if (r !== NAO_LEAD) return r;
+    }
     if (it.tipo === "mensagem") {
       const lista = lerContatos(), achados = JarvisBrain.acharContato(it.nome, lista);
       if (!achados.length) {
@@ -316,7 +501,8 @@
         try { w.opener = null; } catch (_) {}
         pendente = null; renderPendente(); sfx("confirmar");
         gravarLog({ tipo: "executar", entrada: p.id, fonte: "local" });
-        return dizer("Abri o WhatsApp com a mensagem pronta. É só tocar em enviar.", g);
+        const extra = await registrarRetorno(p);
+        return dizer("Abri o WhatsApp com a mensagem pronta. É só tocar em enviar." + extra, g);
       }
       pendente = null; renderPendente();
       gravarLog({ tipo: "executar", entrada: p.id, fonte: dados.source });
@@ -352,7 +538,10 @@
   $("linkWa").addEventListener("click", () => {      // link real: deixa abrir e só registra
     const p = pendente; if (!p) return;
     gravarLog({ tipo: "executar", entrada: p.id, fonte: "local" });
-    setTimeout(() => { pendente = null; renderPendente(); legenda("Abri o WhatsApp com a mensagem pronta. É só tocar em enviar."); }, 150);
+    setTimeout(async () => {
+      pendente = null; renderPendente();
+      legenda("Abri o WhatsApp com a mensagem pronta. É só tocar em enviar." + (await registrarRetorno(p)));
+    }, 150);
   });
 
   $("contatoForm").addEventListener("submit", (e) => {
@@ -386,6 +575,22 @@
     b.dataset.armado = "1"; b.textContent = `Toque de novo para apagar ${n}`;
     apagarT = setTimeout(() => { delete b.dataset.armado; b.textContent = "Apagar todos"; }, 4000);
   });
+
+  // painel de leads
+  const selO = $("leadOrigem");
+  for (const o of ["", ...L.ORIGENS]) { const op = document.createElement("option"); op.value = o; op.textContent = o || "Origem (opcional)"; selO.appendChild(op); }
+  document.querySelectorAll("#leadsFiltros .fil").forEach((b) => b.addEventListener("click", () => { filtroLeads = b.dataset.f; renderLeads(); }));
+  $("leadForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const erro = $("leadErro"), novo = L.novo({ nome: $("leadNome").value, tel: $("leadTel").value, origem: $("leadOrigem").value, interesse: $("leadInteresse").value });
+    if (novo.erro) { erro.textContent = novo.erro === "fixo" ? "Telefone fixo não tem WhatsApp. Use o celular." : "Telefone inválido. Use DDD + número."; erro.hidden = false; return; }
+    if (L.porId(novo.id)) { erro.textContent = "Esse telefone já é um lead."; erro.hidden = false; return; }
+    erro.hidden = true;
+    if (await L.salvar(novo)) { ["leadNome", "leadTel", "leadInteresse"].forEach((i) => { $(i).value = ""; }); selO.value = ""; sfx("confirmar"); }
+    else { erro.textContent = L.aviso || "Não consegui salvar."; erro.hidden = false; }
+  });
+  $("btnLeadsCsv").addEventListener("click", () => salvarArquivo(`leads-${hojeISO()}.csv`, L.csv(L.lista()), "text/csv"));
+  L.aoMudar(() => { renderLeads(); atualizarModoLeads(); });
 
   // Microfone contínuo (só em navegador comum)
   $("btnMic").addEventListener("click", async () => {
@@ -516,7 +721,8 @@
   setInterval(() => { $("relogio").textContent = new Date().toLocaleTimeString("pt-BR"); }, 1000);
 
   // ---------- início ----------
-  renderChips(); renderModo(); setEstado("idle"); renderLog(); renderContatos(); aplicarVoz(infoVoz);
+  renderChips(); renderModo(); setEstado("idle"); renderLog(); renderContatos(); renderLeads(); aplicarVoz(infoVoz);
+  L.iniciar().then(() => { renderLeads(); atualizarModoLeads(); });
   JarvisVoice.pronto.then(aplicarVoz);
   if (window.matchMedia && matchMedia("(max-width:900px)").matches) $("entrada").placeholder = "Fale ou digite um pedido…";
   boot();

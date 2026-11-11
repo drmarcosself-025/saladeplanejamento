@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;700&display=swap">
-<link rel="stylesheet" href="app.css?v=3">
+<link rel="stylesheet" href="app.css?v=4">
 </head>
 <body>
 <canvas id="fundo" class="fundo" aria-hidden="true"></canvas>
@@ -54,6 +54,32 @@
       </div>
       <p class="muted small" id="pendNota"></p>
     </section>
+
+    <details class="panel" id="painelLeads">
+      <summary><span id="leadsTitulo">Leads</span><span id="leadsBadge" class="badge-n" hidden></span></summary>
+      <p class="small muted" id="leadsStatus" role="status"></p>
+      <div id="funil" class="funil" role="group" aria-label="Funil de leads"></div>
+      <div id="leadsFiltros" class="filtros" role="group" aria-label="Filtro de leads">
+        <button type="button" class="fil on" data-f="devidos">Para retornar</button>
+        <button type="button" class="fil" data-f="todos">Todos ativos</button>
+        <button type="button" class="fil" data-f="fechados">Encerrados</button>
+      </div>
+      <ul id="leadsLista" class="leads"></ul>
+      <p class="small muted" id="leadsVazio"></p>
+      <details class="como">
+        <summary>Adicionar lead</summary>
+        <form id="leadForm" class="contato-form" autocomplete="off">
+          <input id="leadNome" type="text" maxlength="60" placeholder="Nome (ex.: João Silva)" aria-label="Nome do lead" required>
+          <input id="leadTel" type="tel" maxlength="24" placeholder="WhatsApp com DDD" aria-label="Telefone do lead" required>
+          <select id="leadOrigem" aria-label="Origem"></select>
+          <input id="leadInteresse" type="text" maxlength="80" placeholder="Interesse (ex.: clareamento)" aria-label="Interesse">
+          <button class="btn" type="submit">Adicionar lead</button>
+        </form>
+        <p class="small bad" id="leadErro" role="alert" hidden></p>
+      </details>
+      <div class="row"><button class="btn" id="btnLeadsCsv" type="button">Exportar planilha (CSV)</button></div>
+      <p class="small muted">Diga: “novo lead, João, 63 9…, veio do Instagram, quer clareamento”, “quem preciso retornar hoje?”, “retorna pro João”, “adia o João para sexta”.</p>
+    </details>
 
     <details class="panel" id="painelContatos">
       <summary><span id="contatosTitulo">Contatos</span></summary>
@@ -136,6 +162,7 @@
       <ul id="ferramentas" class="ferramentas"></ul>
       <p class="muted small legenda-niveis">
         <b class="n READ">READ</b> só lê ·
+        <b class="n LOCAL">LOCAL</b> grava na sua lista ·
         <b class="n PROPOSE">PROPOSE</b> prepara e mostra ·
         <b class="n EXECUTE">EXECUTE</b> só com “confirma”
       </p>
@@ -166,8 +193,9 @@
 
 <script src="config.js"></script>
 <script src="modes.js"></script>
-<script src="data.js"></script>
 <script src="contacts.js"></script>
+<script src="leads.js"></script>
+<script src="data.js"></script>
 <script src="brain.js"></script>
 <script src="fundo.js"></script>
 <script src="sfx.js"></script>

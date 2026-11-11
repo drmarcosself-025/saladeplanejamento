@@ -101,21 +101,34 @@ window.JARVIS_MODES = {
     },
   },
 
-  whatsapp: {
-    id: "whatsapp",
-    nome: "WhatsApp",
+  leads: {
+    id: "leads",
+    nome: "Leads",
     cor: "#19e6c1",
-    aliases: ["whatsapp", "zap", "leads", "atendimento"],
-    status: "planejado",
-    resumo: "Leads novos, conversas quentes e respostas aguardando aprovação (projeto dental-leads).",
-    sugestoes: ["Volta ao normal"],
+    aliases: ["leads", "lead", "funil", "retornos", "atendimento", "whatsapp", "zap"],
+    status: "ativo",
+    resumo: "Quem chegou, em que etapa está e quando cobrar de novo. Nenhum lead fica sem data de retorno.",
+    sugestoes: ["Quem preciso retornar hoje?", "Meus leads", "Volta ao normal"],
     ferramentas: [
-      { id: "leads.funil", nivel: "READ", desc: "Funil e temperatura dos leads (schema dental_leads)" },
-      { id: "leads.rascunho", nivel: "PROPOSE", desc: "Sugerir resposta para lead" },
-      { id: "whatsapp.enviar", nivel: "EXECUTE", desc: "Enviar (sempre por Evolution, com política e rate limit)" },
+      { id: "leads.listar", nivel: "READ", desc: "Funil e retornos de hoje e atrasados" },
+      { id: "leads.registrar", nivel: "LOCAL", desc: "Novo lead, etapa e data de retorno (grava na sua lista)" },
+      { id: "leads.retorno", nivel: "PROPOSE", desc: "Preparar a mensagem de retorno" },
+      { id: "whatsapp.abrir", nivel: "EXECUTE", desc: "Abrir o WhatsApp com a mensagem (você toca em enviar)" },
     ],
-    kpis: () => [["Fonte", "dental-leads (a ligar)"]],
-    abertura: () => "Modo WhatsApp ativado. Ainda não está ligado aos leads. Esta é a próxima integração planejada.",
+    kpis: (d) => [
+      ["Retornar hoje", String(d.hoje || 0)],
+      ["Atrasados", String(d.atrasados || 0)],
+      ["Leads ativos", String(d.ativos || 0)],
+      ["Sem data de retorno", String(d.semData || 0)],
+      ["Fechados", String(d.fechados || 0)],
+      ["Perdidos", String(d.perdidos || 0)],
+    ],
+    abertura: (d) => {
+      if (!d.total) return "Modo Leads ativado. Você ainda não tem leads. Diga: novo lead, o nome, o telefone, de onde veio e o que quer.";
+      const devidos = (d.hoje || 0) + (d.atrasados || 0) + (d.semData || 0);
+      if (!devidos) return `Modo Leads ativado. Nenhum retorno pendente agora. Você tem ${d.ativos} leads ativos no funil.`;
+      return `Modo Leads ativado. Você tem ${devidos} ${devidos === 1 ? "lead para retornar" : "leads para retornar"}${d.atrasados ? `, ${d.atrasados} já atrasado${d.atrasados > 1 ? "s" : ""}` : ""}. ${d.ativos} ativos no funil. Quer que eu mostre quem?`;
+    },
   },
 
   video: {
@@ -163,4 +176,4 @@ window.JARVIS_MODES = {
 };
 
 // Ordem em que os atalhos aparecem na barra superior.
-window.JARVIS_ORDEM = ["gestao", "trafego", "social", "whatsapp", "video", "automacao", "programador"];
+window.JARVIS_ORDEM = ["gestao", "leads", "trafego", "social", "video", "automacao", "programador"];

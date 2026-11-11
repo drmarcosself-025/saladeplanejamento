@@ -51,6 +51,8 @@
       }
       case "programador":
         return { ultimo_projeto: "projeto-jarvis" };
+      case "leads":   // dados reais do usuário (não são demonstração)
+        return window.JarvisLeads ? window.JarvisLeads.resumo(window.JarvisLeads.lista()) : {};
       default:
         return {};
     }
@@ -59,6 +61,7 @@
   window.JarvisData = {
     // Devolve { source: "demo" | "live", ...dados }
     async get(modeId) {
+      if (modeId === "leads") return { source: "seus", ...demo(modeId) };
       const url = window.APP_CONFIG && window.APP_CONFIG.DATA_URL;
       if (url) {
         try {

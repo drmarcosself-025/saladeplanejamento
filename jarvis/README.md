@@ -55,6 +55,23 @@ Edge. No iPhone/Safari o reconhecimento de voz é limitado: digite.
 - “Jarvis, desativa o agente social media” / “volta ao normal”
 - Ou clique nos atalhos no topo.
 
+### Leads (funil com retorno)
+
+Modo **Leads**: cada lead tem etapa (novo, conversando, orçamento, agendou,
+fechou, perdido) e **sempre uma data de próximo contato**, para nenhum se perder.
+O que passou da data aparece como atrasado, com um selo vermelho no painel.
+
+- “Jarvis, novo lead: João, 63 9…, veio do Instagram, quer clareamento”
+- “Quem preciso retornar hoje?” · “Meus leads”
+- “Retorna pro João” → prepara a mensagem e abre o WhatsApp; ao abrir, o
+  próximo retorno é marcado sozinho (+2 dias)
+- “Adia o João para sexta” · “Marca o João como agendou” · “O João fechou”
+- Exportar planilha (CSV) no painel.
+
+**Onde ficam:** no link do claude.ai, no armazenamento do artefato (só o dono
+lê e grava; sincroniza iPhone e computador). Fora dele, só neste navegador.
+São dados pessoais (LGPD): colete só o necessário.
+
 ### Importar todos os contatos
 
 No painel **Contatos**, clique em **Importar contatos** e escolha o arquivo
@@ -87,7 +104,7 @@ exportável em JSON).
 ## Testes
 
 ```bash
-node --test jarvis/tests/brain.test.mjs jarvis/tests/contacts.test.mjs
+node --test jarvis/tests/brain.test.mjs jarvis/tests/contacts.test.mjs jarvis/tests/leads.test.mjs
 ```
 
 Cobrem o interpretador de comandos, incluindo a regra de que “confirma” só
@@ -108,7 +125,7 @@ jarvis/
     voice.js            Web Speech API (entrada e saída)
     config.js           URLs públicas do backend (vazio = demo)
   tools/build-artifact.mjs  junta web/ em um único HTML (para publicar)
-  tests/brain.test.mjs contacts.test.mjs
+  tests/brain.test.mjs contacts.test.mjs leads.test.mjs
 ```
 
 ## Ligar um backend (Fase 1+)
