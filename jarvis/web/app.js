@@ -250,9 +250,8 @@
       filtroLeads = todosAtivos ? "todos" : "devidos"; renderLeads();
       const ls = L.filtrar(todos, it.filtro === "atrasados" ? "atrasados" : todosAtivos ? "todos" : "devidos");
       if (!ls.length) return dizer(todosAtivos ? "Nenhum lead ativo no momento." : "Nenhum retorno pendente agora. Tudo em dia.", g);
-      const nomes = ls.slice(0, 5).map((l) => (l.interesse ? `${l.nome}, ${l.interesse}` : l.nome)).join("; ");
-      const mais = ls.length > 5 ? ` e mais ${ls.length - 5}` : "", atr = L.filtrar(todos, "atrasados").length;
-      return dizer(`${todosAtivos ? `Você tem ${ls.length} ${ls.length === 1 ? "lead ativo" : "leads ativos"}` : `Você tem ${ls.length} ${ls.length === 1 ? "retorno pendente" : "retornos pendentes"}${atr ? `, ${atr} atrasado${atr > 1 ? "s" : ""}` : ""}`}: ${nomes}${mais}.`, g);
+      mostrarCard(todosAtivos ? "Seus leads ativos" : "Quem espera seu retorno", ls.slice(0, 8).map((l) => `${l.nome} · ${l.interesse || L.nomeEtapa(l.etapa)} · ${L.rotulo(l.proximo, hojeISO())}`), ["abre o CRM"]);
+      return dizer(`Você tem ${ls.length} ${todosAtivos ? "leads ativos" : "retornos pendentes"}. Mostrei os detalhes na tela.`, g);
     }
     if (it.tipo === "lead_etapa") return comLead(it, g, aplicarEtapa(it.etapa));
     if (it.tipo === "lead_adiar") {
@@ -358,7 +357,7 @@
   function contextoClaude() {
     const modo = MODOS[modoId], ls = L.lista(), r = L.resumo(ls), mes = F.mesDe(hojeISO()), f = F.resumoMes(F.lista(), mes);
     const devidos = L.filtrar(ls, "devidos").slice(0, 5).map((l) => `${l.nome}: ${l.interesse || "sem interesse informado"}, retorno ${l.proximo}`).join("; ");
-    return [`Modo: ${modo.nome}; ${modo.resumo}`, `Leads: ${r.ativos} ativos, ${r.hoje} hoje, ${r.atrasados} atrasados. Devidos: ${devidos || "nenhum"}.`,
+    return [window.JarvisPessoal ? JarvisPessoal.contexto() : "", `Modo: ${modo.nome}; ${modo.resumo}`, `Leads: ${r.ativos} ativos, ${r.hoje} hoje, ${r.atrasados} atrasados. Devidos: ${devidos || "nenhum"}.`,
       `Financeiro ${mes}: recebido ${valor(f.receitas)}, pago ${valor(f.despesas)}, a pagar ${valor(f.aPagar)}, a receber ${valor(f.aReceber)}.`,
       modoId === "gestao" ? "Agenda e e-mails na tela são apenas demonstração; não use esses nomes como dados reais." : ""].filter(Boolean).join("\n");
   }
@@ -423,7 +422,8 @@
     for (const id of JARVIS_ORDEM) {
       const m = MODOS[id], b = document.createElement("button");
       b.type = "button"; b.className = "chip"; b.dataset.modo = id; b.style.setProperty("--c", m.cor);
-      b.textContent = m.nome;
+      b.append(mk("span", "mode-index", String(JARVIS_ORDEM.indexOf(id) + 1).padStart(2, "0")), mk("strong", "", m.nome), mk("span", "mode-desc", m.resumo));
+      if (m.status === "demo") b.append(mk("span", "mode-state", "Dados demo"));
       if (m.status !== "demo" && m.status !== "ativo") b.title = "Planejado: ainda sem integração";
       b.addEventListener("click", () => processar("ativa " + m.aliases[0], "clique"));
       nav.appendChild(b);
@@ -460,8 +460,8 @@
     document.querySelectorAll(".chip").forEach((c) => c.classList.toggle("on", c.dataset.modo === modoId));
     const badge = $("badgeFonte"), src = dados.source;
     badge.hidden = modoId === "normal";
-    badge.textContent = src === "live" ? "AO VIVO" : src === "seus" ? "SEUS DADOS" : src === "misto" ? "DEMO + SUAS CONTAS" : "DEMO"; badge.className = "badge " + (src === "demo" || src === "misto" ? "demo" : "live");
-    $("cerebro").textContent = "cérebro: comandos locais · Claude para perguntas abertas";
+    badge.textContent = src === "live" ? "AO VIVO" : src === "seus" ? "SEUS DADOS" : src === "misto" ? "DEMO + SUAS CONTAS" : src === "criacao" ? "RASCUNHOS" : "DEMO"; badge.className = "badge " + (src === "demo" || src === "misto" ? "demo" : "live");
+    $("cerebro").textContent = "Você decide o que executar.";
     renderSugestoes();
   }
   // Números que sobem até o valor (só quando o valor é um número simples, em R$ ou não).
@@ -521,6 +521,7 @@
   // ---------- fluxo principal ----------
   async function ativar(id, g, prefixo) {
     setEstado("pensando");
+    if (window.JarvisUI) JarvisUI.navegar("conversa");
     modoId = id; pendente = null; aguardando = null; renderPendente();
     dados = id === "normal" ? {} : await JarvisData.get(id);
     if (g !== geracao) return;
@@ -571,6 +572,7 @@
     JarvisVoice.parar();
     const it = JarvisBrain.interpretar(texto, MODOS);
     if (it.tipo === "vazio") return;
+    if (window.JarvisUI) JarvisUI.navegar("conversa");
     limparCard();
     acordadoAte = Date.now() + 12000; sfx("enviar");
     registrarConversa("voce", texto.trim());
@@ -788,7 +790,9 @@
 
   $("btnMudo").addEventListener("click", () => {
     JarvisVoice.mudo = !JarvisVoice.mudo; JarvisSfx.mudo = JarvisVoice.mudo;
-    $("btnMudo").textContent = JarvisVoice.mudo ? "🔇" : "🔊"; $("btnMudo").setAttribute("aria-pressed", String(JarvisVoice.mudo));
+    $("btnMudo").innerHTML = JarvisVoice.mudo ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 9v6h4l5 4V5L7 9H3m13 0 6 6m0-6-6 6"/></svg>' : '<span data-icon="volume"></span>';
+    if (window.JarvisUI) JarvisUI.iconizar($("btnMudo"));
+    $("btnMudo").setAttribute("aria-pressed", String(JarvisVoice.mudo));
   });
   $("btnTec").addEventListener("click", () => { $("tecnico").hidden = !$("tecnico").hidden; renderLog(); });
   $("btnLimpar").addEventListener("click", () => { gravar(LOG_KEY, []); renderLog(); });
@@ -818,7 +822,7 @@
     const semEntrada = !i.entrada;
     btnPtt.setAttribute("aria-disabled", String(semEntrada)); btnPtt.classList.toggle("indisp", semEntrada);
     btnPtt.title = semEntrada ? "Falar não funciona neste aparelho: use o microfone do teclado no campo de texto." : "Segure para falar (ou segure a tecla Espaço)";
-    if (semEntrada) $("entrada").placeholder = i.artefato ? "Digite ou toque no 🎙 do teclado…" : "Digite um pedido…";
+    if (semEntrada) $("entrada").placeholder = i.artefato ? "Escreva ou use o ditado do teclado…" : "O que vamos cuidar agora?";
     $("btnMic").hidden = !i.continuo; $("btnMic").disabled = !i.continuo;
     $("medidorBox").hidden = i.entrada !== "navegador";
     $("btnMudo").disabled = !i.saida;
@@ -884,7 +888,7 @@
   L.iniciar().then(() => { renderLeads(); atualizarModoLeads(); renderCrm(); });
   F.iniciar().then(() => { renderFin(); if (modoId === "gestao" || modoId === "contador") JarvisData.get(modoId).then((d) => { dados = d; renderModo(); }); });
   JarvisVoice.pronto.then(aplicarVoz);
-  if (window.matchMedia && matchMedia("(max-width:900px)").matches) $("entrada").placeholder = "Fale ou digite um pedido…";
+  if (window.matchMedia && matchMedia("(max-width:900px)").matches) $("entrada").placeholder = "O que vamos cuidar agora?";
   boot();
-  legenda("Pronto. Escolha um agente acima, toque numa sugestão, segure 🗣 para falar ou digite um pedido.");
+  legenda("Estou por aqui. O que merece sua atenção agora?");
 })();

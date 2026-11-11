@@ -13,6 +13,7 @@ Capacidades necessárias ao publicar: `dictation`, `tts`, `downloads`, `sample: 
 - `modes.js`: registro de modo, instrução, painel, apelidos e ferramentas.
 - `brain.js`: troca de modo, confirmação, cancelamento e comandos de CRM/finanças são determinísticos. Perguntas abertas usam `sample` e recebem contexto limitado do modo, retornos, resumo financeiro e conversa recente. A IA fornece apenas fala curta, título, itens e sugestões; jamais executa ferramentas.
 - `app.js`: desenha avatar, resposta em cartão, CRM e Contador. `leads.js` e `fin.js` mantêm as regras puras; `store.js` persiste cada documento.
+- `ui.js`: navegação 3.0 (Hoje, Conversa, Espaços, Você), prioridades e preferências. `pessoal.js` mantém contexto explícito e tarefas no `localStorage`, com gravação que preserva dados anteriores em caso de falha. Nenhuma coleção db nova é criada. Perfil e tarefas pessoais só entram no contexto de `sample` se o usuário ativar compartilhamento.
 - Níveis: `READ` consulta; `LOCAL` salva na lista do usuário; `PROPOSE` prepara e mostra; `EXECUTE` exige ação pendente visível e “confirma” curto. Propostas expiram em 10 minutos.
 - WhatsApp usa `<a href="https://wa.me/...">` com texto pronto. O usuário abre e toca em enviar. Abrir o link não comprova envio; o contato só é registrado quando o usuário marca **Contato realizado**.
 - O financeiro registra lançamentos e fechamentos, mas nunca paga contas. Receitas e despesas pendentes ficam fora do saldo pago.

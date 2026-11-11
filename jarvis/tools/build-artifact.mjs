@@ -22,15 +22,19 @@ const js = scripts.map((f) => {
   return `/* ${f} */\n${t}`;
 }).join("\n");
 
-fs.writeFileSync(out, `<title>${title}</title>
+fs.writeFileSync(out, `<!doctype html>
+<html lang="pt-BR"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#080c13">
+<title>${title}</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 ${fonts}
 <style>
 ${css}
-</style>
+</style></head><body>
 ${body}
 <script>
 ${js}
-</script>
+</script></body></html>
 `);
 console.log(`${out}: ${(fs.statSync(out).size / 1024).toFixed(1)} KB, ${scripts.length} scripts`);

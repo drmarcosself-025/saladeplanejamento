@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="claude:viewport-fit-sides" content="cover">
 <meta name="theme-color" content="#05080f">
-<title>Jarvis</title>
+<title>Jarvis 3.0 · Seu espaço pessoal</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;700&display=swap">
-<link rel="stylesheet" href="app.css?v=4">
+<link rel="stylesheet" href="app.css?v=30">
 </head>
 <body>
 <canvas id="fundo" class="fundo" aria-hidden="true"></canvas>
@@ -21,17 +21,41 @@
   </div>
 </div>
 <header class="top">
-  <div class="brand"><span class="dot"></span> JARVIS</div>
-  <nav id="chips" class="chips" aria-label="Agentes"></nav>
-  <div class="top-right">
-    <span id="badgeFonte" class="badge demo" title="De onde vêm os números mostrados" hidden>DEMO</span>
-    <span id="cerebro" class="muted small">cérebro: local</span>
-  </div>
+  <button class="brand" type="button" data-view="hoje" aria-label="Jarvis, início"><span class="brand-symbol">J<span>·</span></span><span>JARVIS<small>PERSONAL INTELLIGENCE <b>3.0</b></small></span></button>
+  <nav class="main-nav" aria-label="Navegação principal">
+    <button type="button" data-view="hoje" class="on"><span data-icon="sun"></span>Hoje</button>
+    <button type="button" data-view="conversa"><span data-icon="chat"></span>Conversa</button>
+    <button type="button" data-view="espacos"><span data-icon="grid"></span>Espaços</button>
+    <button type="button" data-view="pessoal"><span data-icon="user"></span>Você</button>
+  </nav>
+  <div class="top-right"><span class="private-mark"><i></i>Seu espaço pessoal</span><button type="button" class="profile-button" data-view="pessoal" aria-label="Meu perfil"><span id="perfilInicial">M</span></button></div>
 </header>
-
+<div class="page-heading" id="inicioCabecalho"><div><p class="eyebrow" id="hojeData"></p><h1 id="saudacao">Olá, Marcos.</h1><p class="heading-sub" id="hojeFrase">Vamos dar espaço ao que importa hoje.</p></div><span class="edition">J / 03 <span>PERSONAL OS</span></span></div>
+<section id="espacosTela" class="view-page" aria-label="Espaços do Jarvis" hidden>
+  <div class="section-heading"><p class="eyebrow">UMA PRESENÇA, VÁRIOS CONTEXTOS</p><h1>Em que vamos focar?</h1><p class="muted">Escolha um espaço. Seus comandos continuam funcionando em qualquer um deles.</p></div>
+  <nav id="chips" class="chips" aria-label="Agentes"></nav>
+  <div class="space-utilities"><button type="button" class="utility-card" data-command="abre o CRM"><span data-icon="people"></span><strong>Seu CRM</strong><span>Leads, retornos e histórico</span><b>↗</b></button><button type="button" class="utility-card" data-open="painelContatos"><span data-icon="book"></span><strong>Contatos</strong><span>Importar ou cadastrar</span><b>↗</b></button><button type="button" class="utility-card" data-open="painelVoz"><span data-icon="mic"></span><strong>Voz e preferências</strong><span>Um jeito seu de conversar</span><b>↗</b></button></div>
+</section>
+<section id="pessoalTela" class="view-page" aria-label="Seu perfil e memória" hidden>
+  <div class="section-heading"><p class="eyebrow">CONTEXTO COM INTENÇÃO</p><h1>Quanto mais seu, melhor.</h1><p class="muted">Você escolhe o que lembrar. Pode editar ou apagar quando quiser.</p></div>
+  <div class="personal-grid"><form id="perfilForm" class="panel personal-form"><h2>Seu jeito, seu ritmo</h2>
+    <label>Como posso chamar você?<input id="perfilNome" maxlength="40" placeholder="Seu nome"></label>
+    <label>Como prefere conversar?<select id="perfilTom"><option value="direto e acolhedor">Direto e acolhedor</option><option value="objetivo e conciso">Objetivo e conciso</option><option value="leve e próximo">Leve e próximo</option></select></label>
+    <label>O que mais importa agora?<input id="perfilFoco" maxlength="160" placeholder="Uma prioridade para esta fase"></label>
+    <label>Como é sua rotina?<textarea id="perfilRotina" maxlength="800" placeholder="Horários, trabalho, tempo para você…"></textarea></label>
+    <label>Algo que devo ter em mente?<textarea id="perfilContexto" maxlength="800" placeholder="Preferências e contexto que você quer registrar"></textarea></label>
+    <label class="check-label"><input id="perfilCompartilhar" type="checkbox"><span>Usar este contexto nas respostas do Claude<small>Quando ativado, estes campos vão junto da sua pergunta para o Claude.</small></span></label>
+    <p class="privacy-note">Este perfil e suas tarefas ficam só neste navegador. Não sincronizam entre aparelhos. Leads e financeiro mantêm o armazenamento próprio do artefato.</p>
+    <div class="row"><button type="submit" class="btn primary">Salvar meu contexto</button><button type="button" id="perfilApagar" class="btn">Apagar meu contexto</button></div><p id="perfilStatus" role="status" class="small muted"></p>
+  </form><aside class="personal-aside"><div class="panel"><span class="mini-orbit" aria-hidden="true"></span><h2>Presença que se constrói.</h2><p class="muted">O Jarvis usa o que você registra e o que está conectado. Se algo ainda não estiver disponível, ele vai dizer.</p></div><div class="panel"><h2>Conexões</h2><ul class="connection-list"><li><span>Leads & financeiro</span><b id="connDados">Verificando</b></li><li><span>Perfil & tarefas</span><b>Neste navegador</b></li><li><span>Agenda & e-mail</span><b>Sem conexão</b></li><li><span>WhatsApp</span><b>Mensagem por link</b></li><li><span>Claude</span><b>Disponível no artefato*</b></li></ul><p class="small muted">*Depende da capacidade de perguntas e da sua autorização no Claude.</p></div></aside></div>
+</section>
+<section id="utilityTela" class="view-page" hidden><div class="row between"><h1 id="utilityTitulo">Preferências</h1><button type="button" class="btn" id="utilityVoltar">Voltar</button></div><div id="utilityConteudo"></div></section>
 <main class="stage">
   <aside class="col left">
-    <section class="panel">
+    <section class="panel briefing-panel"><div class="panel-heading"><span class="eyebrow">SEU DIA, COM CLAREZA</span><span data-icon="spark"></span></div><h2>O próximo passo</h2><p id="proximoPasso" class="briefing-text">Organize suas prioridades e eu acompanho com você.</p><div id="prioridades" class="prioridades"></div><button class="text-button" type="button" data-command="quem preciso retornar hoje">Ver meus retornos <span>↗</span></button></section>
+    <section class="panel routine-panel"><div class="panel-heading"><h2>Um passo de cada vez</h2><span id="tarefasProgresso" class="small muted">0 de 0</span></div><ul id="tarefasLista" class="tasks"></ul><form id="tarefaForm" class="task-form"><input id="tarefaTexto" maxlength="120" required aria-label="Nova prioridade de hoje" placeholder="Uma prioridade para hoje…"><button type="submit" aria-label="Adicionar prioridade">+</button></form><p id="tarefasStatus" class="small muted" role="status"></p></section>
+
+    <section class="panel mode-panel">
       <h2 id="agNome">Jarvis</h2>
       <p id="agStatus" class="tag">ativo</p>
       <p id="agResumo" class="muted small"></p>
@@ -117,8 +141,10 @@
   </aside>
 
   <section class="center">
+    <div class="presence-head"><span><i></i>JARVIS / PRESENÇA PESSOAL</span><span id="presencaEstado">Por aqui, com você</span></div>
+    <div class="avatar-halo" aria-hidden="true"></div>
     <canvas id="avatar" aria-label="Avatar do Jarvis"></canvas>
-    <p id="legenda" class="legenda" aria-hidden="true"></p>
+    <div class="presence-caption"><span class="presence-line"></span><p id="legenda" class="legenda" aria-hidden="true"></p></div>
     <p id="legendaSr" class="sr" aria-live="polite"></p>
     <article id="respostaCard" class="resposta-card" hidden aria-live="polite">
       <h2 id="respostaTitulo"></h2><ul id="respostaItens"></ul><div id="respostaAcoes" class="row"></div>
@@ -128,7 +154,9 @@
   </section>
 
   <aside class="col right">
-    <section class="panel">
+    <section class="panel intention-panel"><p class="eyebrow">EM SINTONIA</p><h2 id="focoTitulo">Mais espaço para você.</h2><p class="muted" id="focoTexto">Me conte suas prioridades para tornar este espaço mais seu.</p><button class="text-button" type="button" data-view="pessoal">Ajustar meu contexto <span>↗</span></button></section>
+    <section class="panel access-panel"><h2>À sua mão</h2><button type="button" class="quick-link" data-command="abre o CRM"><span data-icon="people"></span><span>Leads & retornos<small>Seu comercial em movimento</small></span><b>↗</b></button><button type="button" class="quick-link" data-command="ativa o agente contador"><span data-icon="wallet"></span><span>Meu financeiro<small>Contas e clareza no mês</small></span><b>↗</b></button><button type="button" class="quick-link" data-view="espacos"><span data-icon="grid"></span><span>Todos os espaços<small>Criação, trabalho e rotina</small></span><b>↗</b></button></section>
+    <section class="panel status-panel">
       <h2>Estado</h2>
       <div id="relogio" class="relogio">--:--:--</div>
       <ul id="estados" class="estados">
@@ -139,10 +167,10 @@
       </ul>
     </section>
 
-    <section class="panel">
-      <h2>Conversa</h2>
+    <section class="panel conversation-panel">
+      <div class="panel-heading"><h2>Nossa conversa</h2><span class="small muted">Só nesta sessão</span></div>
       <ol id="conversa" class="conversa" aria-live="off">
-        <li class="vazio">Nada ainda. A conversa aparece aqui e não é guardada.</li>
+        <li class="vazio">Um espaço para pensar em voz alta. Me conte por onde quer começar.</li>
       </ol>
     </section>
 
@@ -160,7 +188,7 @@
       <p class="small aviso-priv" id="avisoPriv"></p>
     </details>
 
-    <section class="panel">
+    <section class="panel tools-panel">
       <h2>Ferramentas do modo</h2>
       <ul id="ferramentas" class="ferramentas"></ul>
       <p class="muted small legenda-niveis">
@@ -172,9 +200,10 @@
     </section>
   </aside>
 </main>
+<div class="source-line"><span id="badgeFonte" class="badge demo" hidden>DEMO</span><span id="cerebro" class="muted small">Comandos locais · perguntas com Claude</span></div>
 
 <section id="crmTela" class="workspace" hidden aria-label="CRM de leads">
-  <header class="workspace-head"><div><h1>Leads</h1><p id="crmStatus" class="muted small"></p></div><button id="crmFechar" class="btn" type="button">Voltar ao Jarvis</button></header>
+  <header class="workspace-head"><div><h1>Leads</h1><p id="crmStatus" class="muted small"></p></div><div class="row"><button type="button" class="btn" data-open="painelLeads">Novo lead</button><button id="crmFechar" class="btn" type="button">Voltar ao Jarvis</button></div></header>
   <div id="crmMetricas" class="metricas"></div>
   <div class="workspace-corpo"><div id="crmQuadro" class="crm-quadro"></div><aside id="crmDetalhe" class="workspace-detalhe" hidden></aside></div>
 </section>
@@ -197,13 +226,14 @@
 </section>
 
 <form id="barra" class="barra" autocomplete="off">
-  <button type="button" id="btnPtt" class="icon" title="Segure para falar (ou segure a tecla Espaço)" aria-label="Segurar para falar">🗣</button>
-  <button type="button" id="btnMic" class="icon" title="Microfone sempre ligado (responde quando ouvir “Jarvis”)" aria-pressed="false" aria-label="Microfone contínuo">🎙</button>
+  <button type="button" id="btnPtt" class="icon" title="Segure para falar (ou segure a tecla Espaço)" aria-label="Segurar para falar"><span data-icon="mic"></span></button>
+  <button type="button" id="btnMic" class="icon" title="Microfone sempre ligado (responde quando ouvir “Jarvis”)" aria-pressed="false" aria-label="Microfone contínuo"><span data-icon="wave"></span></button>
   <span class="medidor" id="medidorBox" aria-hidden="true" title="Nível do microfone"><i id="medidor"></i></span>
-  <input id="entrada" type="text" placeholder="Fale ou digite um pedido…  (tecla / para digitar)" aria-label="Pedido">
-  <button type="button" id="btnMudo" class="icon" title="Silenciar a voz do Jarvis" aria-pressed="false" aria-label="Silenciar voz">🔊</button>
-  <button type="button" id="btnTec" class="icon" title="Detalhes técnicos" aria-label="Detalhes técnicos">⚙</button>
-  <button type="submit" class="btn primary">Enviar</button>
+  <input id="entrada" type="text" placeholder="O que vamos cuidar agora?" aria-label="Pedido">
+  <button type="button" id="btnMudo" class="icon" title="Silenciar a voz do Jarvis" aria-pressed="false" aria-label="Silenciar voz"><span data-icon="volume"></span></button>
+  <button type="button" id="btnTec" class="icon" title="Detalhes técnicos" aria-label="Detalhes técnicos"><span data-icon="settings"></span></button>
+  <button type="submit" class="btn primary send-button" aria-label="Enviar pedido"><span>Enviar</span><span data-icon="arrow"></span></button>
+<p class="composer-hint">Seu espaço para falar, pensar e organizar. <kbd>/</kbd> para digitar</p>
 </form>
 
 <section id="tecnico" class="tecnico" hidden>
@@ -229,6 +259,8 @@
 <script src="sfx.js"></script>
 <script src="avatar.js"></script>
 <script src="voice.js"></script>
+<script src="pessoal.js"></script>
 <script src="app.js"></script>
+<script src="ui.js"></script>
 </body>
 </html>

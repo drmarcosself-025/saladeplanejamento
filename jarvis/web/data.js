@@ -62,6 +62,7 @@
     // Devolve { source: "demo" | "misto" | "seus", ...dados }.
     async get(modeId) {
       if (modeId === "leads" || modeId === "contador") return { source: "seus", ...demo(modeId) };
+      if (modeId === "designer" || modeId === "programador") return { source: "criacao", ...demo(modeId) };
       if (modeId === "gestao") return { source: "misto", ...demo(modeId) };
       return { source: "demo", ...demo(modeId) };
     },

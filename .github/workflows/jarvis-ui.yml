@@ -1,0 +1,35 @@
+name: Jarvis UI
+on:
+  push:
+    branches: [claude/intelligent-ramanujan-uvnydv]
+    paths: [jarvis/**, .github/workflows/jarvis-ui.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  interface:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test jarvis/tests/*.test.mjs
+      - run: node jarvis/tools/build-artifact.mjs /tmp/jarvis-3.0.html
+      - run: npm install --prefix /tmp/jarvis-ui playwright
+      - run: node /tmp/jarvis-ui/node_modules/playwright/cli.js install --with-deps chromium
+      - name: Browser desktop e celular
+        env:
+          JARVIS_PLAYWRIGHT: /tmp/jarvis-ui/node_modules/playwright
+          JARVIS_SCREENSHOTS: /tmp/jarvis-screenshots
+        run: |
+          python3 -m http.server 8000 --directory jarvis/web > /tmp/jarvis-server.log 2>&1 &
+          node jarvis/tests/browser.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jarvis-ui
+          path: |
+            /tmp/jarvis-screenshots
+            /tmp/jarvis-3.0.html
