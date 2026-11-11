@@ -1,10 +1,7 @@
 // Fonte de dados dos modos.
 //
-// HOJE: devolve dados de DEMONSTRAÇÃO (fictícios) para a interface funcionar
-// sem backend. Nomes de pacientes aqui são inventados de propósito.
-// DEPOIS: se APP_CONFIG.DATA_URL estiver preenchido, busca do backend
-// (Edge Function `jarvis-data`), que conversa com Clinicorp, Gmail, Ads etc.
-// O formato devolvido é o mesmo — a interface não muda.
+// Agenda, e-mails, tráfego e social são demonstração. Contas vêm do financeiro
+// registrado pelo usuário no artefato ou neste navegador.
 (function () {
   const brl = (v) => "R$ " + v.toFixed(2).replace(".", ",");
 
@@ -26,10 +23,8 @@
           serie: { rotulo: "Posts por dia (7 dias)", valores: [6, 8, 7, 9, 10, 9, 10] },
         };
       case "gestao": {
-        const contas = [
-          { quem: "Energia", valor: 412.9, vence: "qui" },
-          { quem: "Internet", valor: 189.9, vence: "sex" },
-        ];
+        const contas = window.JarvisFin ? window.JarvisFin.pendentes(window.JarvisFin.lista(), new Date(), 7)
+          .map((l) => ({ id: l.id, quem: l.descricao || l.categoria, valor: l.valor, vence: l.vencimento || l.data })) : [];
         return {
           pacientes: [
             { hora: "08:00", nome: "Paciente A", proc: "Avaliação", confirmado: true },
@@ -51,6 +46,11 @@
       }
       case "programador":
         return { ultimo_projeto: "projeto-jarvis" };
+      case "contador": {
+        const F = window.JarvisFin, mes = F.mesDe(window.JarvisLeads.iso(new Date()));
+        const r = F.resumoMes(F.lista(), mes);
+        return { ...r, receitas_fmt: brl(r.receitas), despesas_fmt: brl(r.despesas), saldo_fmt: brl(r.saldo), aPagar_fmt: brl(r.aPagar), aReceber_fmt: brl(r.aReceber) };
+      }
       case "leads":   // dados reais do usuário (não são demonstração)
         return window.JarvisLeads ? window.JarvisLeads.resumo(window.JarvisLeads.lista()) : {};
       default:
@@ -59,18 +59,10 @@
   }
 
   window.JarvisData = {
-    // Devolve { source: "demo" | "live", ...dados }
+    // Devolve { source: "demo" | "misto" | "seus", ...dados }.
     async get(modeId) {
-      if (modeId === "leads") return { source: "seus", ...demo(modeId) };
-      const url = window.APP_CONFIG && window.APP_CONFIG.DATA_URL;
-      if (url) {
-        try {
-          const r = await fetch(`${url}?mode=${encodeURIComponent(modeId)}`, {
-            headers: { Authorization: `Bearer ${window.APP_CONFIG.JARVIS_TOKEN || ""}` },
-          });
-          if (r.ok) return { source: "live", ...(await r.json()) };
-        } catch (_) { /* cai para demo e deixa isso visível na tela */ }
-      }
+      if (modeId === "leads" || modeId === "contador") return { source: "seus", ...demo(modeId) };
+      if (modeId === "gestao") return { source: "misto", ...demo(modeId) };
       return { source: "demo", ...demo(modeId) };
     },
   };

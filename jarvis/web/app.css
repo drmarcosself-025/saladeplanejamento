@@ -246,3 +246,29 @@ html[data-estado="falando"] .brand .dot{animation:batida 1.1s ease-in-out infini
 .lead-acoes .btn{padding:5px 10px;font-size:12px}
 .lead-acoes .rm{background:none;border:0;color:var(--bad);cursor:pointer;font-size:13px;padding:4px 6px}
 .contato-form select{background:var(--field);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:8px 10px;font:14px var(--f-body)}
+
+/* Respostas longas ficam na tela; a voz lê apenas o resumo. */
+.resposta-card{width:min(100%,760px);max-height:32vh;overflow:auto;margin:6px auto;padding:15px 18px;background:#111c2c;border:1px solid var(--line);border-radius:14px}
+.resposta-card h2{margin:0 0 8px;font:700 17px var(--f-display)}
+.resposta-card ul{list-style:none;padding:0;margin:0 0 10px;display:grid;gap:8px}
+.resposta-card li{padding:9px 11px;background:#1a2940;border-radius:8px;white-space:pre-wrap;overflow-wrap:anywhere}
+.resposta-card li button{float:right;margin:0 0 5px 10px}
+.resposta-card .btn{font-size:12px;padding:5px 10px}
+
+/* CRM e Contador: áreas de trabalho sóbrias, sem efeitos do avatar. */
+.workspace{position:fixed;inset:0 0 76px;z-index:4;background:#0c1421;padding:22px;overflow:auto;color:#e8eef8}
+.workspace-head{display:flex;justify-content:space-between;align-items:start;gap:12px}
+.workspace h1{font:700 28px var(--f-display);margin:0}.workspace h2{font:600 17px var(--f-display)}
+.metricas{display:flex;flex-wrap:wrap;gap:10px;margin:15px 0}
+.metrica{min-width:125px;flex:1;border:1px solid #31425b;background:#152238;border-radius:10px;padding:10px}
+.metrica span{display:block;font-size:12px;color:#aebbd0}.metrica strong{font:700 19px var(--f-display)}
+.workspace-corpo{display:grid;grid-template-columns:minmax(0,1fr) minmax(250px,300px);gap:15px;align-items:start}
+.crm-quadro{display:grid;grid-template-columns:repeat(7,minmax(190px,1fr));gap:10px;overflow-x:auto;padding-bottom:10px}
+.crm-coluna,.workspace-detalhe{background:#142238;border:1px solid #31425b;border-radius:12px;padding:12px}
+.crm-coluna h2{margin:0 0 10px;font-size:14px}.crm-cartao{width:100%;display:block;text-align:left;background:#20324b;color:#e8eef8;border:1px solid #405571;border-radius:9px;padding:10px;margin:7px 0;cursor:pointer;font:13px var(--f-body)}
+.crm-cartao b,.crm-cartao span{display:block}.crm-cartao span{color:#b4c1d3;font-size:12px;margin-top:4px}.crm-cartao[aria-selected=true]{border-color:#8fb6ff}
+.workspace-detalhe{position:sticky;top:10px}.workspace-detalhe .row{margin:10px 0}.workspace-detalhe input,.workspace-detalhe select,.workspace-detalhe textarea,.workspace .contato-form input,.workspace .contato-form select{width:100%;background:#0d1a2b;border:1px solid #405571;color:#fff;border-radius:7px;padding:8px;font:14px var(--f-body)}
+.workspace-detalhe textarea{min-height:70px}.workspace-detalhe ol{padding-left:20px;max-height:180px;overflow:auto;font-size:12px}
+.fin-lista{list-style:none;padding:0}.fin-lista li{display:flex;justify-content:space-between;align-items:center;gap:10px;border-bottom:1px solid #31425b;padding:10px 0}.fin-lista small{display:block;color:#aebbd0}
+.categorias{display:grid;gap:5px;max-width:600px}.categoria-barra{height:6px;background:#263750;border-radius:10px}.categoria-barra i{display:block;height:100%;background:#8fb6ff;border-radius:10px}
+@media(max-width:900px){.workspace{padding:14px;inset:0 0 114px}.workspace-corpo{grid-template-columns:1fr}.crm-quadro{grid-template-columns:repeat(7,190px)}.workspace-detalhe{position:static}.resposta-card{max-height:40vh}}

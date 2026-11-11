@@ -120,6 +120,9 @@
     <canvas id="avatar" aria-label="Avatar do Jarvis"></canvas>
     <p id="legenda" class="legenda" aria-hidden="true"></p>
     <p id="legendaSr" class="sr" aria-live="polite"></p>
+    <article id="respostaCard" class="resposta-card" hidden aria-live="polite">
+      <h2 id="respostaTitulo"></h2><ul id="respostaItens"></ul><div id="respostaAcoes" class="row"></div>
+    </article>
     <p id="interim" class="interim" aria-live="off"></p>
     <div id="sugestoes" class="sugestoes" aria-label="Sugestões de comando"></div>
   </section>
@@ -169,6 +172,29 @@
     </section>
   </aside>
 </main>
+
+<section id="crmTela" class="workspace" hidden aria-label="CRM de leads">
+  <header class="workspace-head"><div><h1>Leads</h1><p id="crmStatus" class="muted small"></p></div><button id="crmFechar" class="btn" type="button">Voltar ao Jarvis</button></header>
+  <div id="crmMetricas" class="metricas"></div>
+  <div class="workspace-corpo"><div id="crmQuadro" class="crm-quadro"></div><aside id="crmDetalhe" class="workspace-detalhe" hidden></aside></div>
+</section>
+
+<section id="finTela" class="workspace" hidden aria-label="Contador">
+  <header class="workspace-head"><div><h1>Contador</h1><p id="finStatus" class="muted small"></p></div><button id="finFechar" class="btn" type="button">Voltar ao Jarvis</button></header>
+  <div class="row"><button type="button" class="btn" id="finAnterior" aria-label="Mês anterior">‹</button><h2 id="finMes"></h2><button type="button" class="btn" id="finSeguinte" aria-label="Mês seguinte">›</button></div>
+  <div id="finMetricas" class="metricas"></div><div id="finCategorias" class="categorias"></div>
+  <div class="workspace-corpo"><div><h2>Lançamentos</h2><ul id="finLista" class="fin-lista"></ul></div>
+  <aside class="workspace-detalhe"><h2>Novo lançamento</h2><form id="finForm" class="contato-form">
+    <select id="finTipo" aria-label="Tipo"><option value="receita">Receita</option><option value="despesa">Despesa</option></select>
+    <input id="finDescricao" required maxlength="100" placeholder="Descrição" aria-label="Descrição">
+    <input id="finValor" required type="number" min="0.01" step="0.01" placeholder="Valor em R$" aria-label="Valor">
+    <input id="finData" type="date" aria-label="Data"><select id="finSituacao" aria-label="Situação"><option value="pago">Pago / recebido</option><option value="pendente">Pendente</option></select>
+    <label class="small muted">Vencimento (se pendente)<input id="finVencimento" type="date"></label>
+    <button class="btn primary" type="submit">Salvar lançamento</button></form>
+    <p id="finErro" class="bad small" role="alert"></p>
+    <div class="row"><button id="finCsv" class="btn" type="button">CSV do mês</button><button id="finRelatorio" class="btn" type="button">Copiar relatório</button><button id="finFecharMes" class="btn" type="button">Fechar o mês</button></div>
+  </aside></div>
+</section>
 
 <form id="barra" class="barra" autocomplete="off">
   <button type="button" id="btnPtt" class="icon" title="Segure para falar (ou segure a tecla Espaço)" aria-label="Segurar para falar">🗣</button>

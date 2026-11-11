@@ -55,6 +55,13 @@ test("contas a pagar: atrasadas e próximos dias, em ordem", () => {
   const p = j(F.pendentes(ls, NOV, 7));
   assert.deepEqual(p.map((x) => [x.descricao, x.atrasada]), [["a", true], ["b", false]]);
 });
+test("baixa de pendência entra no mês do pagamento e preserva a data original", () => {
+  const pendente = mk("despesa", 189.9, "energia", "2026-10-15", "pendente", "2026-11-11");
+  const pago = F.comPago(pendente, NOV);
+  assert.equal(pago.data, "2026-11-11"); assert.equal(pago.dataOriginal, "2026-10-15");
+  assert.equal(F.resumoMes([pago], "2026-10", NOV).despesas, 0);
+  assert.equal(F.resumoMes([pago], "2026-11", NOV).despesas, 189.9);
+});
 test("CSV do mês: BOM, vírgula decimal, totais; relatório para o contador", () => {
   const ls = [mk("receita", 1500.5, "consultas", "2026-11-03"), mk("despesa", 300, "aluguel", "2026-11-02")];
   const c = F.csvMes(ls, "2026-11"); assert.ok(c.startsWith("﻿")); assert.match(c, /"1500,5"/); assert.match(c, /"Saldo";"1200,5"/);

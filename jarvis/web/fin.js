@@ -110,7 +110,11 @@
       .map((l) => ({ ...l, atrasada: (l.vencimento || l.data) < hoje }))
       .sort((a, b) => (a.vencimento || a.data).localeCompare(b.vencimento || b.data));
   }
-  const comPago = (l, agora) => ({ ...l, status: "pago", vencimento: "", data: l.data > L().iso(agora || new Date()) ? L().iso(agora || new Date()) : l.data });
+  // A baixa pertence ao mês em que houve pagamento, sem perder a data original.
+  const comPago = (l, agora) => {
+    const dataPagamento = L().iso(agora || new Date());
+    return { ...l, status: "pago", vencimento: "", dataOriginal: l.dataOriginal || l.data, data: dataPagamento, pagoEm: dataPagamento };
+  };
 
   // ---------- exportação ----------
   const q = (v) => `"${String(v == null ? "" : v).replace(/"/g, '""')}"`;

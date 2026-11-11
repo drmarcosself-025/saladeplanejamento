@@ -1,135 +1,32 @@
 # Jarvis
 
-Painel de voz com agentes por contexto (gestão do dia, tráfego, social
-media, WhatsApp…). **Fase 0: roda sem backend, em modo demonstração** — os
-números são fictícios e a interface avisa com o selo **DEMO**.
+Painel privado de voz e texto para organizar leads, finanças e tarefas da clínica. O avatar e sete modos ficam no mesmo artefato HTML. **Agenda, e-mails, tráfego e social são demonstração.** Leads e lançamentos financeiros são seus dados.
 
-Leia `ARQUITETURA.md` antes de mexer: ele define o que é decidido, o que é
-desenho e as regras de segurança (a IA nunca executa; só você confirma).
-
-## Rodar agora
+## Usar localmente
 
 ```bash
 cd jarvis/web
-python3 -m http.server 8000      # ou qualquer servidor estático
+python3 -m http.server 8000
 # abra http://localhost:8000
 ```
 
-`localhost` é necessário para o microfone funcionar (ou HTTPS). Use Chrome ou
-Edge para voz; em outros navegadores dá para digitar.
+Use os botões do topo ou digite “abre o CRM”, “novo lead, João, 27 99999-1234, veio do Instagram, quer alinhadores”, “conta de energia 189,90 vence sexta”, “resumo financeiro do mês” e “ativa o agente designer”. No CRM, arraste cartões no computador; no celular, abra o cartão e escolha a etapa. Em Contador, navegue por mês, lance valores, marque pago, exporte CSV e copie o relatório.
 
-## Versão publicada (link do claude.ai)
+A voz fala um resumo curto; detalhes e textos gerados aparecem em cartões com botão **Copiar**. Perguntas abertas usam o Claude apenas no artefato com a capacidade `sample`; sem ela, o painel informa que não está disponível. Não promete executar programação, publicar posts, pagar contas ou enviar WhatsApp.
 
-Gerada com `node jarvis/tools/build-artifact.mjs saida.html` (junta tudo em um
-arquivo). Lá o microfone do navegador é bloqueado, então a página usa as
-capacidades do claude.ai: **ditado** (só segurar para falar) e **voz do
-Claude**. Fora do claude.ai (localhost, GitHub Pages) vale o que está abaixo.
+O link do WhatsApp abre uma conversa com a mensagem pronta; você precisa tocar em **Enviar**. Depois, marque **Contato realizado** na ficha se de fato falou com o lead.
 
-## Voz
+## Dados
 
-| Controle | O que faz |
-|---|---|
-| 🗣 **Segurar** (ou segure **Espaço**, fora de campos de texto) | Escuta só enquanto você aperta. Dispensa dizer “Jarvis”. Mais confiável com barulho. |
-| 🎙 **Contínuo** | Fica ouvindo e só responde quando ouvir “Jarvis” (aceita “Jarvi”, “Jarves”…). Pausa enquanto o Jarvis fala, para não ouvir a si mesmo. |
-| Medidor ao lado do 🎙 | Mostra o nível real do microfone. Se não mexe, o navegador não está ouvindo. |
-| Painel **Voz** | Escolha da voz do Jarvis, velocidade e “Testar voz”. |
+No artefato, leads e financeiro são documentos privados para o dono, sincronizados pelo armazenamento `db` do Claude. Fora do artefato, ficam apenas no navegador em que foram lançados. Contatos importados e registro técnico ficam no navegador. Evite registrar dados clínicos e guarde só o necessário para o atendimento.
 
-Enquanto você fala, o texto aparece ao vivo abaixo do avatar, e o avatar reage
-à sua voz.
-
-**Privacidade:** no Chrome/Edge o reconhecimento de fala é feito pelo servidor
-do navegador (Google/Microsoft): o áudio **sai do seu computador** enquanto o
-microfone está ativo. A voz do Jarvis é local. Para falar nome de paciente,
-use o modo segurar só quando precisar, ou digite.
-
-Se o microfone não funcionar: abra por `http://localhost:8000` (não pelo
-arquivo), permita o microfone no cadeado da barra de endereço, e use Chrome ou
-Edge. No iPhone/Safari o reconhecimento de voz é limitado: digite.
-
-## Experimente
-
-- “Jarvis, ativa o agente gestão do dia”
-- “quero confirmar os pacientes de amanhã” → aparece o painel de confirmação
-- “Jarvis, confirma” (em demonstração **não envia nada**)
-- “Jarvis, ativa agora o agente social media”
-- “Jarvis, desativa o agente social media” / “volta ao normal”
-- Ou clique nos atalhos no topo.
-
-### Leads (funil com retorno)
-
-Modo **Leads**: cada lead tem etapa (novo, conversando, orçamento, agendou,
-fechou, perdido) e **sempre uma data de próximo contato**, para nenhum se perder.
-O que passou da data aparece como atrasado, com um selo vermelho no painel.
-
-- “Jarvis, novo lead: João, 63 9…, veio do Instagram, quer clareamento”
-- “Quem preciso retornar hoje?” · “Meus leads”
-- “Retorna pro João” → prepara a mensagem e abre o WhatsApp; ao abrir, o
-  próximo retorno é marcado sozinho (+2 dias)
-- “Adia o João para sexta” · “Marca o João como agendou” · “O João fechou”
-- Exportar planilha (CSV) no painel.
-
-**Onde ficam:** no link do claude.ai, no armazenamento do artefato (só o dono
-lê e grava; sincroniza iPhone e computador). Fora dele, só neste navegador.
-São dados pessoais (LGPD): colete só o necessário.
-
-### Importar todos os contatos
-
-No painel **Contatos**, clique em **Importar contatos** e escolha o arquivo
-exportado do celular ou do Google Contatos (`.vcf` ou `.csv`; planilha do
-Clinicorp com colunas Nome e Celular também serve). O arquivo é lido no
-navegador e não vai a nenhum servidor. Telefones fixos e sem DDD são
-ignorados, repetidos não duplicam, e há busca por nome ou número. Funciona
-com milhares de contatos.
-
-Conectar o WhatsApp por QR code para sincronizar sozinho **não** está feito:
-exige um servidor (Evolution API) e é uma conexão não oficial.
-
-### Mandar mensagem no WhatsApp (funciona hoje, em qualquer modo)
-
-1. Abra **Contatos** (painel à esquerda) e cadastre nome + WhatsApp com DDD.
-   Os contatos ficam só no seu navegador.
-2. Diga ou digite, por exemplo:
-   - “Jarvis, manda mensagem pro João Silva dizendo que a consulta é amanhã às 9h”
-   - “Jarvis, entra em contato com a Maria” → ele pergunta o que dizer
-3. O Jarvis mostra a mensagem no painel. Diga **“confirma”** (ou clique em
-   Confirmar) e o WhatsApp abre na conversa certa **com o texto pronto**.
-   Você toca em enviar. **Nada é enviado sozinho.**
-
-Se houver dois contatos parecidos (“João”), ele pergunta qual. Se a confirmação
-foi por voz e o navegador bloquear a janela, use o botão Confirmar.
-
-O botão ⚙ abre o registro das suas interações (fica só no navegador;
-exportável em JSON).
-
-## Testes
+## Gerar e verificar
 
 ```bash
-node --test jarvis/tests/brain.test.mjs jarvis/tests/contacts.test.mjs jarvis/tests/leads.test.mjs
+node jarvis/tools/build-artifact.mjs saida.html
+node --test jarvis/tests/*.test.mjs
+# com o servidor local rodando e Chromium disponível:
+node jarvis/tests/browser.mjs
 ```
 
-Cobrem o interpretador de comandos, incluindo a regra de que “confirma” só
-vale como frase curta.
-
-## Estrutura
-
-```
-jarvis/
-  ARQUITETURA.md        arquitetura, segurança, contratos, fases
-  web/
-    index.html app.css  tela
-    app.js              controlador
-    modes.js            registro dos 7 agentes (dados, não código)
-    brain.js            roteador local de comandos + respostas de demo
-    data.js             dados de demonstração / chamada ao backend
-    avatar.js           busto em canvas (cor por modo, amplitude por estado)
-    voice.js            Web Speech API (entrada e saída)
-    config.js           URLs públicas do backend (vazio = demo)
-  tools/build-artifact.mjs  junta web/ em um único HTML (para publicar)
-  tests/brain.test.mjs contacts.test.mjs leads.test.mjs
-```
-
-## Ligar um backend (Fase 1+)
-
-Preencha `DATA_URL`, `BRAIN_URL` e `JARVIS_TOKEN` em `web/config.js`. **Nunca**
-coloque chave de IA, token do Clinicorp ou senha de e-mail neste arquivo: ele
-é público. Segredos ficam só nas Edge Functions.
+Publicar `saida.html` requer Artifact com todas as capacidades e regras de dono descritas em [ARQUITETURA.md](ARQUITETURA.md). A integração automática com WhatsApp, Clinicorp e e-mail pertence à próxima fase.

@@ -181,14 +181,6 @@
     dados = { source: "seus", ...L.resumo(L.lista()) }; renderModo();
   }
 
-  // Marca o contato feito e já define o próximo retorno (para nenhum lead ficar sem data).
-  async function registrarRetorno(p) {
-    if (!p || !p.leadId) return "";
-    const l = L.porId(p.leadId); if (!l) return "";
-    const novo = L.aposContato(l);
-    if (!(await L.salvar(novo))) return " Não consegui salvar o próximo retorno.";
-    return ` Próximo retorno marcado: ${quandoHumano(novo.proximo)}. Para outra data, diga: adia o ${primeiro(l.nome)} para sexta.`;
-  }
   async function prepararRetorno(lead, g) {
     const msg = L.mensagemRetorno(lead), url = JarvisBrain.linkWhatsapp(lead.tel, msg);
     if (!url) return dizer(`O telefone de ${lead.nome} parece inválido. Corrija o lead.`, g);
@@ -196,7 +188,7 @@
       id: "whatsapp.abrir", nivel: "EXECUTE", titulo: `Retornar para ${lead.nome}`,
       detalhe: [`${lead.nome} · ${lead.tel}`, [L.nomeEtapa(lead.etapa), lead.interesse].filter(Boolean).join(" · ")], exemplo: msg, url, leadId: lead.id,
     });
-    return dizer(`Preparei o retorno para ${lead.nome}: ${msg} Diga confirma para abrir o WhatsApp com a mensagem pronta.`, g);
+    return dizer(`Preparei o retorno para ${lead.nome}. Confira a mensagem na tela e diga confirma para abrir o WhatsApp.`, g);
   }
   function acaoRetornar(lead) { const g = ++geracao; JarvisVoice.parar(); return prepararRetorno(lead, g); }
 
@@ -234,7 +226,7 @@
     if (!(await L.salvar(novo))) return dizer(L.aviso || "Não consegui salvar.", g);
     sfx("confirmar");
     if (etapa === "fechou") return dizer(`Parabéns! Marquei ${lead.nome} como fechado. Ele sai da lista de retornos.`, g);
-    if (etapa === "perdido") return dizer(`Marquei ${lead.nome} como perdido. Ele sai da lista de retornos.`, g);
+    if (etapa === "sem_interesse") return dizer(`Marquei ${lead.nome} como sem interesse. Ele sai da lista de retornos.`, g);
     if (etapa === "agendou") return dizer(`Marquei ${lead.nome} como agendado. Para marcar o retorno de confirmação, diga: adia o ${primeiro(lead.nome)} para a data da consulta.`, g);
     return dizer(`Marquei ${lead.nome} como ${L.nomeEtapa(etapa).toLowerCase()}. Próximo retorno: ${quandoHumano(novo.proximo)}.`, g);
   };
@@ -268,7 +260,135 @@
       return comLead(it, g, aplicarData(it.quando));
     }
     if (it.tipo === "lead_retorno") return comLead(it, g, prepararRetorno);
+    if (it.tipo === "lead_detalhe") return comLead(it, g, async (lead, g2) => { abrirCrm(lead.id); return dizer(`Abri a ficha de ${lead.nome}.`, g2); });
+    if (it.tipo === "lead_nota") return comLead(it, g, async (lead, g2) => {
+      const ok = await L.salvar(L.comNota(lead, it.nota)); return dizer(ok ? `Anotei na ficha de ${lead.nome}.` : L.aviso || "Não consegui salvar a nota.", g2);
+    });
+    if (it.tipo === "lead_valor") return comLead(it, g, async (lead, g2) => {
+      const ok = await L.salvar(L.comValor(lead, it.valor)); return dizer(ok ? `Valor estimado de ${lead.nome}: ${JarvisFin.brl(it.valor)}.` : L.aviso || "Não consegui salvar o valor.", g2);
+    });
     return NAO_LEAD;
+  }
+
+  // ---------- áreas de trabalho: CRM e financeiro ----------
+  const F = JarvisFin;
+  let leadAberto = null, mesFin = F.mesDe(hojeISO());
+  const valor = (v) => F.brl(v || 0);
+  const limparCard = () => { $("respostaCard").hidden = true; $("respostaItens").textContent = ""; $("respostaAcoes").textContent = ""; };
+  async function copiar(t) {
+    try { await navigator.clipboard.writeText(t); legenda("Copiado."); }
+    catch (_) { legenda("Não consegui copiar aqui. Selecione o texto na tela."); }
+  }
+  function mostrarCard(titulo, itens, acoes) {
+    const box = $("respostaCard"); box.hidden = false; $("respostaTitulo").textContent = titulo || "Detalhes";
+    const ul = $("respostaItens"); ul.textContent = "";
+    for (const s of (itens || []).slice(0, 8)) {
+      const li = mk("li", "", s), b = mk("button", "btn", "Copiar"); b.type = "button";
+      b.addEventListener("click", () => copiar(s)); li.prepend(b); ul.appendChild(li);
+    }
+    const bar = $("respostaAcoes"); bar.textContent = "";
+    for (const s of (acoes || []).slice(0, 4)) {
+      const b = mk("button", "btn", s); b.type = "button"; b.addEventListener("click", () => processar(s, "clique")); bar.appendChild(b);
+    }
+    box.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }
+  const metricas = (alvo, pares) => {
+    const box = $(alvo); box.textContent = "";
+    for (const [nome, n] of pares) { const e = mk("div", "metrica"), s = mk("span", "", nome), b = mk("strong", "", String(n)); e.append(s, b); box.appendChild(e); }
+  };
+  function abrirCrm(id) { $("crmTela").hidden = false; $("finTela").hidden = true; $("crmTela").querySelector(".workspace-head").after($("respostaCard")); if (id) leadAberto = id; renderCrm(); }
+  function fecharAreas() { $("crmTela").hidden = true; $("finTela").hidden = true; $("legendaSr").after($("respostaCard")); }
+  function renderCrm() {
+    const ls = L.lista(), r = L.resumo(ls);
+    $("crmStatus").textContent = L.aviso || (L.modo === "claude" ? "Dados salvos no seu artefato Claude." : "Dados salvos neste navegador.");
+    metricas("crmMetricas", [["Ativos", r.ativos], ["Hoje", r.hoje], ["Atrasados", r.atrasados], ["Valor em aberto (estimado)", valor(r.emAberto)],
+      ["Conversão dos encerrados", r.conversao == null ? "—" : Math.round(r.conversao * 100) + "%"], ["Ticket dos fechados", r.ticket == null ? "—" : valor(r.ticket)],
+      ["Por origem", Object.entries(r.porOrigem).map(([k,v]) => `${k}: ${v.total}`).join(" · ") || "—"]]);
+    const q = $("crmQuadro"); q.textContent = "";
+    for (const etapa of L.ETAPAS) {
+      const col = mk("section", "crm-coluna"); col.append(mk("h2", "", `${etapa.nome} · ${r.funil[etapa.id] || 0}`));
+      col.dataset.etapa = etapa.id;
+      col.addEventListener("dragover", (e) => e.preventDefault());
+      col.addEventListener("drop", async (e) => { e.preventDefault(); const id = e.dataTransfer.getData("text/plain"), lead = L.porId(id); if (lead) await L.salvar(L.comEtapa(lead, etapa.id)); });
+      for (const l of ls.filter((x) => x.etapa === etapa.id)) {
+        const card = mk("button", "crm-cartao"); card.type = "button"; card.draggable = true; card.setAttribute("aria-selected", String(leadAberto === l.id));
+        card.append(mk("b", "", l.nome), mk("span", "", l.interesse || "Interesse não informado"), mk("span", "", `${l.valor ? valor(l.valor) + " · " : ""}${L.ativo(l) ? L.rotulo(l.proximo, hojeISO()) : "Encerrado"}`));
+        card.addEventListener("dragstart", (e) => e.dataTransfer.setData("text/plain", l.id)); card.addEventListener("click", () => { leadAberto = l.id; renderCrm(); }); col.appendChild(card);
+      }
+      q.appendChild(col);
+    }
+    const d = $("crmDetalhe"), l = L.porId(leadAberto); d.hidden = !l; d.textContent = ""; if (!l) return;
+    d.append(mk("h2", "", l.nome), mk("p", "small muted", [l.interesse, l.origem, l.tel].filter(Boolean).join(" · ")));
+    const sel = mk("select"); sel.setAttribute("aria-label", "Etapa");
+    for (const e of L.ETAPAS) { const op = mk("option", "", e.nome); op.value = e.id; sel.append(op); }
+    sel.value = l.etapa; sel.addEventListener("change", async () => { await L.salvar(L.comEtapa(l, sel.value)); }); d.append(sel);
+    const val = mk("input"); val.type = "number"; val.min = "0"; val.step = "0.01"; val.placeholder = "Valor estimado em R$"; val.value = l.valor || ""; val.setAttribute("aria-label", "Valor estimado"); d.append(val);
+    const nota = mk("textarea"); nota.placeholder = "Nota para o histórico"; nota.setAttribute("aria-label", "Nova nota"); d.append(nota);
+    const row = mk("div", "row"), salvar = mk("button", "btn", "Salvar valor e nota"); salvar.type = "button";
+    salvar.addEventListener("click", async () => { let novo = l; if (val.value !== String(l.valor || "")) novo = L.comValor(novo, Number(val.value)); if (nota.value.trim()) novo = L.comNota(novo, nota.value); await L.salvar(novo); }); row.append(salvar);
+    if (L.ativo(l)) {
+      const ret = mk("button", "btn", "Retornar"), feito = mk("button", "btn", "Contato realizado"), adiar = mk("button", "btn", "Adiar 1 dia"); ret.type = feito.type = adiar.type = "button";
+      ret.addEventListener("click", () => { fecharAreas(); acaoRetornar(l); });
+      feito.addEventListener("click", () => L.salvar(L.aposContato(l)));
+      adiar.addEventListener("click", () => L.salvar(L.comProximo(l, L.somar(l.proximo && l.proximo > hojeISO() ? l.proximo : hojeISO(), 1)))); row.append(ret, feito, adiar);
+    }
+    d.append(row, mk("h2", "", "Histórico")); const ol = mk("ol");
+    for (const h of (l.historico || []).slice(-20).reverse()) ol.append(mk("li", "", `${String(h.ts).slice(0, 10)} · ${h.texto}`)); d.append(ol);
+  }
+  function abrirFin() { $("finTela").hidden = false; $("crmTela").hidden = true; $("finTela").querySelector(".workspace-head").after($("respostaCard")); renderFin(); }
+  function renderFin() {
+    const ls = F.lista(), r = F.resumoMes(ls, mesFin), itens = F.doMes(ls, mesFin);
+    $("finMes").textContent = F.nomeMes(mesFin);
+    $("finStatus").textContent = F.aviso || (F.modo === "claude" ? "Dados salvos no seu artefato Claude." : "Dados salvos neste navegador.");
+    metricas("finMetricas", [["Receitas recebidas", valor(r.receitas)], ["Despesas pagas", valor(r.despesas)], ["Saldo pago", valor(r.saldo)], ["A pagar", valor(r.aPagar)], ["A receber", valor(r.aReceber)]]);
+    const cats = $("finCategorias"); cats.textContent = "";
+    for (const c of r.categorias) { const e = mk("div", "", `${c.categoria} · ${valor(c.total)}`), b = mk("div", "categoria-barra"), i = mk("i"); i.style.width = Math.round(c.pct * 100) + "%"; b.append(i); e.append(b); cats.append(e); }
+    const ul = $("finLista"); ul.textContent = "";
+    for (const l of itens.sort((a,b) => b.data.localeCompare(a.data))) {
+      const li = mk("li"), tx = mk("div"); tx.append(mk("strong", "", `${l.tipo === "receita" ? "+" : "−"}${valor(l.valor)} · ${l.descricao || l.categoria}`), mk("small", "", `${l.data} · ${l.categoria} · ${l.status === "pendente" ? "Pendente " + (l.vencimento || "") : "Pago/recebido"}`));
+      const a = mk("div", "row");
+      if (l.status === "pendente") { const b = mk("button", "btn", "Marcar pago"); b.type = "button"; b.addEventListener("click", () => F.salvar(F.comPago(l))); a.append(b); }
+      const del = mk("button", "btn", "Apagar"); del.type = "button"; del.addEventListener("click", () => {
+        if (del.dataset.armado) F.remover(l.id); else { del.dataset.armado = "1"; del.textContent = "Confirmar exclusão"; setTimeout(() => { if (del.isConnected) { del.textContent = "Apagar"; delete del.dataset.armado; } }, 4000); }
+      }); a.append(del); li.append(tx, a); ul.append(li);
+    }
+    if (!itens.length) ul.append(mk("li", "muted", "Nenhum lançamento neste mês."));
+    $("finFecharMes").textContent = F.fechamentoDe(mesFin) ? "Atualizar fechamento" : "Fechar o mês";
+  }
+  function contextoClaude() {
+    const modo = MODOS[modoId], ls = L.lista(), r = L.resumo(ls), mes = F.mesDe(hojeISO()), f = F.resumoMes(F.lista(), mes);
+    const devidos = L.filtrar(ls, "devidos").slice(0, 5).map((l) => `${l.nome}: ${l.interesse || "sem interesse informado"}, retorno ${l.proximo}`).join("; ");
+    return [`Modo: ${modo.nome}; ${modo.resumo}`, `Leads: ${r.ativos} ativos, ${r.hoje} hoje, ${r.atrasados} atrasados. Devidos: ${devidos || "nenhum"}.`,
+      `Financeiro ${mes}: recebido ${valor(f.receitas)}, pago ${valor(f.despesas)}, a pagar ${valor(f.aPagar)}, a receber ${valor(f.aReceber)}.`,
+      modoId === "gestao" ? "Agenda e e-mails na tela são apenas demonstração; não use esses nomes como dados reais." : ""].filter(Boolean).join("\n");
+  }
+  async function comandoFin(it, g) {
+    if (it.tipo === "fin_lancar") {
+      if (it.erro === "valor") { aguardando = { tipo: "fin_valor", lanc: it.lanc }; return dizer("Qual o valor em reais?", g); }
+      const lanc = F.novo(it.lanc); if (lanc.erro) return dizer("Não entendi o valor. Informe um valor maior que zero.", g);
+      if (!(await F.salvar(lanc))) return dizer(F.aviso || "Não consegui salvar.", g);
+      abrirFin(); return dizer(`Lancei ${lanc.tipo === "receita" ? "receita" : "despesa"} de ${valor(lanc.valor)} como ${lanc.status}.`, g);
+    }
+    if (it.tipo === "fin_resumo") {
+      mesFin = it.mes || F.mesDe(hojeISO()); abrirFin(); const r = F.resumoMes(F.lista(), mesFin);
+      mostrarCard(`Resumo de ${F.nomeMes(mesFin)}`, [`Recebido: ${valor(r.receitas)}`, `Pago: ${valor(r.despesas)}`, `Saldo pago: ${valor(r.saldo)}`, `A pagar: ${valor(r.aPagar)}`, `A receber: ${valor(r.aReceber)}`]);
+      return dizer(`Mostrei o resumo de ${F.nomeMes(mesFin)} na tela.`, g);
+    }
+    if (it.tipo === "fin_pendentes") {
+      const lista = F.pendentes(F.lista(), new Date(), 7); abrirFin();
+      mostrarCard("Contas pendentes", lista.length ? lista.slice(0, 8).map((x) => `${x.descricao || x.categoria}: ${valor(x.valor)}, vence ${x.vencimento || x.data}${x.atrasada ? " (atrasada)" : ""}`) : ["Nenhuma conta vencida ou a vencer nos próximos 7 dias."]);
+      return dizer(`Você tem ${lista.length} conta${lista.length === 1 ? "" : "s"} pendente${lista.length === 1 ? "" : "s"} na próxima semana. Mostrei na tela.`, g);
+    }
+    if (it.tipo === "fin_pagar") {
+      const q = JarvisBrain.norm(it.nome), achados = F.lista().filter((l) => l.tipo === "despesa" && l.status === "pendente" && JarvisBrain.norm(l.descricao || l.categoria).includes(q));
+      if (achados.length !== 1) return dizer(achados.length ? "Achei mais de uma conta. Abra o Contador e escolha qual marcar como paga." : "Não achei essa conta pendente. Abra o Contador para conferir.", g);
+      if (!(await F.salvar(F.comPago(achados[0])))) return dizer(F.aviso || "Não consegui salvar.", g);
+      abrirFin(); return dizer(`Marquei ${achados[0].descricao || achados[0].categoria} como paga.`, g);
+    }
+    if (it.tipo === "fin_fechar") {
+      mesFin = it.mes || F.mesDe(hojeISO()); if (!(await F.fecharMes(mesFin))) return dizer(F.aviso || "Não consegui fechar o mês.", g);
+      abrirFin(); return dizer(`Registrei o fechamento de ${F.nomeMes(mesFin)}. O relatório está disponível para copiar.`, g);
+    }
   }
 
   // ---------- estado visual ----------
@@ -340,8 +460,8 @@
     document.querySelectorAll(".chip").forEach((c) => c.classList.toggle("on", c.dataset.modo === modoId));
     const badge = $("badgeFonte"), src = dados.source;
     badge.hidden = modoId === "normal";
-    badge.textContent = src === "live" ? "AO VIVO" : src === "seus" ? "SEUS DADOS" : "DEMO"; badge.className = "badge " + (src === "demo" ? "demo" : "live");
-    $("cerebro").textContent = "cérebro: " + (window.APP_CONFIG.BRAIN_URL ? "Claude (backend)" : "local");
+    badge.textContent = src === "live" ? "AO VIVO" : src === "seus" ? "SEUS DADOS" : src === "misto" ? "DEMO + SUAS CONTAS" : "DEMO"; badge.className = "badge " + (src === "demo" || src === "misto" ? "demo" : "live");
+    $("cerebro").textContent = "cérebro: comandos locais · Claude para perguntas abertas";
     renderSugestoes();
   }
   // Números que sobem até o valor (só quando o valor é um número simples, em R$ ou não).
@@ -405,6 +525,7 @@
     dados = id === "normal" ? {} : await JarvisData.get(id);
     if (g !== geracao) return;
     if (id === "leads") { $("painelLeads").open = true; renderLeads(); }
+    if (id === "contador") abrirFin(); else fecharAreas();
     renderModo(); sfx("ativar"); entrada(".col.left > .panel:not([hidden]), .sugestoes .sug");
     gravarLog({ tipo: "ativar", fonte: dados.source });
     await dizer((prefixo ? prefixo + " " : "") + MODOS[id].abertura(dados), g);
@@ -416,10 +537,15 @@
     const url = JarvisBrain.linkWhatsapp(contato.tel, msg);
     if (!url) { $("painelContatos").open = true; return dizer(`O telefone de ${contato.nome} parece inválido. Corrija no painel de contatos.`, g); }
     definirPendente({ id: "whatsapp.abrir", nivel: "EXECUTE", titulo: `Abrir WhatsApp de ${contato.nome}`, detalhe: [`${contato.nome} · ${contato.tel}`], exemplo: msg, url });
-    return dizer(`Preparei para ${contato.nome}: ${msg}. Diga confirma para abrir o WhatsApp com a mensagem pronta.`, g);
+    return dizer(`Preparei a mensagem para ${contato.nome}. Confira o texto na tela e diga confirma para abrir o WhatsApp.`, g);
   }
   async function continuarAguardando(texto, g) {
     const a = aguardando; aguardando = null;
+    if (a.tipo === "fin_valor") {
+      const n = F.lerValor(texto);
+      if (!(n > 0)) { aguardando = a; return dizer("Não entendi o valor. Diga, por exemplo, cento e cinquenta reais ou 150.", g); }
+      return comandoFin({ tipo: "fin_lancar", lanc: { ...a.lanc, valor: n } }, g);
+    }
     if (a.tipo === "lead_tel") return criarLeadComDados({ ...a.dados, tel: texto }, g);
     if (a.tipo === "lead_escolha") {
       const r = JarvisBrain.acharContato(texto, a.opcoes);
@@ -445,6 +571,7 @@
     JarvisVoice.parar();
     const it = JarvisBrain.interpretar(texto, MODOS);
     if (it.tipo === "vazio") return;
+    limparCard();
     acordadoAte = Date.now() + 12000; sfx("enviar");
     registrarConversa("voce", texto.trim());
     gravarLog({ tipo: it.tipo, entrada: texto, fonte: origem });
@@ -463,6 +590,9 @@
       const r = await comandoLead(it, g);
       if (r !== NAO_LEAD) return r;
     }
+    if (it.tipo === "crm_abrir") { abrirCrm(); return dizer("Abri o CRM. Mostrei as etapas e os retornos na tela.", g); }
+    if (it.tipo === "crm_fechar") { fecharAreas(); return dizer("Fechei o CRM.", g); }
+    if (it.tipo.startsWith("fin_")) return comandoFin(it, g);
     if (it.tipo === "mensagem") {
       const lista = lerContatos(), achados = JarvisBrain.acharContato(it.nome, lista);
       if (!achados.length) {
@@ -493,28 +623,33 @@
       if (p.url) {
         // Se a confirmação veio de clique, o navegador deixa abrir; se veio de voz,
         // pode bloquear: então destaca o botão (um link de verdade) e pede o toque.
-        let w = null; try { w = window.open(p.url, "_blank"); } catch (_) {}
-        if (!w) {
-          const a = $("linkWa"); a.classList.remove("pulsa"); void a.offsetWidth; a.classList.add("pulsa");
-          return dizer("Pronto. Toque em Abrir WhatsApp para continuar.", g);
-        }
-        try { w.opener = null; } catch (_) {}
-        pendente = null; renderPendente(); sfx("confirmar");
-        gravarLog({ tipo: "executar", entrada: p.id, fonte: "local" });
-        const extra = await registrarRetorno(p);
-        return dizer("Abri o WhatsApp com a mensagem pronta. É só tocar em enviar." + extra, g);
+        const a = $("linkWa"); a.classList.remove("pulsa"); void a.offsetWidth; a.classList.add("pulsa");
+        return dizer("Toque em Abrir WhatsApp. A mensagem está pronta e você decide se envia.", g);
       }
       pendente = null; renderPendente();
       gravarLog({ tipo: "executar", entrada: p.id, fonte: dados.source });
-      return dizer(dados.source === "live" ? "Feito."
-        : `Confirmado em demonstração: ${p.titulo}. Nada foi enviado de verdade, porque o backend ainda não está ligado.`, g);
+      return dizer(`Confirmação registrada para ${p.titulo}. Nenhum envio externo foi feito.`, g);
+    }
+    if (modoId === "gestao" && /\b(paciente|agenda|confirmac)/.test(it.texto)) {
+      const pend = (dados.pacientes || []).filter((p) => !p.confirmado);
+      mostrarCard("Agenda de demonstração", pend.map((p) => `${p.hora} · ${p.nome} · ${p.proc}`));
+      return dizer(`A agenda é fictícia nesta versão. Mostrei ${pend.length} pacientes de demonstração sem confirmação.`, g);
+    }
+    if (modoId === "gestao" && /\b(e mail|email)/.test(it.texto)) {
+      mostrarCard("E-mails de demonstração", (dados.emails || []).map((e) => `${e.de} · ${e.assunto}`));
+      return dizer("Os e-mails são fictícios nesta versão. Mostrei a demonstração na tela.", g);
     }
     // pergunta aberta
     setEstado("pensando"); legenda("…");
-    const r = await JarvisBrain.perguntar({ modoId, texto, dados });
+    const r = await JarvisBrain.perguntarClaude({ modo: MODOS[modoId], texto, contexto: contextoClaude(), historico: conversa.slice(-4) });
     if (g !== geracao) return;
-    if (r.acao) definirPendente(r.acao);
-    gravarLog({ tipo: "resposta", fonte: r.fonte });
+    if (!r || r.erro) {
+      const msg = !r || r.erro === "indisponivel" ? "O Claude não está disponível aqui. Posso usar os comandos de leads e financeiro; para perguntas abertas, abra o artefato no Claude e permita o acesso quando for solicitado."
+        : r.erro === "limite" ? "O limite de perguntas ao Claude foi atingido. Tente mais tarde." : "Não consegui consultar o Claude agora. Tente novamente.";
+      gravarLog({ tipo: "resposta", fonte: "indisponivel" }); return dizer(msg, g);
+    }
+    if (r.titulo || r.itens.length) mostrarCard(r.titulo, r.itens, r.acoes);
+    gravarLog({ tipo: "resposta", fonte: "claude" });
     return dizer(r.fala, g);
   }
   // Nenhum erro deixa o Jarvis preso em "pensando".
@@ -535,12 +670,12 @@
   });
   $("btnConfirmar").addEventListener("click", () => processar("confirma", "clique"));
   $("btnCancelar").addEventListener("click", () => processar("cancela", "clique"));
-  $("linkWa").addEventListener("click", () => {      // link real: deixa abrir e só registra
-    const p = pendente; if (!p) return;
+  $("linkWa").addEventListener("click", (e) => {      // abrir não prova envio; retorno só após registro manual
+    const p = pendente; if (!p || expirada()) { e.preventDefault(); pendente = null; renderPendente(); legenda("Essa ação expirou. Peça novamente."); return; }
     gravarLog({ tipo: "executar", entrada: p.id, fonte: "local" });
-    setTimeout(async () => {
+    setTimeout(() => {
       pendente = null; renderPendente();
-      legenda("Abri o WhatsApp com a mensagem pronta. É só tocar em enviar." + (await registrarRetorno(p)));
+      legenda("WhatsApp aberto com o texto pronto. Depois de enviar, marque Contato realizado na ficha do lead.");
     }, 150);
   });
 
@@ -591,6 +726,30 @@
   });
   $("btnLeadsCsv").addEventListener("click", () => salvarArquivo(`leads-${hojeISO()}.csv`, L.csv(L.lista()), "text/csv"));
   L.aoMudar(() => { renderLeads(); atualizarModoLeads(); });
+  L.aoMudar(renderCrm);
+  F.aoMudar(() => {
+    renderFin();
+    if (modoId === "contador" || modoId === "gestao") JarvisData.get(modoId).then((d) => { dados = d; renderModo(); });
+  });
+  $("crmFechar").addEventListener("click", fecharAreas);
+  $("finFechar").addEventListener("click", fecharAreas);
+  $("finAnterior").addEventListener("click", () => { mesFin = F.mesAnterior(mesFin); renderFin(); });
+  $("finSeguinte").addEventListener("click", () => { mesFin = F.mesSeguinte(mesFin); renderFin(); });
+  $("finData").value = hojeISO();
+  $("finForm").addEventListener("submit", async (e) => {
+    e.preventDefault(); const l = F.novo({ tipo: $("finTipo").value, descricao: $("finDescricao").value, valor: Number($("finValor").value),
+      status: $("finSituacao").value, data: $("finData").value || hojeISO(), vencimento: $("finVencimento").value });
+    if (l.erro) { $("finErro").textContent = "Informe um valor maior que zero."; return; }
+    if (!(await F.salvar(l))) { $("finErro").textContent = F.aviso || "Não consegui salvar."; return; }
+    $("finErro").textContent = ""; $("finDescricao").value = ""; $("finValor").value = ""; $("finVencimento").value = "";
+    mesFin = F.mesDe(l.data); renderFin();
+  });
+  $("finCsv").addEventListener("click", () => salvarArquivo(`financeiro-${mesFin}.csv`, F.csvMes(F.lista(), mesFin), "text/csv"));
+  $("finRelatorio").addEventListener("click", () => copiar(F.relatorioTexto(F.lista(), mesFin)));
+  $("finFecharMes").addEventListener("click", async () => {
+    if (await F.fecharMes(mesFin)) { $("finStatus").textContent = `Fechamento de ${F.nomeMes(mesFin)} registrado.`; renderFin(); }
+    else $("finErro").textContent = F.aviso || "Não consegui fechar.";
+  });
 
   // Microfone contínuo (só em navegador comum)
   $("btnMic").addEventListener("click", async () => {
@@ -706,7 +865,7 @@
     const el = $("boot"); if (reduzido || sessionStorageVisto()) return;
     el.hidden = false;
     const linhas = [["Núcleo", "ok"], ["Voz", infoVoz.entrada === "ditado" ? "ditado + voz Claude" : infoVoz.entrada === "navegador" ? "navegador" : "só texto"],
-                    ["Agentes", JARVIS_ORDEM.length + " carregados"], ["Contatos", String(lerContatos().length)], ["Dados", window.APP_CONFIG.DATA_URL ? "ao vivo" : "demonstração"]];
+                    ["Agentes", JARVIS_ORDEM.length + " carregados"], ["Contatos", String(lerContatos().length)], ["Dados", "leads/finanças seus; outras áreas demo"]];
     const ul = $("bootLinhas"); ul.textContent = "";
     linhas.forEach(([k, v], i) => setTimeout(() => {
       const li = document.createElement("li"), a = document.createElement("span"), b = document.createElement("span");
@@ -722,7 +881,8 @@
 
   // ---------- início ----------
   renderChips(); renderModo(); setEstado("idle"); renderLog(); renderContatos(); renderLeads(); aplicarVoz(infoVoz);
-  L.iniciar().then(() => { renderLeads(); atualizarModoLeads(); });
+  L.iniciar().then(() => { renderLeads(); atualizarModoLeads(); renderCrm(); });
+  F.iniciar().then(() => { renderFin(); if (modoId === "gestao" || modoId === "contador") JarvisData.get(modoId).then((d) => { dados = d; renderModo(); }); });
   JarvisVoice.pronto.then(aplicarVoz);
   if (window.matchMedia && matchMedia("(max-width:900px)").matches) $("entrada").placeholder = "Fale ou digite um pedido…";
   boot();
