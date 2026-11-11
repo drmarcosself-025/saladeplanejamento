@@ -888,7 +888,7 @@
   L.iniciar().then(() => { renderLeads(); atualizarModoLeads(); renderCrm(); });
   F.iniciar().then(() => { renderFin(); if (modoId === "gestao" || modoId === "contador") JarvisData.get(modoId).then((d) => { dados = d; renderModo(); }); });
   JarvisVoice.pronto.then(aplicarVoz);
-  if (window.matchMedia && matchMedia("(max-width:900px)").matches) $("entrada").placeholder = "O que vamos cuidar agora?";
+  if (window.matchMedia && matchMedia("(max-width:900px)").matches) $("entrada").placeholder = "O que vamos cuidar?";
   boot();
   legenda("Estou por aqui. O que merece sua atenção agora?");
 })();

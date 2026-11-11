@@ -378,3 +378,6 @@ body[data-vista="espacos"] .source-line,body[data-vista="pessoal"] .source-line,
 }
 @media(max-width:365px){body{padding-left:14px;padding-right:14px}.barra input{font-size:11px}.brand small{display:none}.presence-head>span:first-child{letter-spacing:.04em}#avatar{height:235px}.profile-button{width:29px;height:29px}.edition{display:none}}
 @media(prefers-reduced-motion:reduce){.fundo{display:none}.avatar-halo{filter:none}html{scroll-behavior:auto}}
+/* Conversa contida; campos de 16px evitam zoom automático no Safari. */
+.conversa{max-height:430px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#3b5666 transparent}
+@media(max-width:900px){.conversa{max-height:350px}.conversa li{font-size:13px;line-height:1.7}.resposta-card li{font-size:13px}.barra input,.task-form input,#utilityConteudo input,#utilityConteudo textarea,#utilityConteudo select{font-size:16px}.main-nav button{font-size:10px}.sug{font-size:10px}.personal-form label{font-size:12px}}

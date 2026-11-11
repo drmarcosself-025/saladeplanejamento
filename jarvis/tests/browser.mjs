@@ -17,6 +17,10 @@ try {
     await page.goto(process.env.JARVIS_TEST_URL || 'http://localhost:8000');
     await page.locator('#boot').waitFor({ state: 'hidden' });
     await page.evaluate(() => { JarvisVoice.mudo = true; JarvisSfx.mudo = true; });
+    const capture = async name => {
+      if (await page.locator('#avatar').isVisible()) await page.waitForFunction(() => document.getElementById('avatar').dataset.rendered === 'true');
+      await page.screenshot({ path: `${output}/${name}-${width}.png`, fullPage: true });
+    };
     const cmd = async (s) => {
       await page.locator('#entrada').fill(s); await page.locator('#barra button[type=submit]').click();
     };
@@ -28,7 +32,7 @@ try {
     await page.locator('#tarefaTexto').fill('Organizar minha manhã');
     await page.locator('#tarefaForm button').click();
     assert.match(await page.locator('#tarefasLista').innerText(), /Organizar minha manhã/);
-    await page.screenshot({ path: `${output}/hoje-${width}.png`, fullPage: true });
+    await capture('hoje');
     await view('pessoal');
     await page.locator('#perfilFoco').fill('Ter mais tempo para mim');
     await page.locator('#perfilRotina').fill('Consultório às quartas');
@@ -39,7 +43,7 @@ try {
     await view('hoje'); assert.match(await page.locator('#focoTexto').innerText(), /Ter mais tempo/);
     await view('espacos');
     assert.equal(await page.locator('#chips button').count(), 7);
-    await page.screenshot({ path: `${output}/espacos-${width}.png`, fullPage: true });
+    await capture('espacos');
     await page.locator('[data-open="painelContatos"]').click();
     assert.equal(await page.locator('#painelContatos').isVisible(), true);
     await view('hoje');
@@ -55,7 +59,7 @@ try {
     await page.waitForFunction(() => document.getElementById('crmDetalhe').textContent.includes('Aguardando documentação'));
     await page.locator('#crmDetalhe select').selectOption('sem_interesse');
     await page.waitForFunction(() => document.getElementById('crmQuadro').textContent.includes('Sem interesse · 1'));
-    await page.screenshot({ path: `${output}/crm-${width}.png`, fullPage: true });
+    await capture('crm');
     await page.locator('#crmFechar').click();
     await cmd('conta de energia'); await fala('Qual o valor');
     await cmd('189,90');
@@ -66,7 +70,7 @@ try {
     await page.locator('#finTipo').selectOption('receita');
     await page.locator('#finForm button[type=submit]').click();
     await page.waitForFunction(() => document.getElementById('finMetricas').textContent.includes('350,00'));
-    await page.screenshot({ path: `${output}/contador-${width}.png`, fullPage: true });
+    await capture('contador');
     await page.locator('#finFechar').click();
     await cmd('ativa o agente designer'); await fala('Modo Designer');
     await cmd('crie uma legenda sobre alinhadores'); await fala('Claude não está disponível');
@@ -77,7 +81,7 @@ try {
     await page.locator('#respostaCard').waitFor({ state: 'visible' });
     assert.match(await page.locator('#respostaCard').innerText(), /Legenda completa para copiar/);
     assert.doesNotMatch(await page.evaluate(() => window.ultimoContexto), /Ter mais tempo/);
-    await page.screenshot({ path: `${output}/conversa-${width}.png`, fullPage: true });
+    await capture('conversa');
     await view('pessoal'); await page.locator('#perfilCompartilhar').check(); await page.locator('#perfilForm button[type=submit]').click();
     await cmd('como organizar meu dia'); await fala('Mostrei na tela');
     assert.match(await page.evaluate(() => window.ultimoContexto), /Ter mais tempo/);

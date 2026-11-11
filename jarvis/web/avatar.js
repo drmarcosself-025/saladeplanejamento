@@ -5,9 +5,9 @@
   function criar(canvas) {
     const ctx = canvas.getContext("2d");
     const quiet = matchMedia("(prefers-reduced-motion: reduce)").matches;
-    let W = 1, H = 1, estado = "idle", nivel = 0, cor = [145, 214, 221], alvo = cor.slice(), last = 0;
+    let W = 1, H = 1, estado = "idle", nivel = 0, cor = [145, 214, 221], alvo = cor.slice(), last = -Infinity;
     const hex = (h) => { const n = parseInt(h.replace("#", ""), 16); return [(n>>16)&255,(n>>8)&255,n&255]; };
-    const resize = () => { const box = canvas.getBoundingClientRect(), d = Math.min(devicePixelRatio || 1, 2); W = Math.max(1, box.width); H = Math.max(1, box.height); canvas.width = W*d; canvas.height = H*d; ctx.setTransform(d,0,0,d,0,0); };
+    const resize = () => { const box = canvas.getBoundingClientRect(), d = Math.min(devicePixelRatio || 1, 2); W = Math.max(1, box.width); H = Math.max(1, box.height); canvas.width = W*d; canvas.height = H*d; ctx.setTransform(d,0,0,d,0,0); last = -Infinity; delete canvas.dataset.rendered; };
     new ResizeObserver(resize).observe(canvas); resize();
     // Leve relevo facial: testa, maçãs do rosto, nariz e queixo.
     function geo(u, v) {
@@ -73,6 +73,7 @@
       }
       // Poucos pontos de constelação, deterministicamente distribuídos.
       for(let i=0;i<20;i++){const a=i*2.399,rad=s*(.63+(i%5)*.045);const x=cx+Math.cos(a)*rad,y=cy+Math.sin(a)*rad*.9;ctx.fillStyle=`rgba(${rgb},${.12+(i%3)*.08})`;ctx.fillRect(x,y,1.2,1.2)}
+      canvas.dataset.rendered = "true";
     }
     requestAnimationFrame(frame);
     return {setEstado(e){estado=e},setCor(h){alvo=hex(h)},setNivel(n){nivel=Math.max(0,Math.min(1,n||0))}};
