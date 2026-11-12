@@ -25,11 +25,11 @@ jobs:
           JARVIS_SCREENSHOTS: /tmp/jarvis-screenshots
         run: |
           python3 -m http.server 8000 --directory jarvis/web > /tmp/jarvis-server.log 2>&1 &
-          node jarvis/tests/browser.mjs
+          JARVIS_SCREENSHOTS=/tmp/jarvis-functional-shots node jarvis/tests/browser.mjs
+          node jarvis/tests/avatar-browser.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: jarvis-ui
-          path: |
-            /tmp/jarvis-screenshots
-            /tmp/jarvis-3.0.html
+          # Publica apenas o avatar isolado, sem capturas de CRM, perfil ou formulários.
+          path: /tmp/jarvis-screenshots

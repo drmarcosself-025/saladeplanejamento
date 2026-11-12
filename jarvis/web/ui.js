@@ -99,7 +99,7 @@
     }
     $("connDados").textContent = JarvisLeads.modo === "claude" && JarvisFin.modo === "claude" ? "Seu artefato Claude" : "Neste navegador";
   }
-  const estados = { idle: "Por aqui, com você", ouvindo: "Estou ouvindo", pensando: "Organizando as ideias", falando: "Conversando com você" };
+  const estados = { idle: "Por aqui, com você", ouvindo: "Estou ouvindo", pensando: "Organizando as ideias", falando: "Conversando com você", executando: "Abrindo a ação confirmada" };
   new MutationObserver(() => { $("presencaEstado").textContent = estados[document.documentElement.dataset.estado] || estados.idle; }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-estado"] });
   JarvisLeads.aoMudar(render); JarvisFin.aoMudar(render);
   window.JarvisUI = { navegar, comando, iconizar, render };

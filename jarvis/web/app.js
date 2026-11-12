@@ -674,6 +674,9 @@
   $("btnCancelar").addEventListener("click", () => processar("cancela", "clique"));
   $("linkWa").addEventListener("click", (e) => {      // abrir não prova envio; retorno só após registro manual
     const p = pendente; if (!p || expirada()) { e.preventDefault(); pendente = null; renderPendente(); legenda("Essa ação expirou. Peça novamente."); return; }
+    const gExec = geracao;
+    setEstado("executando");
+    setTimeout(() => { if (geracao === gExec && estado === "executando") setEstado("idle"); }, 700);
     gravarLog({ tipo: "executar", entrada: p.id, fonte: "local" });
     setTimeout(() => {
       pendente = null; renderPendente();
