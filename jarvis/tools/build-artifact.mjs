@@ -13,7 +13,8 @@ const html = fs.readFileSync(path.join(web, "index.html"), "utf8");
 const title = (html.match(/<title>([^<]+)<\/title>/) || [, "Jarvis"])[1];
 const fonts = html.match(/<link rel="stylesheet" href="https:\/\/fonts\.googleapis\.com[^>]+>/)[0];
 const scripts = [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map((m) => m[1]);
-const css = fs.readFileSync(path.join(web, "app.css"), "utf8");
+const cssFiles = [...html.matchAll(/<link rel="stylesheet" href="([^"?]+\.css)[^"]*">/g)].map((m) => m[1]);
+const css = cssFiles.map((f) => fs.readFileSync(path.join(web, f), "utf8")).join("\n");
 const avatarAsset = fs.readFileSync(path.join(web, "assets/jarvis-live-action.webp")).toString("base64");
 const body = html.split("<body>")[1].split("</body>")[0].replace(/<script src="[^"]+"><\/script>\s*/g, "").trim();
 

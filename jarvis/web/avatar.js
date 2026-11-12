@@ -34,7 +34,9 @@
     let corModo=[48,208,255];
     const resize=()=>{
       const box=canvas.getBoundingClientRect(),d=Math.min(devicePixelRatio||1,mobile?1.5:2);
-      W=Math.max(1,box.width);H=Math.max(1,box.height);canvas.width=W*d;canvas.height=H*d;ctx.setTransform(d,0,0,d,0,0);
+      W=Math.max(1,box.width);H=Math.max(1,box.height);
+      if(canvas.width===Math.floor(W*d)&&canvas.height===Math.floor(H*d)){ctx.setTransform(d,0,0,d,0,0);return;}
+      canvas.width=W*d;canvas.height=H*d;ctx.setTransform(d,0,0,d,0,0);
       last=-Infinity;delete canvas.dataset.rendered;
     };
     const observer=new ResizeObserver(resize);observer.observe(canvas);resize();
@@ -165,7 +167,10 @@
     let base,mask,energy,iw=1,ih=1,cor=PALETAS.idle.cor.slice();
     const resize=()=>{
       const r=canvas.getBoundingClientRect(),d=Math.min(devicePixelRatio||1,mobile?1.5:2);
-      W=Math.max(1,r.width);H=Math.max(1,r.height);canvas.width=W*d;canvas.height=H*d;ctx.setTransform(d,0,0,d,0,0);
+      W=Math.max(1,r.width);H=Math.max(1,r.height);
+      // O ResizeObserver dispara uma vez ao observar. Se o tamanho é o mesmo, não mexe: redimensionar apaga o desenho.
+      if(canvas.width===Math.floor(W*d)&&canvas.height===Math.floor(H*d)){ctx.setTransform(d,0,0,d,0,0);return;}
+      canvas.width=W*d;canvas.height=H*d;ctx.setTransform(d,0,0,d,0,0);
       last=-Infinity;delete canvas.dataset.rendered;
     };
     const observer=new ResizeObserver(resize);observer.observe(canvas);resize();
@@ -200,9 +205,72 @@
     };
     img.onerror=falhar;
     img.src=window.JARVIS_AVATAR_ASSET||'assets/jarvis-live-action.webp';
+
+    // ---------- toque, arrastar e ampliar ----------
+    // Arrastar inclina o busto (a mola o traz de volta); com zoom, arrasta a imagem.
+    // Pinça, Ctrl/⌘+roda ou duplo toque ampliam; tocar faz a energia correr a partir do ponto.
+    // Sem toque, tudo fica em zero e o desenho é idêntico ao padrão.
+    let zoom=1,zoomAlvo=1,panX=0,panY=0,panAX=0,panAY=0,tiltX=0,tiltY=0,tiltAX=0,tiltAY=0,inter=-1e9,toque=null,ultToque=null,geo=null,cbToque=null,nivelAtual=0;
+    const pts=new Map();let ultDist=0,moveu=false,downXY=[0,0];
+    const MAXZ=2.6,agora=()=>performance.now();
+    const interagir=()=>{inter=agora();last=-Infinity;};
+    const limitarPan=()=>{const mx=(zoomAlvo-1)*W*.55,my=(zoomAlvo-1)*H*.55;panAX=limitar(panAX,-mx,mx);panAY=limitar(panAY,-my,my);};
+    const local=e=>{const r=canvas.getBoundingClientRect();return[e.clientX-r.left,e.clientY-r.top];};
+    const distancia=()=>{const a=[...pts.values()];return a.length<2?0:Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);};
+    function definirZoom(z,px,py){            // amplia mantendo o ponto (px,py) parado
+      const antes=zoomAlvo;zoomAlvo=limitar(z,1,MAXZ);
+      if(px!=null&&antes>0){const k=zoomAlvo/antes;panAX=(px-W/2)-(px-W/2-panAX)*k;panAY=(py-H/2)-(py-H/2-panAY)*k;}
+      if(zoomAlvo<=1.001){panAX=panAY=0;}
+      limitarPan();canvas.style.touchAction=zoomAlvo>1.02?'none':'pan-y';interagir();
+    }
+    function tocarEm(px,py){
+      const t=agora();toque={x:px,y:py,t};
+      if(cbToque)cbToque({x:px/W,y:py/H});
+      if(ultToque&&t-ultToque.t<360&&Math.hypot(px-ultToque.x,py-ultToque.y)<48){definirZoom(zoomAlvo>1.05?1:2,px,py);ultToque=null;}
+      else ultToque={x:px,y:py,t};
+      interagir();
+    }
+    canvas.style.touchAction='pan-y';canvas.style.cursor='grab';canvas.style.userSelect='none';canvas.tabIndex=0;canvas.setAttribute('role','img');
+    canvas.addEventListener('pointerdown',e=>{
+      const [x,y]=local(e);pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+      try{canvas.setPointerCapture(e.pointerId);}catch(_){}
+      moveu=false;downXY=[e.clientX,e.clientY];if(pts.size===2)ultDist=distancia();
+      canvas.style.cursor='grabbing';interagir();
+    });
+    canvas.addEventListener('pointermove',e=>{
+      const p=pts.get(e.pointerId);if(!p)return;
+      const dx=e.clientX-p.x,dy=e.clientY-p.y;p.x=e.clientX;p.y=e.clientY;
+      if(pts.size>=2){const d=distancia();if(ultDist>0)definirZoom(zoomAlvo*d/ultDist);ultDist=d;moveu=true;}
+      else{
+        if(Math.hypot(e.clientX-downXY[0],e.clientY-downXY[1])>6)moveu=true;
+        if(zoomAlvo>1.02){panAX+=dx;panAY+=dy;limitarPan();}
+        else{tiltAX=limitar(tiltAX+dx/(W*.30),-1,1);tiltAY=limitar(tiltAY+dy/(H*.30),-1,1);}
+      }
+      interagir();
+    });
+    const soltar=e=>{
+      if(!pts.has(e.pointerId))return;pts.delete(e.pointerId);if(pts.size<2)ultDist=0;
+      canvas.style.cursor='grab';
+      if(e.type==='pointerup'&&!moveu&&pts.size===0){const [x,y]=local(e);tocarEm(x,y);}
+      interagir();
+    };
+    canvas.addEventListener('pointerup',soltar);canvas.addEventListener('pointercancel',soltar);
+    canvas.addEventListener('wheel',e=>{                 // Ctrl/⌘+roda e pinça do touchpad; roda comum rola a página
+      if(!(e.ctrlKey||e.metaKey))return;e.preventDefault();const [x,y]=local(e);definirZoom(zoomAlvo*(e.deltaY<0?1.12:.89),x,y);
+    },{passive:false});
+    canvas.addEventListener('keydown',e=>{
+      if(e.key==='+'||e.key==='='){definirZoom(zoomAlvo*1.25);e.preventDefault();}
+      else if(e.key==='-'){definirZoom(zoomAlvo/1.25);e.preventDefault();}
+      else if(e.key==='0'){definirZoom(1);tiltAX=tiltAY=0;e.preventDefault();}
+    });
+    // Ponto da tela → ponto da imagem (inverso da transformação aplicada no desenho).
+    const paraImagem=(px,py,tx,ty,rot)=>{
+      const dx=px-(W/2+panX+tx),dy=py-(H/2+panY+ty),c=Math.cos(-rot),s2=Math.sin(-rot);
+      return[W/2+(dx*c-dy*s2)/zoom,H/2+(dx*s2+dy*c)/zoom];
+    };
     function frame(ms){
       if(!ativo||fallback)return;raf=requestAnimationFrame(frame);
-      if(!ready||document.hidden||W<3||H<3||ms-last<(quiet?180:32))return;
+      const ativoToque=ms-inter<900;if(!ready||document.hidden||W<3||H<3||ms-last<(ativoToque?14:quiet?180:32))return;
       last=ms;const t=quiet?0:ms/1000,p=PALETAS[estado]||PALETAS.idle;
       cor=cor.map((v,i)=>v+(p.cor[i]-v)*(quiet?1:.13));
       const pulse=quiet?0:Math.sin(t*(estado==='falando'?5.3:1.4)),breath=quiet?1:1+Math.sin(t*.95)*.0025;
@@ -211,6 +279,13 @@
       ctx.clearRect(0,0,W,H);
       const halo=ctx.createRadialGradient(W*.5,H*.43,0,W*.5,H*.43,H*.52);
       halo.addColorStop(0,'rgba(16,95,138,.055)');halo.addColorStop(1,'rgba(0,50,90,0)');ctx.fillStyle=halo;ctx.fillRect(0,0,W,H);
+      // suaviza zoom/arraste/inclinação; a mola devolve a inclinação ao centro quando você solta
+      { const df=Math.min(6,Math.max(.25,(ms-(frame.ant||ms-16))/16.7));frame.ant=ms;       // suavização independente da taxa de quadros
+        const k=quiet?1:1-Math.pow(.8,df),kt=quiet?1:1-Math.pow(.84,df);zoom+=(zoomAlvo-zoom)*k;panX+=(panAX-panX)*k;panY+=(panAY-panY)*k;
+        if(!pts.size){const m=Math.pow(.9,df);tiltAX*=m;tiltAY*=m;}tiltX+=(tiltAX-tiltX)*kt;tiltY+=(tiltAY-tiltY)*kt;
+        if(Math.abs(zoomAlvo-zoom)>.002||Math.abs(panAX-panX)>.3||Math.abs(panAY-panY)>.3||Math.abs(tiltAX-tiltX)>.003||Math.abs(tiltAY-tiltY)>.003||Math.abs(tiltAX)>.003)inter=ms; }
+      const tx=tiltX*W*.02,ty=tiltY*H*.012,rot=tiltX*.03;
+      ctx.save();ctx.translate(W/2+panX+tx,H/2+panY+ty);ctx.rotate(rot);ctx.scale(zoom,zoom);ctx.translate(-W/2,-H/2);
       ctx.drawImage(base,x,y,dw,dh);
       const e=energy.getContext('2d');e.clearRect(0,0,iw,ih);e.globalCompositeOperation='source-over';e.drawImage(mask,0,0);
       e.globalCompositeOperation='source-in';const flow=e.createLinearGradient(0,0,0,ih);
@@ -219,23 +294,40 @@
         flow.addColorStop(k/8,`rgba(${cor.map(Math.round).join(',')},${limitar(a,.60,1)})`);
       }
       e.fillStyle=flow;e.fillRect(0,0,iw,ih);e.globalCompositeOperation='source-over';
+      ctx.translate(tiltX*dw*.010,tiltY*dh*.006);
       ctx.globalCompositeOperation='screen';ctx.globalAlpha=quiet?1:.98+pulse*.025;ctx.drawImage(energy,x,y,dw,dh);ctx.globalAlpha=1;
+      if(toque){const dt=ms-toque.t;
+        if(dt>1100)toque=null;
+        else{const q=paraImagem(toque.x,toque.y,tx,ty,rot),a=1-dt/1100;ctx.save();ctx.beginPath();ctx.arc(q[0],q[1],dw*(.08+.34*(dt/1100)),0,TAU);ctx.clip();ctx.globalAlpha=.95*a;ctx.drawImage(energy,x,y,dw,dh);ctx.restore();}
+      }
       // Projeção volumétrica suave, sempre centrada na cabeça da imagem.
       const cx=x+dw*.5,cy=y+dh*.255,rx=dw*(.060+(estado==='ouvindo'?nivel*.008:0)),ry=dh*.080;
       ctx.save();ctx.translate(cx,cy);ctx.scale(rx,ry);
       const g=ctx.createRadialGradient(0,0,0,0,0,1);
       g.addColorStop(0,`rgba(${p.claro.join(',')},${.075+(quiet?0:(pulse+1)*.012)})`);g.addColorStop(1,`rgba(${cor.map(Math.round).join(',')},0)`);
       ctx.fillStyle=g;ctx.beginPath();ctx.arc(0,0,1,0,TAU);ctx.fill();ctx.restore();ctx.globalCompositeOperation='source-over';
+      ctx.restore();                                                  // fim da transformação de zoom/inclinação
+      { // centro da cabeça já com zoom/arraste/inclinação (para o anel e as linhas ao redor)
+        const hx=cx-W/2,hy=cy-H/2,cr=Math.cos(rot),sr=Math.sin(rot);
+        geo={cx:W/2+panX+tx+(hx*cr-hy*sr)*zoom,cy:H/2+panY+ty+(hx*sr+hy*cr)*zoom,r:dw*.30*zoom,zoom:zoomAlvo,w:W,h:H,nivel:nivelAtual,cor:cor.map(Math.round)};
+      }
+      if(toque){const pr=(ms-toque.t)/1100;if(pr<1){ctx.save();ctx.globalCompositeOperation='screen';ctx.strokeStyle=`rgba(${cor.map(Math.round).join(',')},${(1-pr)*.75})`;ctx.lineWidth=.6+2.4*(1-pr);ctx.beginPath();ctx.arc(toque.x,toque.y,10+pr*80,0,TAU);ctx.stroke();ctx.restore();}}
       canvas.dataset.renderer='cinematografico';canvas.dataset.rendered='true';canvas.dataset.estado=estado;
     }
     raf=requestAnimationFrame(frame);
     return{
       setEstado(e){estado=PALETAS[e]?e:'idle';if(fallback)fallback.setEstado(estado);last=-Infinity;delete canvas.dataset.rendered;},
       setCor(h){if(fallback)fallback.setCor(h);},
-      setNivel(n){nivel=limitar(n||0,0,1);if(fallback)fallback.setNivel(nivel);},
+      setNivel(n){nivel=limitar(n||0,0,1);nivelAtual=nivel;if(fallback)fallback.setNivel(nivel);},
+      zoomEm(z){definirZoom(z);},                         // 1 a 2,6
+      resetar(){definirZoom(1);tiltAX=tiltAY=0;interagir();},
+      get zoom(){return zoomAlvo;},
+      geom(){return geo;},                                // {cx,cy,r,zoom,w,h,nivel,cor} em px do canvas
+      aoToque(fn){cbToque=fn;},
       destroy(){ativo=false;cancelAnimationFrame(raf);observer.disconnect();img.onload=img.onerror=null;if(fallback)fallback.destroy();},
     };
   }
 
-  window.JarvisAvatar={criar};
+  // `principal` = a instância do avatar da tela (a órbita ao redor usa para medir e ampliar).
+  window.JarvisAvatar={criar(canvas){const a=criar(canvas);if(canvas.id==='avatar')window.JarvisAvatar.principal=a;return a;}};
 })();
