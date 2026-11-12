@@ -21,6 +21,7 @@ try {
     for(const state of ['idle','ouvindo','pensando','falando','executando']){
       await page.evaluate(s=>{window.qaAvatar.setEstado(s);window.qaAvatar.setNivel(.7);},state);
       await page.waitForFunction(()=>document.getElementById('qa-avatar').dataset.rendered==='true');
+      assert.equal(await page.locator('#qa-avatar').getAttribute('data-renderer'),'cinematografico');
       const pixel=await page.evaluate(()=>{
         const c=document.getElementById('qa-avatar'),r=c.getBoundingClientRect(),s=Math.min(r.height/2.52,r.width/2.18),d=c.width/r.width;
         return [...c.getContext('2d').getImageData(Math.round((r.width*.5+.16*s)*d),Math.round((r.height*.035+.548*s)*d),1,1).data];

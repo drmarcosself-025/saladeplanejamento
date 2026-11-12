@@ -14,6 +14,7 @@ const title = (html.match(/<title>([^<]+)<\/title>/) || [, "Jarvis"])[1];
 const fonts = html.match(/<link rel="stylesheet" href="https:\/\/fonts\.googleapis\.com[^>]+>/)[0];
 const scripts = [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map((m) => m[1]);
 const css = fs.readFileSync(path.join(web, "app.css"), "utf8");
+const avatarAsset = fs.readFileSync(path.join(web, "assets/jarvis-live-action.webp")).toString("base64");
 const body = html.split("<body>")[1].split("</body>")[0].replace(/<script src="[^"]+"><\/script>\s*/g, "").trim();
 
 const js = scripts.map((f) => {
@@ -34,6 +35,7 @@ ${css}
 </style></head><body>
 ${body}
 <script>
+window.JARVIS_AVATAR_ASSET="data:image/webp;base64,${avatarAsset}";
 ${js}
 </script></body></html>
 `);

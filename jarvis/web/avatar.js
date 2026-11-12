@@ -26,7 +26,7 @@
   const bezier = (p,t) => p[0].map((_,i) => (1-t)**3*p[0][i]+3*(1-t)**2*t*p[1][i]+3*(1-t)*t*t*p[2][i]+t**3*p[3][i]);
   const amostrar = (p,n=30) => Array.from({length:n},(_,i)=>bezier(p,i/(n-1)));
   const rand = i => { const n = Math.sin(i*127.1+311.7)*43758.5453; return n-Math.floor(n); };
-  function criar(canvas) {
+  function criarMalha(canvas) {
     const ctx = canvas.getContext('2d');
     const quiet = matchMedia('(prefers-reduced-motion: reduce)').matches, mobile = innerWidth < 700;
     let W=1,H=1,estado='idle',nivel=0,last=-Infinity,raf=0,ativo=true;
@@ -158,5 +158,84 @@
       destroy(){ativo=false;cancelAnimationFrame(raf);observer.disconnect();},
     };
   }
+  // Base de acabamento cinematográfico + luz dinâmica extraída da rede interna.
+  function criar(canvas) {
+    const ctx=canvas.getContext('2d'),quiet=matchMedia('(prefers-reduced-motion: reduce)').matches,mobile=innerWidth<700;
+    let W=1,H=1,raf=0,last=-Infinity,estado='idle',nivel=0,ativo=true,ready=false,fallback=null;
+    let base,mask,energy,iw=1,ih=1,cor=PALETAS.idle.cor.slice();
+    const resize=()=>{
+      const r=canvas.getBoundingClientRect(),d=Math.min(devicePixelRatio||1,mobile?1.5:2);
+      W=Math.max(1,r.width);H=Math.max(1,r.height);canvas.width=W*d;canvas.height=H*d;ctx.setTransform(d,0,0,d,0,0);
+      last=-Infinity;delete canvas.dataset.rendered;
+    };
+    const observer=new ResizeObserver(resize);observer.observe(canvas);resize();
+    const img=new Image();
+    const criarBuffer=()=>{const c=document.createElement('canvas');c.width=iw;c.height=ih;return c};
+    const falhar=()=>{
+      if(!ativo||fallback)return;cancelAnimationFrame(raf);observer.disconnect();
+      fallback=criarMalha(canvas);fallback.setEstado(estado);fallback.setNivel(nivel);canvas.dataset.renderer='malha';
+    };
+    img.onload=()=>{
+      if(!ativo)return;
+      try{
+        iw=mobile?480:720;ih=Math.round(iw*img.naturalHeight/img.naturalWidth);
+        base=criarBuffer();mask=criarBuffer();energy=criarBuffer();
+        const b=base.getContext('2d',{willReadFrequently:true}),m=mask.getContext('2d');b.drawImage(img,0,0,iw,ih);
+        const pixels=b.getImageData(0,0,iw,ih),light=m.createImageData(iw,ih);
+        for(let i=0;i<pixels.data.length;i+=4){
+          const r=pixels.data[i],g=pixels.data[i+1],bl=pixels.data[i+2],alpha=pixels.data[i+3];
+          if(!alpha)continue;
+          const x=(i/4%iw)/iw,y=Math.floor(i/4/iw)/ih,lum=r*.30+g*.59+bl*.11;
+          let warm=limitar((r-bl*.95-8)/70,0,1)*limitar((r-g*.9+6)/65,0,1);
+          const face=Math.exp(-Math.pow((x-.50)/.13,2)-Math.pow((y-.255)/.16,2));
+          warm=Math.max(warm,face*limitar((lum-145)/95,0,1));
+          pixels.data[i]=r*(1-warm)+lum*.12*warm;
+          pixels.data[i+1]=g*(1-warm)+lum*.24*warm;
+          pixels.data[i+2]=bl*(1-warm)+lum*.29*warm;
+          light.data[i]=light.data[i+1]=light.data[i+2]=255;
+          light.data[i+3]=Math.min(255,Math.pow(lum/255,.70)*warm*alpha);
+        }
+        b.putImageData(pixels,0,0);m.putImageData(light,0,0);ready=true;last=-Infinity;
+      }catch(_){falhar()}
+    };
+    img.onerror=falhar;
+    img.src=window.JARVIS_AVATAR_ASSET||'assets/jarvis-live-action.webp';
+    function frame(ms){
+      if(!ativo||fallback)return;raf=requestAnimationFrame(frame);
+      if(!ready||document.hidden||W<3||H<3||ms-last<(quiet?180:32))return;
+      last=ms;const t=quiet?0:ms/1000,p=PALETAS[estado]||PALETAS.idle;
+      cor=cor.map((v,i)=>v+(p.cor[i]-v)*(quiet?1:.13));
+      const pulse=quiet?0:Math.sin(t*(estado==='falando'?5.3:1.4)),breath=quiet?1:1+Math.sin(t*.95)*.0025;
+      const h=H*.965*breath,w=h*iw/ih,scale=Math.min(1,W*.98/w),dw=w*scale,dh=h*scale;
+      const x=(W-dw)/2,y=(H-dh)/2;
+      ctx.clearRect(0,0,W,H);
+      const halo=ctx.createRadialGradient(W*.5,H*.43,0,W*.5,H*.43,H*.52);
+      halo.addColorStop(0,'rgba(16,95,138,.055)');halo.addColorStop(1,'rgba(0,50,90,0)');ctx.fillStyle=halo;ctx.fillRect(0,0,W,H);
+      ctx.drawImage(base,x,y,dw,dh);
+      const e=energy.getContext('2d');e.clearRect(0,0,iw,ih);e.globalCompositeOperation='source-over';e.drawImage(mask,0,0);
+      e.globalCompositeOperation='source-in';const flow=e.createLinearGradient(0,0,0,ih);
+      for(let k=0;k<=8;k++){
+        const a=quiet?.96:.86+.12*Math.sin(t*1.9-k*.70)+(estado==='ouvindo'?nivel*.09:estado==='falando'?pulse*.04:0);
+        flow.addColorStop(k/8,`rgba(${cor.map(Math.round).join(',')},${limitar(a,.60,1)})`);
+      }
+      e.fillStyle=flow;e.fillRect(0,0,iw,ih);e.globalCompositeOperation='source-over';
+      ctx.globalCompositeOperation='screen';ctx.globalAlpha=quiet?1:.98+pulse*.025;ctx.drawImage(energy,x,y,dw,dh);ctx.globalAlpha=1;
+      // Projeção volumétrica suave, sempre centrada na cabeça da imagem.
+      const cx=x+dw*.5,cy=y+dh*.255,rx=dw*(.060+(estado==='ouvindo'?nivel*.008:0)),ry=dh*.080;
+      ctx.save();ctx.translate(cx,cy);ctx.scale(rx,ry);
+      const g=ctx.createRadialGradient(0,0,0,0,0,1);
+      g.addColorStop(0,`rgba(${p.claro.join(',')},${.075+(quiet?0:(pulse+1)*.012)})`);g.addColorStop(1,`rgba(${cor.map(Math.round).join(',')},0)`);
+      ctx.fillStyle=g;ctx.beginPath();ctx.arc(0,0,1,0,TAU);ctx.fill();ctx.restore();ctx.globalCompositeOperation='source-over';
+      canvas.dataset.renderer='cinematografico';canvas.dataset.rendered='true';canvas.dataset.estado=estado;
+    }
+    raf=requestAnimationFrame(frame);
+    return{
+      setEstado(e){estado=PALETAS[e]?e:'idle';if(fallback)fallback.setEstado(estado);last=-Infinity;delete canvas.dataset.rendered;},
+      setCor(h){if(fallback)fallback.setCor(h);},
+      setNivel(n){nivel=limitar(n||0,0,1);if(fallback)fallback.setNivel(nivel);},
+      destroy(){ativo=false;cancelAnimationFrame(raf);observer.disconnect();img.onload=img.onerror=null;if(fallback)fallback.destroy();},
+    };
+  }
+
   window.JarvisAvatar={criar};
 })();
