@@ -140,3 +140,46 @@ html[data-vida] .stage .panel,html[data-vida] .page-heading,html[data-vida] .bar
 @media(max-width:520px){.orb-metrica:nth-child(2){display:none}}
 
 @media(prefers-reduced-motion:reduce){.malha i,.orb-bolha,.orb-dot{animation:none!important}.panel,.panel:hover{transform:none}}
+
+/* ===== Jarvis sempre presente (dock) =====
+   Em Espaços, Você, utilidades, CRM e Contador o avatar NÃO some: vira uma coluna fixa à esquerda
+   (no celular, uma faixa no topo) e a função abre ao lado. Ligado por orbita.js (body[data-dock]). */
+@keyframes docar{from{opacity:0;transform:translateX(-18px) scale(.97)}}
+@keyframes docarTopo{from{opacity:0;transform:translateY(-14px) scale(.98)}}
+body[data-dock]{--dock-w:min(380px,29vw);--dock-l:clamp(20px,2vw,32px)}
+/* sem backdrop-filter no celular: ele faria do cabeçalho a referência da barra de navegação fixa que mora dentro dele */
+body[data-dock] .top{position:fixed;top:0;left:0;right:0;z-index:30;width:auto;max-width:none;margin:0;padding:0 clamp(24px,2.6vw,38px);background:rgb(7 11 19/.94)}
+body[data-dock] .stage{display:block;height:0;min-height:0;margin:0;padding:0;overflow:visible}
+body[data-dock] .stage>.left,body[data-dock] .stage>.right{display:none}
+body[data-dock] .page-heading,body[data-dock] .source-line{display:none}
+body[data-dock] .center{position:fixed;z-index:12;margin:0;min-height:0;display:flex;flex-direction:column;border-color:rgb(var(--estado-rgb)/.30);box-shadow:0 30px 80px -30px rgb(0 0 0/.85),0 0 60px -20px rgb(var(--estado-rgb)/.35)}
+body[data-dock] .sugestoes,body[data-dock] .interim{display:none}
+body[data-dock] .presence-caption{min-height:0}
+body[data-dock] .resposta-card{max-height:28vh;overflow:auto}
+
+@media(min-width:901px){
+  body[data-dock]{padding-top:92px}
+  body[data-dock] .center{left:var(--dock-l);top:100px;bottom:128px;width:var(--dock-w);padding:0 6px 12px;animation:docar .65s cubic-bezier(.2,.7,.2,1) backwards}
+  body[data-dock] #avatar{flex:1 1 auto;height:auto;min-height:180px}
+  body[data-dock] .presence-caption{margin:0 auto;padding:0 14px}
+  body[data-dock] .legenda{font-size:14px;max-height:96px;overflow:auto}
+  body[data-dock] .top{background:rgb(7 11 19/.84);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px)}        /* o vidro só no desktop */
+  body[data-dock] .view-page{max-width:none;margin:14px 0 0;padding-left:calc(var(--dock-l) + var(--dock-w) + 26px);padding-right:24px;padding-bottom:150px}
+  body[data-dock] .workspace{inset:100px 24px 128px calc(var(--dock-l) + var(--dock-w) + 22px)}
+  body[data-dock] .orb-metricas{display:none}
+  body[data-dock] .orb-rot{display:none}                                  /* no dock os atalhos são só ícones */
+  body[data-dock] .center>.orb-sats{justify-content:center;padding:4px 8px 12px}
+  body[data-dock] .center>.orb-sats .orb-sat{padding:4px}
+  body[data-dock] .center>.orb-sats .orb-bolha{width:40px;height:40px}
+}
+@media(max-width:900px){
+  body[data-dock]{padding-top:76px}
+  body[data-dock] .center{left:10px;right:10px;top:84px;height:124px;padding:6px 14px 6px 6px;flex-direction:row;align-items:center;gap:8px;border-radius:18px;animation:docarTopo .6s cubic-bezier(.2,.7,.2,1) backwards}
+  body[data-dock] #avatar{flex:none;width:104px;height:112px}
+  body[data-dock] .presence-head,body[data-dock] .presence-line,body[data-dock] .resposta-card,body[data-dock] .orb-status,body[data-dock] .orb-metricas,body[data-dock] .orb-zoom,body[data-dock] .orb-dica{display:none!important}
+  body[data-dock] .presence-caption{flex:1;min-width:0;margin:0;padding:0;text-align:left}
+  body[data-dock] .legenda{font-size:13px;line-height:1.45;max-height:none;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+  body[data-dock] .center>.orb-sats{display:none}
+  body[data-dock] .view-page{margin-top:140px;max-width:none;padding-bottom:40px}
+  body[data-dock] .workspace{inset:216px 8px calc(169px + env(safe-area-inset-bottom,0px)) 8px}
+}

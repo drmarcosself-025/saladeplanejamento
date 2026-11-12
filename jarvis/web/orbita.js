@@ -162,11 +162,13 @@
     requestAnimationFrame(tick);
     if (document.hidden || now - ult < 33 || orb.offsetParent === null) return;
     ult = now; ligarAvatar();
-    const a = av(), g = a && a.geom && a.geom(); if (!g || orb.classList.contains("pequena")) return;
-    // cor suave por estado
-    const alvo = PAL[estado]; let mudouCor = false;
-    for (let i = 0; i < 3; i++) { const d = alvo[i] - corAtual[i]; if (Math.abs(d) > 0.4) { corAtual[i] += d * 0.12; mudouCor = true; } }
-    if (mudouCor) raiz.style.setProperty("--estado-rgb", corAtual.map(Math.round).join(" "));
+    const a = av(), g = a && a.geom && a.geom();
+    // A cor da interface é a MESMA que o avatar está usando agora (cor do agente + estado), já suavizada por ele.
+    // Sem avatar cinematográfico (reserva), cai na paleta por estado.
+    { const alvo = (g && g.cor) || PAL[estado]; let mudouCor = false;
+      for (let i = 0; i < 3; i++) { const d = alvo[i] - corAtual[i], passo = g && g.cor ? d : d * 0.12; if (Math.abs(d) > 0.4) { corAtual[i] += passo; mudouCor = true; } }
+      if (mudouCor) raiz.style.setProperty("--estado-rgb", corAtual.map(Math.round).join(" ")); }
+    if (!g || orb.classList.contains("pequena")) return;
     // anel ao redor da cabeça
     const dur = now - t0, r = Math.max(30, g.r);
     for (const c of [anelBase, anelProg]) { c.setAttribute("cx", g.cx.toFixed(1)); c.setAttribute("cy", g.cy.toFixed(1)); c.setAttribute("r", r.toFixed(1)); }
@@ -202,5 +204,19 @@
     const r = p.getBoundingClientRect(); p.style.setProperty("--mx", (e.clientX - r.left) + "px"); p.style.setProperty("--my", (e.clientY - r.top) + "px");
   }, { passive: true });
   document.querySelectorAll(".stage .panel, .page-heading, .composer, .barra").forEach((n, i) => n.style.setProperty("--i", i));
+  // ---------- dock: o Jarvis NÃO some ao abrir funções ----------
+  // Em Espaços, Você, utilidades, CRM e Contador o avatar vira uma coluna fixa (no celular, uma faixa no topo)
+  // e a função abre ao lado. O CSS decide o desenho a partir de body[data-dock] e body[data-area].
+  const corpo = document.body;
+  function atualizarDock() {
+    const vista = corpo.dataset.vista || "hoje", crm = $("crmTela"), fin = $("finTela");
+    const area = crm && !crm.hidden ? "crm" : fin && !fin.hidden ? "fin" : "";
+    if (area) corpo.dataset.area = area; else delete corpo.dataset.area;
+    const dock = ["espacos", "pessoal", "utilidade"].includes(vista) || !!area;
+    if (dock) corpo.dataset.dock = "1"; else delete corpo.dataset.dock;
+  }
+  new MutationObserver(atualizarDock).observe(corpo, { attributes: true, attributeFilter: ["data-vista"] });
+  for (const id of ["crmTela", "finTela"]) { const e = $(id); if (e) new MutationObserver(atualizarDock).observe(e, { attributes: true, attributeFilter: ["hidden"] }); }
+  atualizarDock();
   raiz.dataset.vida = "1";
 })();
