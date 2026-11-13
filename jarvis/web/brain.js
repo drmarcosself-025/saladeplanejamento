@@ -230,7 +230,10 @@
   let amostra;
   async function obterAmostra() {
     if (amostra !== undefined) return amostra;
-    try { amostra = window.claude && typeof window.claude.use === "function" ? await window.claude.use("sample") : null; } catch (_) { amostra = null; }
+    try {
+      const t = new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 20000));
+      amostra = window.claude && typeof window.claude.use === "function" ? await Promise.race([window.claude.use("sample"), t]) : null;
+    } catch (_) { amostra = undefined; return null; }   // não guarda a falha: tenta de novo no próximo pedido
     return amostra;
   }
   const COMANDOS = ["quem preciso retornar hoje", "meus leads", "abre o CRM", "retorna pro <nome>", "adia o <nome> para <data>", "o <nome> demonstrou interesse", "passei a proposta pro <nome>",
@@ -266,7 +269,10 @@
   async function perguntarClaude(a) {
     const s = await obterAmostra();
     if (!s) return null;
-    try { return limparResposta(await s.json(montarPrompt(a), { modelTier: "quick", cache: false })) || { erro: "falha" }; }
+    try {
+      const limite = new Promise((_, rej) => setTimeout(() => rej({ code: "timeout" }), 30000));   // nunca fica preso em "pensando"
+      return limparResposta(await Promise.race([s.json(montarPrompt(a), { modelTier: "quick", cache: false }), limite])) || { erro: "falha" };
+    }
     catch (e) {
       const c = e && e.code;
       if (["not_granted", "sampling_disabled", "not_declared", "capability_disabled", "capability_removed"].includes(c)) { amostra = null; return { erro: "indisponivel" }; }

@@ -309,12 +309,12 @@
             const c = e && e.code;
             if (c === "busy") { await dormir(350); continue; }
             if (c === "not_granted") { cb.onErro("A voz está desligada nas Permissões do artefato. O texto continua na tela."); return; }
-            if (c === "no_gesture") return;                       // ainda sem clique/tecla na página: só o texto
             if (c === "rate_limited") { cb.onErro("Muita fala seguida. Espere um instante."); return; }
-            return;                                               // stopped / unavailable / erro: só o texto
+            if (c === "stopped") return;
+            break;                                                // sem gesto / indisponível / erro: tenta a voz do aparelho
           }
         }
-        return;
+        if (meu !== tokenFala) return;
       }
       if (!("speechSynthesis" in window)) return dormir(tempo);
 
