@@ -139,15 +139,68 @@
     return linhas.join("\n");
   }
 
+
+  // ---------- evolução, despesas fixas e conferência (Contador 2.0) ----------
+  const MESES_CURTOS = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+  const ultimoDia = (mes) => { const [a, m] = mes.split("-").map(Number); return new Date(a, m, 0).getDate(); };
+  // Últimos `n` meses terminando em `mesFinal`: o que entrou, o que saiu e o saldo de cada um (só o PAGO/RECEBIDO).
+  function serieMeses(ls, mesFinal, n) {
+    n = n || 6; const seq = []; let m = mesFinal;
+    for (let i = 0; i < n; i++) { seq.unshift(m); m = mesAnterior(m); }
+    return seq.map((mes) => {
+      const it = doMes(ls, mes), receitas = soma(it.filter((l) => l.tipo === "receita" && l.status === "pago")), despesas = soma(it.filter((l) => l.tipo === "despesa" && l.status === "pago"));
+      return { mes, rotulo: MESES_CURTOS[+mes.slice(5, 7) - 1], receitas, despesas, saldo: arred(receitas - despesas), qtd: it.length };
+    });
+  }
+  // Despesa fixa = se repete todo mês (aluguel, salário, internet...). Fica cadastrada uma vez.
+  const ehFixa = (x) => x && x.tipo === "fixa";
+  function novaFixa(d) {
+    const valor = typeof d.valor === "number" ? arred(d.valor) : null, descricao = String(d.descricao || "").replace(/\s+/g, " ").trim().slice(0, 100);
+    if (!(valor > 0)) return { erro: "valor" };
+    if (!descricao) return { erro: "descricao" };
+    const dia = Math.max(1, Math.min(31, parseInt(d.dia, 10) || 1));
+    return { id: "x" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), tipo: "fixa", descricao, valor, dia, categoria: d.categoria || categorizar(descricao, "despesa"), ativa: true, criado: new Date().toISOString() };
+  }
+  // Lançamentos que FALTAM no mês. O id inclui a fixa e o mês: rodar de novo não duplica nem apaga o que já foi pago.
+  function lancarFixas(fixas, existentes, mes, agora) {
+    const ids = new Set(existentes.map((l) => l.id)), out = [];
+    for (const f of fixas.filter((x) => x.ativa !== false)) {
+      const id = `lf-${f.id}-${mes}`; if (ids.has(id)) continue;
+      const data = `${mes}-${String(Math.min(f.dia, ultimoDia(mes))).padStart(2, "0")}`;
+      out.push({ id, tipo: "despesa", valor: f.valor, descricao: f.descricao, categoria: f.categoria, data, status: "pendente", vencimento: data, fixa: f.id, criado: (agora || new Date()).toISOString() });
+    }
+    return out;
+  }
+  // O que conferir antes de fechar o mês. `pronto` = sem nenhum alerta (os avisos "info" não impedem).
+  function conferencia(ls, mes, agora, fechamento) {
+    agora = agora || new Date();
+    const hoje = L().iso(agora), r = resumoMes(ls, mes, agora), it = doMes(ls, mes), itens = [];
+    if (!it.length) itens.push({ nivel: "alerta", texto: "Nenhum lançamento neste mês." });
+    else if (!it.some((l) => l.tipo === "receita")) itens.push({ nivel: "alerta", texto: "Nenhuma receita lançada." });
+    if (r.atrasadas) itens.push({ nivel: "alerta", texto: `${r.atrasadas} conta${r.atrasadas > 1 ? "s atrasadas" : " atrasada"}: pague ou ajuste o vencimento.` });
+    const pend = it.filter((l) => l.status === "pendente").length - r.atrasadas;
+    if (pend > 0) itens.push({ nivel: "info", texto: `${pend} lançamento${pend > 1 ? "s ainda pendentes" : " ainda pendente"}: fica${pend > 1 ? "m" : ""} fora do saldo pago.` });
+    if (r.paraRevisar) itens.push({ nivel: "alerta", texto: `${r.paraRevisar} despesa${r.paraRevisar > 1 ? "s" : ""} em "Outras despesas": defina a categoria.` });
+    if (mes === mesDe(hoje) && +hoje.slice(8) < ultimoDia(mes)) itens.push({ nivel: "info", texto: "O mês ainda não terminou." });
+    if (mes > mesDe(hoje)) itens.push({ nivel: "info", texto: "Este é um mês futuro." });
+    if (fechamento && (fechamento.receitas !== r.receitas || fechamento.despesas !== r.despesas)) itens.push({ nivel: "alerta", texto: "Os valores mudaram desde o último fechamento. Atualize o fechamento." });
+    return { itens, pronto: !itens.some((i) => i.nivel === "alerta") };
+  }
+  // Cor estável de cada categoria nos gráficos.
+  const PALETA = ["#7fd6c2", "#8fb6ff", "#ffb86b", "#ff8fa3", "#c4a7ff", "#9be37f", "#ffd76b", "#6fd0ff", "#f59ad8", "#b8c4d0", "#e7a37a", "#7ee0a8", "#a1b7ff"];
+  const corCategoria = (cat) => { const i = [...CATEGORIAS.despesa, ...CATEGORIAS.receita].indexOf(cat); return PALETA[(i < 0 ? cat.length : i) % PALETA.length]; };
+
   const store = window.JarvisStore.criar({ colecao: "fin", chaveLocal: "jarvis_fin_v1" });
   const lancs = () => store.lista().filter(ehLanc);
   const fechamentos = () => store.lista().filter((x) => x.tipo === "fechamento");
+  const fixas = () => store.lista().filter(ehFixa);
 
   window.JarvisFin = {
     CATEGORIAS, categorizar, brl, lerValor, mesDe, mesAnterior, mesSeguinte, nomeMes, mesDeTexto,
     novo, doMes, resumoMes, pendentes, comPago, csvMes, relatorioTexto, ehLanc,
     iniciar: store.iniciar, salvar: store.salvar, remover: store.remover, aoMudar: store.aoMudar,
-    lista: lancs, fechamentos, porId: store.porId,
+    lista: lancs, fechamentos, fixas, porId: store.porId,
+    MESES_CURTOS, ultimoDia, serieMeses, novaFixa, lancarFixas, conferencia, corCategoria,
     fechamentoDe: (mes) => fechamentos().find((f) => f.mes === mes) || null,
     // Registra o fechamento do mês (foto dos totais no momento).
     async fecharMes(mes, agora) {

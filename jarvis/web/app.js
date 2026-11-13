@@ -335,24 +335,88 @@
     for (const h of (l.historico || []).slice(-20).reverse()) ol.append(mk("li", "", `${String(h.ts).slice(0, 10)} · ${h.texto}`)); d.append(ol);
   }
   function abrirFin() { $("finTela").hidden = false; $("crmTela").hidden = true; $("finTela").querySelector(".workspace-head").after($("respostaCard")); renderFin(); }
+  let filtroFin = "todos";
+  const SVG = "http://www.w3.org/2000/svg";
+  function graficoMeses(serie) {
+    const box = $("finTendencia"); box.textContent = "";
+    const W = 360, H = 150, base = 120, max = Math.max(1, ...serie.flatMap((x) => [x.receitas, x.despesas])), col = W / serie.length;
+    const svg = document.createElementNS(SVG, "svg"); svg.setAttribute("viewBox", `0 0 ${W} ${H}`); svg.setAttribute("class", "fin-svg");
+    const add = (tag, at, txt) => { const e = document.createElementNS(SVG, tag); for (const k in at) e.setAttribute(k, at[k]); if (txt != null) e.textContent = txt; svg.appendChild(e); return e; };
+    serie.forEach((m, i) => {
+      const x = i * col, atual = m.mes === mesFin, g = document.createElementNS(SVG, "g");
+      g.setAttribute("class", "fin-mes" + (atual ? " atual" : "")); g.setAttribute("tabindex", "0"); g.setAttribute("role", "button");
+      g.setAttribute("aria-label", `${F.nomeMes(m.mes)}: recebido ${valor(m.receitas)}, pago ${valor(m.despesas)}`);
+      const hr = Math.round((m.receitas / max) * (base - 14)), hd = Math.round((m.despesas / max) * (base - 14));
+      const r = (at) => { const e = document.createElementNS(SVG, "rect"); for (const k in at) e.setAttribute(k, at[k]); g.appendChild(e); };
+      r({ x: x, y: 0, width: col, height: H, class: "fin-hit" });
+      r({ x: x + col * 0.17, y: base - hr, width: col * 0.31, height: Math.max(hr, m.receitas ? 2 : 0), rx: 3, class: "fin-rec" });
+      r({ x: x + col * 0.52, y: base - hd, width: col * 0.31, height: Math.max(hd, m.despesas ? 2 : 0), rx: 3, class: "fin-desp" });
+      const t = document.createElementNS(SVG, "text"); t.setAttribute("x", x + col / 2); t.setAttribute("y", 140); t.setAttribute("text-anchor", "middle"); t.textContent = m.rotulo; g.appendChild(t);
+      const ir = () => { mesFin = m.mes; renderFin(); };
+      g.addEventListener("click", ir); g.addEventListener("keydown", (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ir(); } });
+      svg.appendChild(g);
+    });
+    add("line", { x1: 0, x2: W, y1: base, y2: base, class: "fin-eixo" });
+    box.appendChild(svg);
+    const lg = mk("p", "small muted fin-legenda"); lg.append(mk("span", "pt rec", "Recebido"), mk("span", "pt desp", "Pago")); box.appendChild(lg);
+  }
+  const variacao = (atual, antes, bomSobe) => {
+    if (!antes) return null; const p = Math.round(((atual - antes) / antes) * 100); if (!p) return { txt: "igual ao mês anterior", cls: "" };
+    return { txt: `${p > 0 ? "+" : ""}${p}% vs mês anterior`, cls: (p > 0) === bomSobe ? "bom" : "ruim" };
+  };
   function renderFin() {
-    const ls = F.lista(), r = F.resumoMes(ls, mesFin), itens = F.doMes(ls, mesFin);
+    const ls = F.lista(), r = F.resumoMes(ls, mesFin), itens = F.doMes(ls, mesFin), ant = F.resumoMes(ls, F.mesAnterior(mesFin));
     $("finMes").textContent = F.nomeMes(mesFin);
     $("finStatus").textContent = F.aviso || (F.modo === "claude" ? "Dados salvos no seu artefato Claude." : "Dados salvos neste navegador.");
-    metricas("finMetricas", [["Receitas recebidas", valor(r.receitas)], ["Despesas pagas", valor(r.despesas)], ["Saldo pago", valor(r.saldo)], ["A pagar", valor(r.aPagar)], ["A receber", valor(r.aReceber)]]);
+    // métricas (mesmos textos de antes, agora com a variação)
+    const box = $("finMetricas"); box.textContent = "";
+    for (const [nome, n, v] of [["Receitas recebidas", r.receitas, variacao(r.receitas, ant.receitas, true)], ["Despesas pagas", r.despesas, variacao(r.despesas, ant.despesas, false)], ["Saldo pago", r.saldo, null], ["A pagar", r.aPagar, null], ["A receber", r.aReceber, null]]) {
+      const e = mk("div", "metrica" + (nome === "Saldo pago" ? (n < 0 ? " neg" : " pos") : "")); e.append(mk("span", "", nome), mk("strong", "", valor(n)));
+      if (v) e.append(mk("small", "var " + v.cls, v.txt)); box.appendChild(e);
+    }
+    graficoMeses(F.serieMeses(ls, mesFin, 6));
     const cats = $("finCategorias"); cats.textContent = "";
-    for (const c of r.categorias) { const e = mk("div", "", `${c.categoria} · ${valor(c.total)}`), b = mk("div", "categoria-barra"), i = mk("i"); i.style.width = Math.round(c.pct * 100) + "%"; b.append(i); e.append(b); cats.append(e); }
+    for (const c of r.categorias) { const e = mk("div", "cat"), t = mk("div", "cat-t"); t.append(mk("span", "", c.categoria), mk("b", "", valor(c.total))); const b = mk("div", "categoria-barra"), i = mk("i"); i.style.width = Math.max(3, Math.round(c.pct * 100)) + "%"; i.style.background = F.corCategoria(c.categoria); b.append(i); e.append(t, b); cats.append(e); }
+    if (!r.categorias.length) cats.append(mk("p", "muted small", "Nenhuma despesa paga neste mês."));
+    // banner de fechamento
+    const fech = F.fechamentoDe(mesFin), ban = $("finBanner");
+    ban.hidden = !fech; if (fech) { const mudou = fech.receitas !== r.receitas || fech.despesas !== r.despesas; ban.className = "fin-banner" + (mudou ? " aviso" : ""); ban.textContent = mudou ? `Fechado em ${String(fech.fechadoEm || "").slice(0, 10)}, mas os valores mudaram depois. Atualize o fechamento.` : `Mês fechado em ${String(fech.fechadoEm || "").slice(0, 10)}.`; }
+    // filtros
+    const fb = $("finFiltros"); fb.textContent = "";
+    for (const [id, nome] of [["todos", "Todos"], ["pagar", "A pagar"], ["receita", "Receitas"], ["despesa", "Despesas"]]) { const b = mk("button", "chip" + (filtroFin === id ? " on" : ""), nome); b.type = "button"; b.setAttribute("aria-pressed", String(filtroFin === id)); b.addEventListener("click", () => { filtroFin = id; renderFin(); }); fb.append(b); }
+    const vis = itens.filter((l) => filtroFin === "todos" || (filtroFin === "pagar" ? l.status === "pendente" && l.tipo === "despesa" : l.tipo === filtroFin));
     const ul = $("finLista"); ul.textContent = "";
-    for (const l of itens.sort((a,b) => b.data.localeCompare(a.data))) {
+    for (const l of vis.sort((a, b) => b.data.localeCompare(a.data))) {
       const li = mk("li"), tx = mk("div"); tx.append(mk("strong", "", `${l.tipo === "receita" ? "+" : "−"}${valor(l.valor)} · ${l.descricao || l.categoria}`), mk("small", "", `${l.data} · ${l.categoria} · ${l.status === "pendente" ? "Pendente " + (l.vencimento || "") : "Pago/recebido"}`));
       const a = mk("div", "row");
+      if (l.tipo === "despesa") {
+        const sel = mk("select", "cat-sel"); sel.setAttribute("aria-label", "Categoria de " + (l.descricao || l.categoria));
+        for (const c of F.CATEGORIAS.despesa) { const o = mk("option", "", c); o.value = c; if (c === l.categoria) o.selected = true; sel.append(o); }
+        sel.addEventListener("change", () => F.salvar({ ...l, categoria: sel.value })); a.append(sel);
+      }
       if (l.status === "pendente") { const b = mk("button", "btn", "Marcar pago"); b.type = "button"; b.addEventListener("click", () => F.salvar(F.comPago(l))); a.append(b); }
       const del = mk("button", "btn", "Apagar"); del.type = "button"; del.addEventListener("click", () => {
         if (del.dataset.armado) F.remover(l.id); else { del.dataset.armado = "1"; del.textContent = "Confirmar exclusão"; setTimeout(() => { if (del.isConnected) { del.textContent = "Apagar"; delete del.dataset.armado; } }, 4000); }
       }); a.append(del); li.append(tx, a); ul.append(li);
     }
-    if (!itens.length) ul.append(mk("li", "muted", "Nenhum lançamento neste mês."));
-    $("finFecharMes").textContent = F.fechamentoDe(mesFin) ? "Atualizar fechamento" : "Fechar o mês";
+    if (!vis.length) ul.append(mk("li", "muted", filtroFin === "todos" ? "Nenhum lançamento neste mês." : "Nenhum lançamento neste filtro."));
+    // conferência
+    const cf = F.conferencia(ls, mesFin, new Date(), fech), cu = $("finConferencia"); cu.textContent = "";
+    for (const i of cf.itens) cu.append(mk("li", i.nivel, i.texto));
+    if (cf.pronto) cu.append(mk("li", "ok", "Tudo conferido: pronto para fechar."));
+    // despesas fixas
+    const fu = $("finFixas"); fu.textContent = "";
+    for (const f of F.fixas()) {
+      const li = mk("li"), t = mk("span", "", `${f.descricao} · ${valor(f.valor)} · dia ${f.dia}`); li.append(t);
+      const b = mk("button", "btn", "Remover"); b.type = "button"; b.addEventListener("click", () => F.remover(f.id)); li.append(b); fu.append(li);
+    }
+    if (!fu.children.length) fu.append(mk("li", "muted", "Nenhuma despesa fixa cadastrada."));
+    $("finFecharMes").textContent = fech ? "Atualizar fechamento" : "Fechar o mês";
+  }
+  async function lancarFixasDoMes(mes) {
+    const novos = F.lancarFixas(F.fixas(), F.lista(), mes); let n = 0;
+    for (const l of novos) if (await F.salvar(l)) n++;
+    return { novos: n, total: F.fixas().length };
   }
   function contextoClaude() {
     const modo = MODOS[modoId], ls = L.lista(), r = L.resumo(ls), mes = F.mesDe(hojeISO()), f = F.resumoMes(F.lista(), mes);
@@ -383,6 +447,17 @@
       if (achados.length !== 1) return dizer(achados.length ? "Achei mais de uma conta. Abra o Contador e escolha qual marcar como paga." : "Não achei essa conta pendente. Abra o Contador para conferir.", g);
       if (!(await F.salvar(F.comPago(achados[0])))) return dizer(F.aviso || "Não consegui salvar.", g);
       abrirFin(); return dizer(`Marquei ${achados[0].descricao || achados[0].categoria} como paga.`, g);
+    }
+    if (it.tipo === "fin_fixas") {
+      mesFin = it.mes || F.mesDe(hojeISO()); const r = await lancarFixasDoMes(mesFin); abrirFin();
+      if (!r.total) return dizer("Você ainda não cadastrou despesas fixas. Diga, por exemplo: cadastra despesa fixa aluguel 2800 dia 5.", g);
+      return dizer(r.novos ? `Lancei ${r.novos} despesa${r.novos > 1 ? "s fixas" : " fixa"} em ${F.nomeMes(mesFin)}, como pendentes.` : `As fixas de ${F.nomeMes(mesFin)} já estavam lançadas.`, g);
+    }
+    if (it.tipo === "fin_fixa_nova") {
+      if (it.erro) return dizer("Qual o valor da despesa fixa? Diga, por exemplo: cadastra despesa fixa aluguel 2800 dia 5.", g);
+      const f = F.novaFixa(it.fixa); if (f.erro) return dizer(f.erro === "valor" ? "Não entendi o valor." : "Qual o nome da despesa fixa?", g);
+      if (!(await F.salvar(f))) return dizer(F.aviso || "Não consegui salvar.", g);
+      abrirFin(); return dizer(`Cadastrei ${f.descricao}, ${valor(f.valor)}, todo dia ${f.dia}. Diga "lança as fixas do mês" para criar os lançamentos.`, g);
     }
     if (it.tipo === "fin_fechar") {
       mesFin = it.mes || F.mesDe(hojeISO()); if (!(await F.fecharMes(mesFin))) return dizer(F.aviso || "Não consegui fechar o mês.", g);
@@ -742,12 +817,23 @@
   $("finSeguinte").addEventListener("click", () => { mesFin = F.mesSeguinte(mesFin); renderFin(); });
   $("finData").value = hojeISO();
   $("finForm").addEventListener("submit", async (e) => {
-    e.preventDefault(); const l = F.novo({ tipo: $("finTipo").value, descricao: $("finDescricao").value, valor: Number($("finValor").value),
+    e.preventDefault(); const l = F.novo({ tipo: $("finTipo").value, descricao: $("finDescricao").value, valor: Number($("finValor").value), categoria: $("finCategoria").value || undefined,
       status: $("finSituacao").value, data: $("finData").value || hojeISO(), vencimento: $("finVencimento").value });
     if (l.erro) { $("finErro").textContent = "Informe um valor maior que zero."; return; }
     if (!(await F.salvar(l))) { $("finErro").textContent = F.aviso || "Não consegui salvar."; return; }
     $("finErro").textContent = ""; $("finDescricao").value = ""; $("finValor").value = ""; $("finVencimento").value = "";
     mesFin = F.mesDe(l.data); renderFin();
+  });
+  for (const c of F.CATEGORIAS.despesa.concat(F.CATEGORIAS.receita.filter((x) => !F.CATEGORIAS.despesa.includes(x)))) { const o = document.createElement("option"); o.value = c; o.textContent = c; $("finCategoria").append(o); }
+  $("fixaForm").addEventListener("submit", async (e) => {
+    e.preventDefault(); const f = F.novaFixa({ descricao: $("fixaDescricao").value, valor: Number($("fixaValor").value), dia: $("fixaDia").value });
+    if (f.erro) { $("finErro").textContent = "Informe descrição e valor maior que zero."; return; }
+    if (!(await F.salvar(f))) { $("finErro").textContent = F.aviso || "Não consegui salvar."; return; }
+    $("finErro").textContent = ""; $("fixaDescricao").value = ""; $("fixaValor").value = ""; $("fixaDia").value = ""; renderFin();
+  });
+  $("finLancarFixas").addEventListener("click", async () => {
+    const r = await lancarFixasDoMes(mesFin);
+    $("finStatus").textContent = !r.total ? "Cadastre uma despesa fixa primeiro." : r.novos ? `${r.novos} despesa(s) fixa(s) lançada(s) em ${F.nomeMes(mesFin)}.` : "As fixas deste mês já estavam lançadas."; renderFin();
   });
   $("finCsv").addEventListener("click", () => salvarArquivo(`financeiro-${mesFin}.csv`, F.csvMes(F.lista(), mesFin), "text/csv"));
   $("finRelatorio").addEventListener("click", () => copiar(F.relatorioTexto(F.lista(), mesFin)));

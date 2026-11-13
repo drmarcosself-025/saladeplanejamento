@@ -162,6 +162,17 @@
   function lerFin(original, t, hoje) {
     const F = window.JarvisFin; if (!F) return null;
     if (/\b(fecha|fechar|feche|fechamento)\b.*\b(mes|caixa|financeiro)\b/.test(t)) return { tipo: "fin_fechar", mes: F.mesDeTexto(t, hoje) };
+    // despesas fixas: "lança as fixas do mês" (sem número) / "cadastra despesa fixa aluguel 2800 dia 5"
+    if (!/\d/.test(original) && /\b(fixas?|recorrentes?)\b/.test(t) && /\b(lanca\w*|gera\w*|coloca\w*|puxa\w*|adiciona\w*)\b/.test(t)) return { tipo: "fin_fixas", mes: F.mesDeTexto(t, hoje) };
+    let mf = original.match(new RegExp(PRE + "(?:cadastra|cadastrar|cadastre|lan[çc]a|lan[çc]ar|registra|registrar|adiciona|adicionar)\\s+(?:uma\\s+|um\\s+)?(?:despesa|conta|gasto)\\s+(?:fixa|recorrente|mensal)\\s*(.*)$", "i"));
+    if (mf) {
+      let s = " " + mf[1] + " ", dia = 1; const md = s.match(/\bdia\s+(\d{1,2})\b/i);
+      if (md) { dia = +md[1]; s = s.replace(md[0], " "); }
+      const valor = F.lerValor(s);
+      if (valor == null) return { tipo: "fin_fixa_nova", erro: "valor" };
+      s = s.replace(/R\$\s*/gi, "").replace(/(\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?|\d+(?:[.,]\d+)?)(\s*mil\b)?(\s*reais?)?/i, " ");
+      return { tipo: "fin_fixa_nova", fixa: { descricao: s.replace(/\s+/g, " ").trim().replace(/^(?:de|do|da|com|no|na|em|o|a)\s+/i, ""), valor, dia } };
+    }
     const temNumero = /\d/.test(original);      // com valor, "conta de X 189,90" é lançamento; sem valor, é consulta
     if (!temNumero && (/\b(contas?|boletos?|despesas?)\b.*\b(pagar|vencer|vencem|vence|atrasad\w+|pendentes?)\b/.test(t) || /\b(o que|quanto)\b.*\b(tenho|falta|preciso|devo)\b.*\bpagar\b/.test(t))) return { tipo: "fin_pendentes" };
     if (/\b(quanto|resumo|balanco|como (?:esta|foi|ficou|anda))\b.*\b(gastei|gasto|gastos|recebi|faturei|faturamento|lucro|financeiro|financas|caixa|saldo|receita|receitas|despesa|despesas)\b/.test(t)

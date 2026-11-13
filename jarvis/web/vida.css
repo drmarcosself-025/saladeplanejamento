@@ -183,3 +183,33 @@ body[data-dock] .resposta-card{max-height:28vh;overflow:auto}
   body[data-dock] .view-page{margin-top:140px;max-width:none;padding-bottom:40px}
   body[data-dock] .workspace{inset:216px 8px calc(169px + env(safe-area-inset-bottom,0px)) 8px}
 }
+
+/* ---------- Contador 2.0 ---------- */
+.fin-banner{margin:10px 0;padding:10px 14px;border-radius:12px;font-size:13px;background:rgba(120,230,170,.12);border:1px solid rgba(120,230,170,.35);color:#bff3d6}
+.fin-banner.aviso{background:rgba(255,200,90,.12);border-color:rgba(255,200,90,.4);color:#ffe2a8}
+.workspace .metrica{position:relative;background:linear-gradient(160deg,rgba(var(--estado-rgb,53,184,255),.14),rgba(255,255,255,.03));border:1px solid rgba(255,255,255,.1);backdrop-filter:none}
+.workspace .metrica.pos strong{color:#8ff0c2}.workspace .metrica.neg strong{color:#ff9aa8}
+.metrica .var{display:block;margin-top:3px;font-size:10px;color:#aebbd0}.metrica .var.bom{color:#8ff0c2}.metrica .var.ruim{color:#ff9aa8}
+.fin-graficos{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:14px;margin:6px 0 18px}
+.fin-painel{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.09);border-radius:14px;padding:14px}
+.fin-painel h2{margin:0 0 8px;font-size:13px}
+.fin-svg{width:100%;height:auto;display:block}
+.fin-svg text{fill:#aebbd0;font-size:10px}.fin-eixo{stroke:rgba(255,255,255,.15)}
+.fin-hit{fill:transparent;cursor:pointer}.fin-mes:hover .fin-hit,.fin-mes:focus .fin-hit,.fin-mes.atual .fin-hit{fill:rgba(255,255,255,.06)}.fin-mes{outline:none}.fin-mes:focus-visible .fin-hit{stroke:#fff;stroke-width:1}
+.fin-mes.atual text{fill:#fff;font-weight:700}
+.fin-rec{fill:#6fe3b4}.fin-desp{fill:#ff9f7a}
+.fin-legenda{display:flex;gap:14px;margin:4px 0 0}.fin-legenda .pt:before{content:"";display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:5px;background:#6fe3b4}.fin-legenda .pt.desp:before{background:#ff9f7a}
+.categorias{max-width:none}.categorias .cat{margin-bottom:9px}.categorias .cat-t{display:flex;justify-content:space-between;gap:8px;font-size:12px}.categorias .cat-t b{font-weight:600;color:#e6eef6}
+.categoria-barra{height:7px!important;background:rgba(255,255,255,.08)!important;margin-top:4px}.categoria-barra i{height:100%}
+.fin-filtros{display:flex;gap:6px;flex-wrap:wrap}.chip{border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.04);color:#cfdbe8;border-radius:99px;padding:5px 12px;font-size:11px;cursor:pointer}.chip.on{background:rgba(var(--estado-rgb,53,184,255),.28);border-color:rgba(var(--estado-rgb,53,184,255),.7);color:#fff}
+.fin-lista .cat-sel{font-size:10px;padding:5px 6px;max-width:130px}
+.fin-conferencia,.fin-fixas{list-style:none;padding:0;margin:0 0 12px;font-size:12px}
+.fin-conferencia li{padding:7px 10px;border-radius:9px;margin-bottom:5px;background:rgba(255,255,255,.05)}
+.fin-conferencia li.alerta{background:rgba(255,160,120,.13);color:#ffd2bf}.fin-conferencia li.ok{background:rgba(120,230,170,.12);color:#bff3d6}.fin-conferencia li.info{color:#b8c8d8}
+.fin-fixas li{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.07)}
+#finLancarFixas{width:100%;margin:6px 0 12px}
+@media (max-width:760px){.fin-graficos{grid-template-columns:1fr}}
+.fin-filtros .chip{min-height:0;height:auto;line-height:1.2;width:auto;aspect-ratio:auto;flex:none}
+.workspace .row.between{justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.workspace .metrica strong{white-space:nowrap;font-size:clamp(15px,1.7vw,21px)}
+.fin-lista .cat-sel{background:rgba(255,255,255,.07);color:#dbe6f0;border:1px solid rgba(255,255,255,.14)}

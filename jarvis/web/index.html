@@ -212,16 +212,26 @@
 <section id="finTela" class="workspace" hidden aria-label="Contador">
   <header class="workspace-head"><div><h1>Contador</h1><p id="finStatus" class="muted small"></p></div><button id="finFechar" class="btn" type="button">Voltar ao Jarvis</button></header>
   <div class="row"><button type="button" class="btn" id="finAnterior" aria-label="Mês anterior">‹</button><h2 id="finMes"></h2><button type="button" class="btn" id="finSeguinte" aria-label="Mês seguinte">›</button></div>
-  <div id="finMetricas" class="metricas"></div><div id="finCategorias" class="categorias"></div>
-  <div class="workspace-corpo"><div><h2>Lançamentos</h2><ul id="finLista" class="fin-lista"></ul></div>
+  <div id="finBanner" class="fin-banner" hidden></div>
+  <div id="finMetricas" class="metricas"></div>
+  <div class="fin-graficos"><section class="fin-painel"><h2>Últimos 6 meses</h2><div id="finTendencia" class="fin-tendencia" role="img" aria-label="Receitas e despesas pagas nos últimos seis meses"></div></section>
+  <section class="fin-painel"><h2>Despesas por categoria</h2><div id="finCategorias" class="categorias"></div></section></div>
+  <div class="workspace-corpo"><div><div class="row between"><h2>Lançamentos</h2><div id="finFiltros" class="fin-filtros" role="group" aria-label="Filtrar lançamentos"></div></div><ul id="finLista" class="fin-lista"></ul></div>
   <aside class="workspace-detalhe"><h2>Novo lançamento</h2><form id="finForm" class="contato-form">
     <select id="finTipo" aria-label="Tipo"><option value="receita">Receita</option><option value="despesa">Despesa</option></select>
     <input id="finDescricao" required maxlength="100" placeholder="Descrição" aria-label="Descrição">
+    <select id="finCategoria" aria-label="Categoria"><option value="">Categoria automática</option></select>
     <input id="finValor" required type="number" min="0.01" step="0.01" placeholder="Valor em R$" aria-label="Valor">
     <input id="finData" type="date" aria-label="Data"><select id="finSituacao" aria-label="Situação"><option value="pago">Pago / recebido</option><option value="pendente">Pendente</option></select>
     <label class="small muted">Vencimento (se pendente)<input id="finVencimento" type="date"></label>
     <button class="btn primary" type="submit">Salvar lançamento</button></form>
     <p id="finErro" class="bad small" role="alert"></p>
+    <h2>Conferência do mês</h2><ul id="finConferencia" class="fin-conferencia"></ul>
+    <h2>Despesas fixas</h2><ul id="finFixas" class="fin-fixas"></ul>
+    <form id="fixaForm" class="contato-form"><input id="fixaDescricao" required maxlength="100" placeholder="Ex.: Aluguel" aria-label="Descrição da despesa fixa">
+      <input id="fixaValor" required type="number" min="0.01" step="0.01" placeholder="Valor em R$" aria-label="Valor da despesa fixa"><input id="fixaDia" type="number" min="1" max="31" placeholder="Dia do vencimento" aria-label="Dia do vencimento">
+      <button class="btn" type="submit">Cadastrar fixa</button></form>
+    <button id="finLancarFixas" class="btn" type="button">Lançar fixas neste mês</button>
     <div class="row"><button id="finCsv" class="btn" type="button">CSV do mês</button><button id="finRelatorio" class="btn" type="button">Copiar relatório</button><button id="finFecharMes" class="btn" type="button">Fechar o mês</button></div>
   </aside></div>
 </section>

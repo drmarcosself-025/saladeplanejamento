@@ -28,6 +28,7 @@ jobs:
           JARVIS_SCREENSHOTS=/tmp/jarvis-functional-shots node jarvis/tests/browser.mjs
           node jarvis/tests/avatar-browser.mjs
           node jarvis/tests/vida-browser.mjs
+          node jarvis/tests/contador-browser.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:

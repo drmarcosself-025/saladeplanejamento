@@ -87,3 +87,53 @@ test("o prompt do Claude traz o modo, as regras e o pedido", () => {
   const p = B.montarPrompt({ modo: { nome: "Contador", instrucao: "Foque em finanças." }, texto: "como está o caixa?", contexto: "Receitas: R$ 5.000,00", historico: [{ quem: "voce", texto: "oi" }] });
   assert.match(p, /Modo ativo: Contador/); assert.match(p, /NÃO executa nada/); assert.match(p, /PEDIDO DO USUÁRIO: como está o caixa\?/); assert.match(p, /Usuário: oi/);
 });
+
+// ---------- Contador 2.0: evolução, fixas, conferência ----------
+test("evolução: 6 meses terminando no mês pedido, só o pago, virando o ano", () => {
+  const ls = [mk("receita", 1000, "a", "2026-11-03"), mk("despesa", 400, "b", "2026-11-04"), mk("receita", 500, "c", "2026-09-10"), mk("despesa", 50, "d", "2026-09-11", "pendente", "2026-09-30"), mk("receita", 700, "e", "2026-06-01")];
+  const s = j(F.serieMeses(ls, "2026-11", 6));
+  assert.deepEqual(s.map((x) => x.mes), ["2026-06", "2026-07", "2026-08", "2026-09", "2026-10", "2026-11"]);
+  assert.deepEqual(s.map((x) => x.rotulo), ["jun", "jul", "ago", "set", "out", "nov"]);
+  assert.deepEqual([s[5].receitas, s[5].despesas, s[5].saldo], [1000, 400, 600]);
+  assert.deepEqual([s[3].receitas, s[3].despesas], [500, 0]);            // o pendente de setembro não conta
+  assert.equal(s[0].receitas, 700); assert.equal(s[4].qtd, 0);
+  assert.deepEqual(j(F.serieMeses([], "2026-02", 3)).map((x) => x.mes), ["2025-12", "2026-01", "2026-02"]);
+});
+test("despesa fixa: valida, usa o último dia do mês e NÃO duplica ao lançar de novo", () => {
+  assert.equal(F.novaFixa({ descricao: "Aluguel", valor: 0 }).erro, "valor"); assert.equal(F.novaFixa({ descricao: " ", valor: 10 }).erro, "descricao");
+  const a = j(F.novaFixa({ descricao: "Aluguel", valor: 2800, dia: 5 })), b = j(F.novaFixa({ descricao: "Internet", valor: 189.9, dia: 31 }));
+  assert.deepEqual([a.tipo, a.categoria, a.dia, a.ativa], ["fixa", "Aluguel", 5, true]); assert.equal(b.categoria, "Internet e telefone");
+  const novos = j(F.lancarFixas([a, b], [], "2026-02", NOV));
+  assert.equal(novos.length, 2); assert.equal(novos[0].data, "2026-02-05"); assert.equal(novos[1].data, "2026-02-28");   // fevereiro não tem 31
+  assert.ok(novos.every((x) => x.status === "pendente" && x.tipo === "despesa" && x.vencimento === x.data));
+  // o aluguel já foi lançado e pago: lançar de novo só cria o que falta e não mexe no pago
+  const pago = { ...novos[0], status: "pago" };
+  const de_novo = j(F.lancarFixas([a, b], [pago], "2026-02", NOV)); assert.deepEqual(de_novo.map((x) => x.descricao), ["Internet"]);
+  assert.deepEqual(j(F.lancarFixas([{ ...a, ativa: false }], [], "2026-02", NOV)), []);                                      // desativada não lança
+  assert.equal(j(F.lancarFixas([a], [], "2026-03", NOV))[0].id !== novos[0].id, true);                                      // mês diferente = lançamento diferente
+});
+test("conferência: alertas impedem 'pronto'; avisos informativos não", () => {
+  const ok = [mk("receita", 5000, "consultas", "2026-10-03"), mk("despesa", 300, "aluguel", "2026-10-04")];
+  assert.deepEqual(j(F.conferencia(ok, "2026-10", NOV)), { itens: [], pronto: true });
+  const c = j(F.conferencia([mk("despesa", 100, "coisa estranha", "2026-10-04"), mk("despesa", 50, "luz", "2026-10-05", "pendente", "2026-10-09")], "2026-10", NOV));
+  assert.equal(c.pronto, false);
+  const textos = c.itens.map((i) => i.texto).join("|");
+  assert.match(textos, /Nenhuma receita/); assert.match(textos, /1 conta atrasada/); assert.match(textos, /Outras despesas/);
+  assert.match(j(F.conferencia(ok, "2026-11", NOV)).itens.map((i) => i.texto).join("|"), /Nenhuma receita|ainda não terminou/);   // mês corrente: aviso
+  assert.equal(j(F.conferencia([], "2026-10", NOV)).itens[0].texto, "Nenhum lançamento neste mês.");
+  // mudou depois de fechar
+  const fech = { receitas: 5000, despesas: 300 }; assert.equal(F.conferencia(ok, "2026-10", NOV, fech).pronto, true);
+  const mudou = j(F.conferencia([...ok, mk("despesa", 10, "x", "2026-10-06")], "2026-10", NOV, fech)); assert.match(mudou.itens.map((i) => i.texto).join("|"), /mudaram desde o último fechamento/);
+});
+test("cor de categoria é estável e diferente entre categorias", () => {
+  assert.equal(F.corCategoria("Aluguel"), F.corCategoria("Aluguel")); assert.notEqual(F.corCategoria("Aluguel"), F.corCategoria("Energia"));
+  assert.match(F.corCategoria("Categoria nova"), /^#[0-9a-f]{6}$/);
+});
+
+test("voz: despesas fixas (cadastrar e lançar no mês)", () => {
+  let r = it("cadastra despesa fixa aluguel 2800 dia 5"); assert.deepEqual([r.tipo, r.fixa.descricao, r.fixa.valor, r.fixa.dia], ["fin_fixa_nova", "aluguel", 2800, 5]);
+  r = it("lança despesa fixa internet 189,90"); assert.deepEqual([r.tipo, r.fixa.valor, r.fixa.dia], ["fin_fixa_nova", 189.9, 1]);
+  assert.equal(it("cadastra despesa fixa aluguel").erro, "valor");
+  assert.equal(it("lança as fixas do mês").tipo, "fin_fixas"); assert.equal(it("lança as despesas fixas do mês passado").mes, "2026-10");
+  assert.equal(it("lança despesa 412,90 energia").tipo, "fin_lancar");                   // não confunde com lançamento comum
+});
