@@ -17,11 +17,10 @@
           serie: { rotulo: "Gasto por dia (7 dias)", valores: [118.4, 131.2, 109.75, 142.3, 127.1, 129.4, 103.35] },
         };
       }
-      case "social":
-        return {
-          posts_hoje: 10, posts_ok: 8, aguardando_aprovacao: 0, erros_3d: 11,
-          serie: { rotulo: "Posts por dia (7 dias)", valores: [6, 8, 7, 9, 10, 9, 10] },
-        };
+      case "social": {   // dados reais registrados pelo usuário
+        const S = window.JarvisSocial, L = window.JarvisLeads, hoje = L.iso(new Date()), r = S.resumo(S.ler(), hoje, L.somar(hoje, 6));
+        return { ...r, serie: { rotulo: "Posts planejados nos próximos 7 dias", valores: Array.from({ length: 7 }, (_, i) => S.ler().posts.filter((p) => p.data === L.somar(hoje, i)).length) } };
+      }
       case "gestao": {   // dados reais: rotina, prioridades, leads e contas do usuário
         const R = window.JarvisRotina, agora = new Date(), c = R.montarDia(agora), sem = R.montarSemana(agora);
         return { ...c, resumo: R.resumoDia(c), serie: { rotulo: "Compromissos nesta semana", valores: sem.dias.map((d) => d.compromissos.length) } };
@@ -45,7 +44,7 @@
     async get(modeId) {
       if (modeId === "leads" || modeId === "contador") return { source: "seus", ...demo(modeId) };
       if (modeId === "designer" || modeId === "programador") return { source: "criacao", ...demo(modeId) };
-      if (modeId === "gestao") return { source: "seus", ...demo(modeId) };
+      if (modeId === "gestao" || modeId === "social") return { source: "seus", ...demo(modeId) };
       return { source: "demo", ...demo(modeId) };
     },
   };

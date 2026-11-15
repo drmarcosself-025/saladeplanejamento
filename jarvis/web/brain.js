@@ -193,6 +193,31 @@
   }
 
 
+
+  // ---------- avisos, relacionamento (CRC) e redes sociais ----------
+  function lerSocial(original, t, hoje) {
+    const S = window.JarvisSocial, L = window.JarvisLeads; if (!S) return null; hoje = hoje || new Date();
+    if (/\b(notificac\w*|avisos?|pendencias?|alertas?)\b/.test(t) && /\b(quais|minhas?|meus|ver|mostra\w*|tem|tenho|existe\w*|alguma?)\b/.test(t) && !/\b(contas?|boletos?|despesas?)\b/.test(t) || /\b(o que|que)\b.*\b(tem de novo|esta pendente|ta pendente|preciso ver|preciso fazer agora|preciso resolver)\b/.test(t) || /^(me atualiza|atualiza (ai|aí)|novidades|o que ha de novo|me poe a par|me poe em dia)$/.test(t)) return { tipo: "avisos_ver" };
+    if (/\b(clientes?|pacientes?)\b.*\b(reativar|reativacao|sem contato|esquecid\w+|parados?)\b/.test(t) || /\b(quem|quais)\b.*\b(reativar|esqueci)\b/.test(t) || /\b(crc|relacionamento|pos[- ]?venda|pos[- ]?atendimento)\b/.test(t) && /\b(quais|ver|mostra\w*|abre|lista)\b/.test(t)) return { tipo: "avisos_crc" };
+    if (/\b(como (esta|ta|anda)|resumo|situacao|metricas?|desempenho|notificac\w+)\b.*\b(instagram|insta|redes sociais|perfil)\b/.test(t) || /\b(meu|no) (instagram|insta)\b/.test(t) && /\b(como|quais|que|mostra\w*|ver)\b/.test(t)) return { tipo: "soc_instagram" };
+    let m = original.match(new RegExp(PRE + "(?:anota|anotar|anote|novo|nova|registra|registrar|adiciona|adicionar|salva|salvar)\\s+(?:um\\s+|uma\\s+)?coment[aá]rio\\s+(?:do|da|de|no|do instagram\\s+)?\\s*(?:de\\s+)?(@?[\\wÀ-ÿ.]+(?:\\s+[A-ZÀ-Ý][\\wÀ-ÿ]+)?)\\s*[:,\\-–]\\s*(.+)$", "i"));
+    if (m) return { tipo: "soc_comentario", autor: m[1].trim(), comentario: m[2].trim() };
+    if (/\bcoment[aá]rios?\b/i.test(original) && /\b(responder|pendentes?|esperando|sem resposta|fila)\b/.test(t) && /\b(quais|ver|mostra\w*|tem|tenho|lista\w*|preciso)\b/.test(t)) return { tipo: "soc_comentarios" };
+    m = original.match(new RegExp(PRE + "(?:sugere|sugira|sugerir|escreve|escreva|escrever|cria|criar|responde|responda|responder|manda|me d[aá]|me de)\\s+(?:uma\\s+|umas\\s+|a\\s+)?(?:resposta[s]?\\s+)?(?:para|pra|ao|a|à)?\\s*(?:o\\s+|a\\s+)?(?:coment[aá]rio\\s+)?(?:do|da|de|para o|para a)?\\s*(@?[\\wÀ-ÿ.]+)\\s*$", "i"));
+    if (m && !/^(coment[aá]rios?|resposta|post|posts)$/i.test(m[1]) && /\b(responde|responda|responder|resposta|sugere|sugira|sugerir)\b/.test(t)) return { tipo: "soc_responder", autor: m[1].trim() };
+    m = original.match(new RegExp(PRE + "(?:respondi|j[aá] respondi|marca(?:r)?\\s+(?:o\\s+)?coment[aá]rio\\s+(?:do|da|de)?)\\s*(?:o\\s+|a\\s+|ao\\s+|à\\s+)?(?:coment[aá]rio\\s+)?(?:do|da|de)?\\s*(@?[\\wÀ-ÿ.]+)(?:\\s+como\\s+(?:respondido|feito|resolvido))?\\s*$", "i"));
+    if (m && !/^(coment[aá]rios?)$/i.test(m[1])) return { tipo: "soc_respondido", autor: m[1].trim() };
+    if (/\b(posts?|reels|stories|story|carrossel|publicac\w+|conteudo)\b/.test(t) && /\b(calendario|cronograma|planejad\w+|programad\w+|agendad\w+|postar|publicar)\b|\bpara\b.*\b(hoje|amanha|semana)\b/.test(t) && /\b(quais|ver|mostra\w*|o que|tenho|tem|lista\w*|calendario|cronograma)\b/.test(t) && !/\b(agenda|marca|planeja|cria|adiciona)\s+(um |uma )?(post|reels|story|stories|carrossel)/.test(t)) return { tipo: "soc_posts" };
+    m = original.match(new RegExp(PRE + "(?:agenda|agendar|agende|planeja|planejar|planeje|marca|marcar|marque|cria|criar|crie|adiciona|adicionar|anota|anotar|anote|ideia de|ideia para)\\s+(?:um\\s+|uma\\s+)?(post|reels?|stories|story|carrossel|publica[cç][aã]o)\\s*(?:de|do|da|sobre|para|pra|:)?\\s*(.*)$", "i"));
+    if (m && m[2]) {
+      let tema = m[2], data = L && L.dataDe(tema, hoje), fmt = /reel/i.test(m[1]) ? "Reels" : /stor/i.test(m[1]) ? "Stories" : /carrossel/i.test(m[1]) ? "Carrossel" : "Foto";
+      tema = tema.replace(/\b(depois de amanh[aã]|amanh[aã]|hoje|dia\s+\d{1,2}|\d{1,2}\/\d{1,2}|segunda|ter[cç]a|quarta|quinta|sexta|s[aá]bado|domingo|semana que vem)(?:-feira)?(?![\wÀ-ÿ])/gi, " ").replace(/\s+/g, " ").trim().replace(/^(?:de|do|da|sobre|que|para|pra|na|no|em)\s+/i, "");
+      if (tema) return { tipo: "soc_post", tema: maius(tema), data: data || (L && L.iso(hoje)), formato: fmt };
+    }
+    if (/\b(abre|abrir|mostra\w*|quero ver|ver)\b.*\b(social|instagram|insta|redes sociais|comentarios|calendario de posts)\b/.test(t) && !/\bagente\b/.test(t)) return { tipo: "soc_abrir" };
+    return null;
+  }
+
   // ---------- rotina (modo Dia a Dia) ----------
   const NUM = { um: 1, uma: 1, dois: 2, duas: 2, tres: 3, quatro: 4, cinco: 5, seis: 6, sete: 7, oito: 8, meio: 1 };
   const maius = (x) => x ? x.charAt(0).toUpperCase() + x.slice(1) : x;
@@ -250,6 +275,8 @@
     const fin = lerFin(textoBruto, t, hoje);
     if (fin) return { ...fin, texto: t };
 
+    const soc = lerSocial(textoBruto, t, hoje);
+    if (soc) return { ...soc, texto: t };
     const rot = lerRotina(textoBruto, t, hoje);
     if (rot) return { ...rot, texto: t };
 

@@ -41,7 +41,7 @@
     $("espacosTela").hidden = vista !== "espacos"; $("pessoalTela").hidden = vista !== "pessoal"; $("utilityTela").hidden = vista !== "utilidade";
     document.querySelectorAll(".main-nav [data-view]").forEach((b) => { b.classList.toggle("on", b.dataset.view === vista); b.setAttribute("aria-current", b.dataset.view === vista ? "page" : "false"); });
     if (vista === "pessoal") popularPerfil();
-    if (vista !== "conversa") { $("crmTela").hidden = true; $("finTela").hidden = true; $("rotinaTela").hidden = true; }
+    if (vista !== "conversa") { $("crmTela").hidden = true; $("finTela").hidden = true; $("rotinaTela").hidden = true; $("socialTela").hidden = true; }
     window.scrollTo({ top: 0, behavior: "instant" });
     // O compositor mantém posição própria, sem cobrir o conteúdo no celular.
   }

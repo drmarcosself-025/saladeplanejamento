@@ -156,7 +156,7 @@
 
   <aside class="col right">
     <section class="panel intention-panel"><p class="eyebrow">EM SINTONIA</p><h2 id="focoTitulo">Mais espaço para você.</h2><p class="muted" id="focoTexto">Me conte suas prioridades para tornar este espaço mais seu.</p><button class="text-button" type="button" data-view="pessoal">Ajustar meu contexto <span>↗</span></button></section>
-    <section class="panel access-panel"><h2>À sua mão</h2><button type="button" class="quick-link" data-command="abre o CRM"><span data-icon="people"></span><span>Leads & retornos<small>Seu comercial em movimento</small></span><b>↗</b></button><button type="button" class="quick-link" data-command="ativa o agente contador"><span data-icon="wallet"></span><span>Meu financeiro<small>Contas e clareza no mês</small></span><b>↗</b></button><button type="button" class="quick-link" data-view="espacos"><span data-icon="grid"></span><span>Todos os espaços<small>Criação, trabalho e rotina</small></span><b>↗</b></button></section>
+    <section class="panel access-panel"><h2>À sua mão</h2><button type="button" class="quick-link" data-command="abre o CRM"><span data-icon="people"></span><span>Leads & retornos<small>Seu comercial em movimento</small></span><b>↗</b></button><button type="button" class="quick-link" data-command="ativa o agente contador"><span data-icon="wallet"></span><span>Meu financeiro<small>Contas e clareza no mês</small></span><b>↗</b></button><button type="button" class="quick-link" data-command="quais minhas notificações"><span data-icon="spark"></span><span>Avisos e pendências<small>O que precisa de você agora</small></span><b>↗</b></button><button type="button" class="quick-link" data-command="abre o instagram"><span data-icon="chat"></span><span>Social media<small>Comentários e calendário de posts</small></span><b>↗</b></button><button type="button" class="quick-link" data-view="espacos"><span data-icon="grid"></span><span>Todos os espaços<small>Criação, trabalho e rotina</small></span><b>↗</b></button></section>
     <section class="panel status-panel">
       <h2>Estado</h2>
       <div id="relogio" class="relogio">--:--:--</div>
@@ -258,6 +258,19 @@
   </div>
 </section>
 
+<section id="socialTela" class="workspace" hidden aria-label="Social Media">
+  <header class="workspace-head"><div><h1>Social Media</h1><p id="socStatus" class="muted small"></p></div><button id="socFechar" class="btn" type="button">Voltar ao Jarvis</button></header>
+  <p id="socInsta" class="rot-resumo">Instagram: ainda não conectado. A conexão oficial com a Meta exige um servidor (próxima fase). Por enquanto: anote os comentários, planeje os posts e importe as métricas do Meta Business Suite.</p>
+  <div class="rot-grid">
+    <section class="fin-painel"><h2>Comentários a responder</h2><ul id="socComentarios" class="rot-lista"></ul>
+      <form id="socComForm" class="rot-form"><input id="socAutor" maxlength="60" placeholder="@quem comentou" aria-label="Quem comentou"><input id="socTexto" required maxlength="400" placeholder="Comentário" aria-label="Comentário"><button class="btn" type="submit">Anotar</button></form></section>
+    <section class="fin-painel"><h2>Calendário de posts</h2><ul id="socPosts" class="rot-lista"></ul>
+      <form id="socPostForm" class="rot-form"><input id="socTema" required maxlength="140" placeholder="Tema do post" aria-label="Tema"><input id="socData" type="date" aria-label="Data"><select id="socFormato" aria-label="Formato"></select><button class="btn" type="submit">Planejar</button></form></section>
+    <section class="fin-painel rot-largo"><h2>Métricas (Meta Business Suite)</h2><p class="small muted">No Meta Business Suite: Insights → Conteúdo → Exportar dados (CSV). Depois escolha o arquivo aqui.</p>
+      <div class="row"><input id="socCsv" type="file" accept=".csv,text/csv" aria-label="Arquivo CSV de métricas"><button id="socAnalisar" class="btn" type="button">Analisar com Claude</button></div><ul id="socTop" class="rot-lista"></ul></section>
+  </div>
+</section>
+
 <form id="barra" class="barra" autocomplete="off">
   <button type="button" id="btnPtt" class="icon" title="Segure para falar (ou segure a tecla Espaço)" aria-label="Segurar para falar"><span data-icon="mic"></span></button>
   <button type="button" id="btnMic" class="icon" title="Microfone sempre ligado (responde quando ouvir “Jarvis”)" aria-pressed="false" aria-label="Microfone contínuo"><span data-icon="wave"></span></button>
@@ -287,6 +300,8 @@
 <script src="leads.js"></script>
 <script src="fin.js"></script>
 <script src="rotina.js"></script>
+<script src="social.js"></script>
+<script src="avisos.js"></script>
 <script src="data.js"></script>
 <script src="brain.js"></script>
 <script src="fundo.js"></script>

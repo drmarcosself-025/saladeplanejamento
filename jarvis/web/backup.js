@@ -17,7 +17,7 @@
       formato: FORMATO, criadoEm: new Date().toISOString(),
       origem: { leads: JarvisLeads.modo, financeiro: JarvisFin.modo },
       leads: JarvisLeads.lista(), financeiro: [...JarvisFin.lista(), ...JarvisFin.fechamentos(), ...JarvisFin.fixas()],
-      contatos: contatos(), pessoal: JarvisPessoal.ler(), rotina: JarvisRotina.ler(),
+      contatos: contatos(), pessoal: JarvisPessoal.ler(), rotina: JarvisRotina.ler(), social: JarvisSocial.ler(),
     };
   }
   function validar(raw) {
@@ -53,7 +53,7 @@
       if (!tel.tel || !str(c.nome, 60)) throw Error("Um contato do arquivo tem dados inválidos.");
       return { nome: str(c.nome, 60), tel: JarvisContatos.formatarTel(tel.tel) };
     });
-    return { leads, financeiro, contatos, pessoal: JarvisPessoal.validar(raw.pessoal), rotina: JarvisRotina.validar(raw.rotina) };
+    return { leads, financeiro, contatos, pessoal: JarvisPessoal.validar(raw.pessoal), rotina: JarvisRotina.validar(raw.rotina), social: JarvisSocial.validar(raw.social) };
   }
   async function restaurar(d) {
     if (!pronto()) throw Error("Aguarde a confirmação do armazenamento antes de restaurar.");
@@ -79,6 +79,11 @@
     for (const [k, n] of Object.entries(v.rotina.agua)) if (!(k in rot.agua)) rot.agua[k] = n;
     for (const [k, l] of Object.entries(v.rotina.refeicoes)) if (!(k in rot.refeicoes)) rot.refeicoes[k] = l;
     if (!JarvisRotina.salvar(rot)) resultado.falhas++;
+    // Social Media: soma comentários e posts que faltam (por id); métricas só se não houver nenhuma neste aparelho.
+    const soc = JarvisSocial.ler(), idsC = new Set(soc.comentarios.map((c) => c.id)), idsP = new Set(soc.posts.map((p) => p.id));
+    const novosCom = v.social.comentarios.filter((c) => !idsC.has(c.id)), novosPosts = v.social.posts.filter((p) => !idsP.has(p.id));
+    soc.comentarios.push(...novosCom); soc.posts.push(...novosPosts); if (!soc.metricas.length) soc.metricas = v.social.metricas;
+    resultado.social = novosCom.length + novosPosts.length; if (!JarvisSocial.salvar(soc)) resultado.falhas++;
     resultado.pessoal = JarvisPessoal.salvar(atual);
     if (!resultado.pessoal) resultado.falhas++;
     return resultado;

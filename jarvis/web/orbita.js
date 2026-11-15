@@ -209,14 +209,14 @@
   // e a função abre ao lado. O CSS decide o desenho a partir de body[data-dock] e body[data-area].
   const corpo = document.body;
   function atualizarDock() {
-    const vista = corpo.dataset.vista || "hoje", crm = $("crmTela"), fin = $("finTela"), rot = $("rotinaTela");
-    const area = crm && !crm.hidden ? "crm" : fin && !fin.hidden ? "fin" : rot && !rot.hidden ? "rotina" : "";
+    const vista = corpo.dataset.vista || "hoje", crm = $("crmTela"), fin = $("finTela"), rot = $("rotinaTela"), soc = $("socialTela");
+    const area = crm && !crm.hidden ? "crm" : fin && !fin.hidden ? "fin" : rot && !rot.hidden ? "rotina" : soc && !soc.hidden ? "social" : "";
     if (area) corpo.dataset.area = area; else delete corpo.dataset.area;
     const dock = ["espacos", "pessoal", "utilidade"].includes(vista) || !!area;
     if (dock) corpo.dataset.dock = "1"; else delete corpo.dataset.dock;
   }
   new MutationObserver(atualizarDock).observe(corpo, { attributes: true, attributeFilter: ["data-vista"] });
-  for (const id of ["crmTela", "finTela", "rotinaTela"]) { const e = $(id); if (e) new MutationObserver(atualizarDock).observe(e, { attributes: true, attributeFilter: ["hidden"] }); }
+  for (const id of ["crmTela", "finTela", "rotinaTela", "socialTela"]) { const e = $(id); if (e) new MutationObserver(atualizarDock).observe(e, { attributes: true, attributeFilter: ["hidden"] }); }
   atualizarDock();
   raiz.dataset.vida = "1";
 })();

@@ -31,6 +31,7 @@ jobs:
           node jarvis/tests/vida-browser.mjs
           node jarvis/tests/contador-browser.mjs
           node jarvis/tests/rotina-browser.mjs
+          node jarvis/tests/social-browser.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:

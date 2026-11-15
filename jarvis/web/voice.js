@@ -18,7 +18,7 @@
   const NO_ARTEFATO = !!(window.claude && typeof window.claude.use === "function");
   const dormir = (ms) => new Promise((r) => setTimeout(r, ms));
 
-  let cb = { onTexto() {}, onInterim() {}, onEstado() {}, onErro() {}, onNivel() {}, onVozes() {} };
+  let cb = { onTexto() {}, onInterim() {}, onEstado() {}, onErro() {}, onNivel() {}, onVozes() {}, onPalavra() {} };
   let config = { voz: "", rate: 1.0 };
   try { Object.assign(config, JSON.parse(localStorage.getItem(LS) || "{}")); } catch (_) {}
   function salvar() { try { localStorage.setItem(LS, JSON.stringify(config)); } catch (_) {} }
@@ -215,7 +215,7 @@
       const u = new SpeechSynthesisUtterance(txt);
       u.lang = (vozSisEscolhida() && vozSisEscolhida().lang) || "pt-BR"; u.rate = config.rate; u.pitch = 1; const v = vozSisEscolhida(); if (v) u.voice = v;
       let fim = false; const done = () => { if (!fim) { fim = true; resolve(); } };
-      u.onend = done; u.onerror = done;
+      u.onend = done; u.onerror = done; u.onboundary = () => { try { cb.onPalavra(); } catch (_) {} };
       setTimeout(done, 3000 + txt.length * 110);
       if (meuToken === tokenFala) speechSynthesis.speak(u); else done();
     });

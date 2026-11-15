@@ -296,8 +296,8 @@
     const box = $(alvo); box.textContent = "";
     for (const [nome, n] of pares) { const e = mk("div", "metrica"), s = mk("span", "", nome), b = mk("strong", "", String(n)); e.append(s, b); box.appendChild(e); }
   };
-  function abrirCrm(id) { $("crmTela").hidden = false; $("finTela").hidden = true; $("rotinaTela").hidden = true; $("crmTela").querySelector(".workspace-head").after($("respostaCard")); if (id) leadAberto = id; renderCrm(); }
-  function fecharAreas() { $("crmTela").hidden = true; $("finTela").hidden = true; $("rotinaTela").hidden = true; $("legendaSr").after($("respostaCard")); }
+  function abrirCrm(id) { $("crmTela").hidden = false; $("finTela").hidden = true; $("rotinaTela").hidden = true; $("socialTela").hidden = true; $("crmTela").querySelector(".workspace-head").after($("respostaCard")); if (id) leadAberto = id; renderCrm(); }
+  function fecharAreas() { $("crmTela").hidden = true; $("finTela").hidden = true; $("rotinaTela").hidden = true; $("socialTela").hidden = true; $("legendaSr").after($("respostaCard")); }
   function renderCrm() {
     const ls = L.lista(), r = L.resumo(ls);
     $("crmStatus").textContent = L.aviso || (L.modo === "claude" ? "Dados salvos no seu artefato Claude." : "Dados salvos neste navegador.");
@@ -335,7 +335,7 @@
     d.append(row, mk("h2", "", "Histórico")); const ol = mk("ol");
     for (const h of (l.historico || []).slice(-20).reverse()) ol.append(mk("li", "", `${String(h.ts).slice(0, 10)} · ${h.texto}`)); d.append(ol);
   }
-  function abrirFin() { $("finTela").hidden = false; $("crmTela").hidden = true; $("rotinaTela").hidden = true; $("finTela").querySelector(".workspace-head").after($("respostaCard")); renderFin(); }
+  function abrirFin() { $("finTela").hidden = false; $("crmTela").hidden = true; $("rotinaTela").hidden = true; $("socialTela").hidden = true; $("finTela").querySelector(".workspace-head").after($("respostaCard")); renderFin(); }
   let filtroFin = "todos";
   const SVG = "http://www.w3.org/2000/svg";
   function graficoMeses(serie) {
@@ -432,7 +432,7 @@
   let rotAba = "dia";
   const dataExt = (d) => new Date(d + "T12:00").toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
   function abrirRotina(aba) {
-    $("rotinaTela").hidden = false; $("crmTela").hidden = true; $("finTela").hidden = true;
+    $("rotinaTela").hidden = false; $("crmTela").hidden = true; $("finTela").hidden = true; $("socialTela").hidden = true;
     $("rotinaTela").querySelector(".workspace-head").after($("respostaCard")); if (aba) rotAba = aba; renderRotina();
   }
   function salvarPessoal(fn) { const d = P.ler(); fn(d); const ok = P.salvar(d); if (ok && window.JarvisUI) JarvisUI.render(); return ok; }
@@ -522,6 +522,107 @@
       return dizer(`Marquei ${c.titulo} para ${c.data === hoje ? "hoje" : dataExt(c.data)}${c.hora ? ", às " + RT.hhmm(c.hora) : ""}.`, g);
     }
   }
+
+  // ---------- Social Media (comentários, calendário, métricas) e central de avisos ----------
+  const SC = window.JarvisSocial, AV = window.JarvisAvisos;
+  const curto = (d) => d.slice(8) + "/" + d.slice(5, 7);
+  function abrirSocial() {
+    $("socialTela").hidden = false; $("crmTela").hidden = true; $("finTela").hidden = true; $("rotinaTela").hidden = true;
+    $("socialTela").querySelector(".workspace-head").after($("respostaCard")); renderSocial();
+  }
+  function respostasPara(c) { mostrarCard(`Respostas para @${c.autor}`, SC.respostasLocais(c)); }
+  async function respostasClaude(c) {
+    setEstado("pensando");
+    const r = await JarvisBrain.perguntarClaude({ modo: MODOS.social, texto: `Escreva 3 respostas curtas e acolhedoras, em português do Brasil, para este comentário no Instagram de uma clínica odontológica: "${c.texto}" (de @${c.autor}). Sem preço, sem promessa de resultado, convidando a continuar no direct. Cada item do campo "itens" é uma resposta pronta.`, contexto: contextoClaude(), historico: [] });
+    setEstado("idle");
+    if (!r || r.erro || !r.itens.length) { mostrarCard(`Respostas para @${c.autor}`, SC.respostasLocais(c)); return false; }
+    mostrarCard(`Respostas para @${c.autor} (Claude)`, r.itens); return true;
+  }
+  function renderSocial() {
+    if ($("socialTela").hidden) return;
+    const d = SC.ler(), hoje = hojeISO(), pend = SC.pendentes(d);
+    $("socStatus").textContent = `${pend.length} comentário${pend.length === 1 ? "" : "s"} a responder · ${SC.postsDoDia(d, hoje).length} post(s) hoje · salvo neste navegador`;
+    const cl = $("socComentarios"); cl.textContent = "";
+    for (const c of pend) {
+      const li = mk("li"), tx = mk("div"); tx.append(mk("strong", "", "@" + c.autor), mk("small", "", c.texto));
+      const a = mk("div", "row");
+      const b1 = mk("button", "btn", "Sugerir resposta"); b1.type = "button"; b1.addEventListener("click", () => respostasPara(c));
+      const b2 = mk("button", "btn", "Com Claude"); b2.type = "button"; b2.addEventListener("click", () => respostasClaude(c));
+      const b3 = mk("button", "btn", "Respondido"); b3.type = "button"; b3.addEventListener("click", () => { const n = SC.ler(), i = n.comentarios.find((x) => x.id === c.id); if (i) i.status = "respondido"; SC.salvar(n); });
+      const rm = mk("button", "task-delete", "×"); rm.type = "button"; rm.setAttribute("aria-label", "Remover comentário de " + c.autor); rm.addEventListener("click", () => { const n = SC.ler(); n.comentarios = n.comentarios.filter((x) => x.id !== c.id); SC.salvar(n); });
+      a.append(b1, b2, b3, rm); li.append(tx, a); cl.append(li);
+    }
+    if (!pend.length) cl.append(mk("li", "muted", "Nenhum comentário esperando resposta."));
+    const pl = $("socPosts"); pl.textContent = "";
+    for (const p of d.posts.filter((x) => x.status !== "postado" || x.data >= hoje).sort((a, b) => a.data.localeCompare(b.data)).slice(0, 14)) {
+      const li = mk("li", p.status === "postado" ? "feito" : ""), tx = mk("span", "", `${curto(p.data)}${p.data < hoje && p.status !== "postado" ? " (atrasado)" : ""} · ${p.formato} · ${p.tema}`);
+      const sel = mk("select", "cat-sel"); sel.setAttribute("aria-label", "Status de " + p.tema);
+      for (const [v, n] of SC.STATUS) { const o = mk("option", "", n); o.value = v; if (v === p.status) o.selected = true; sel.append(o); }
+      sel.addEventListener("change", () => { const n = SC.ler(), i = n.posts.find((x) => x.id === p.id); if (i) i.status = sel.value; SC.salvar(n); });
+      const rm = mk("button", "task-delete", "×"); rm.type = "button"; rm.setAttribute("aria-label", "Remover post " + p.tema); rm.addEventListener("click", () => { const n = SC.ler(); n.posts = n.posts.filter((x) => x.id !== p.id); SC.salvar(n); });
+      const a = mk("div", "row"); a.append(sel, rm); li.append(tx, a); pl.append(li);
+    }
+    if (!pl.children.length) pl.append(mk("li", "muted", "Nenhum post planejado."));
+    const tl = $("socTop"); tl.textContent = "";
+    for (const m of SC.melhores(d.metricas, 5)) tl.append(mk("li", "", `${m.titulo} · alcance ${m.alcance} · ${m.curtidas} curtidas · ${m.comentarios} comentários · ${m.salvos} salvos`));
+    if (!d.metricas.length) tl.append(mk("li", "muted", "Nenhuma métrica importada ainda."));
+  }
+  SC.aoMudar(renderSocial);
+  async function comandoSoc(it, g) {
+    const hoje = hojeISO(), d = SC.ler();
+    if (it.tipo === "soc_abrir") { abrirSocial(); return dizer("Abri o Social Media.", g); }
+    if (it.tipo === "soc_instagram") {
+      abrirSocial(); const r = SC.resumo(d, hoje, L.somar(hoje, 6)), top = SC.melhores(d.metricas, 1)[0];
+      mostrarCard("Instagram", [`Comentários a responder: ${r.pendentes}`, `Posts hoje: ${r.hoje} · atrasados: ${r.atrasados} · na semana: ${r.semana}`, top ? `Melhor post importado: ${top.titulo}` : "Nenhuma métrica importada", "Conexão ao vivo: não conectada (exige servidor)"]);
+      return dizer(`Ainda não consigo ver seu Instagram ao vivo, porque a conexão oficial exige um servidor. Pelo que você registrou: ${r.pendentes} comentário${r.pendentes === 1 ? "" : "s"} para responder e ${r.hoje} post${r.hoje === 1 ? "" : "s"} para hoje. Para métricas, importe o CSV do Meta Business Suite.`, g);
+    }
+    if (it.tipo === "soc_comentario") {
+      const c = SC.novoComentario({ autor: it.autor, texto: it.comentario }); if (c.erro) return dizer("Qual foi o comentário?", g);
+      d.comentarios.push(c); if (!SC.salvar(d)) return dizer("Não consegui salvar agora.", g);
+      respostasPara(c); return dizer(`Anotei o comentário de ${c.autor}. Já deixei 3 respostas sugeridas na tela.`, g);
+    }
+    if (it.tipo === "soc_comentarios") {
+      const p = SC.pendentes(d); abrirSocial();
+      mostrarCard("Comentários a responder", p.map((c) => `@${c.autor}: ${c.texto}`));
+      return dizer(p.length ? `Você tem ${p.length} comentário${p.length === 1 ? "" : "s"} para responder. O mais antigo é de ${p[0].autor}.` : "Nenhum comentário esperando resposta.", g);
+    }
+    if (it.tipo === "soc_responder" || it.tipo === "soc_respondido") {
+      const ach = SC.achar(d, it.autor); if (ach.length !== 1) return dizer(ach.length ? "Achei mais de um comentário desse nome. Abra o Social Media e escolha." : `Não achei comentário pendente de ${it.autor}.`, g);
+      if (it.tipo === "soc_responder") { respostasPara(ach[0]); return dizer(`Montei 3 opções de resposta para ${ach[0].autor}. Estão na tela para copiar.`, g); }
+      const i = d.comentarios.find((x) => x.id === ach[0].id); i.status = "respondido"; SC.salvar(d); return dizer(`Marquei o comentário de ${ach[0].autor} como respondido.`, g);
+    }
+    if (it.tipo === "soc_post") {
+      const p = SC.novoPost({ tema: it.tema, data: it.data, formato: it.formato }, hoje); if (p.erro) return dizer("Qual é o tema do post?", g);
+      d.posts.push(p); if (!SC.salvar(d)) return dizer("Não consegui salvar agora.", g);
+      return dizer(`Planejei um ${p.formato.toLowerCase()} sobre ${p.tema.toLowerCase()} para ${p.data === hoje ? "hoje" : curto(p.data)}.`, g);
+    }
+    if (it.tipo === "soc_posts") {
+      const fut = d.posts.filter((p) => p.status !== "postado").sort((a, b) => a.data.localeCompare(b.data)).slice(0, 8); abrirSocial();
+      mostrarCard("Calendário de posts", fut.map((p) => `${curto(p.data)} · ${p.formato} · ${p.tema}${p.data < hoje ? " (atrasado)" : ""}`));
+      const h = SC.postsDoDia(d, hoje).length; return dizer(fut.length ? `Você tem ${fut.length} post${fut.length === 1 ? "" : "s"} planejado${fut.length === 1 ? "" : "s"}, ${h ? h + " para hoje" : "nenhum para hoje"}.` : "Nenhum post planejado. Diga, por exemplo: agenda um reels sobre clareamento sexta.", g);
+    }
+  }
+  function avisosAgora() { const c = AV.coletar(new Date()); return { ...AV.montar(c), _c: c }; }
+  async function comandoAvisos(it, g) {
+    if (it.tipo === "avisos_crc") {
+      const c = AV.coletar(new Date()), ps = c._parados;
+      mostrarCard("Clientes para reativar", ps.slice(0, 8).map((l) => `${l.nome} · último contato ${l.ultimoContato || String(l.atualizado || "").slice(0, 10) || "sem registro"}`), ps.slice(0, 2).map((l) => "manda mensagem pro " + l.nome));
+      return dizer(ps.length ? `${ps.length} cliente${ps.length === 1 ? " fechado está" : "s fechados estão"} sem contato há mais de 30 dias. Quer chamar ${ps[0].nome.split(" ")[0]}? Diga: manda mensagem pro ${ps[0].nome.split(" ")[0]}.` : "Nenhum cliente fechado está parado há mais de 30 dias.", g);
+    }
+    const a = avisosAgora(); mostrarCard("Avisos e pendências", a.itens.map((x) => x.texto), [...new Set(a.itens.map((x) => x.cmd))].slice(0, 4));
+    return dizer(a.fala, g);
+  }
+  // Proatividade: ao abrir e a cada 10 minutos, mostra (sem falar sozinho) o que mudou de importante.
+  let assinaturaAvisos = "";
+  function vigiarAvisos(primeira) {
+    try {
+      const a = avisosAgora(), imp = a.itens.filter((x) => x.nivel !== "info"), sig = imp.map((x) => x.texto).join("|");
+      if (!imp.length || sig === assinaturaAvisos || estado === "falando" || estado === "ouvindo" || estado === "pensando") return; assinaturaAvisos = sig;
+      if (document.body.dataset.dock) return;                     // com uma função aberta, não atrapalha
+      legenda(primeira ? a.fala : "Novo aviso: " + imp[0].texto + ".", true); mostrarCard("Para agora", a.itens.map((x) => x.texto), [...new Set(a.itens.map((x) => x.cmd))].slice(0, 3));
+      avatar.impulso(1); sfx("ativar");
+    } catch (_) {}
+  }
   async function comandoFin(it, g) {
     if (it.tipo === "fin_lancar") {
       if (it.erro === "valor") { aguardando = { tipo: "fin_valor", lanc: it.lanc }; return dizer("Qual o valor em reais?", g); }
@@ -574,7 +675,7 @@
     const el = $("legenda"), texto = t || "";
     clearInterval(digitacao); $("legendaSr").textContent = texto;
     if (!animar || reduzido || texto.length < 12) { el.textContent = texto; el.classList.remove("digitando"); return; }
-    const total = Math.min(14000, 1100 + texto.length * 52), passo = Math.max(14, Math.min(45, total / texto.length));
+    const total = Math.min(650, 160 + texto.length * 4), passo = Math.max(12, Math.min(30, total / texto.length));   // a resposta aparece quase na hora; a voz continua no ritmo dela
     let i = 0; el.classList.add("digitando");
     digitacao = setInterval(() => {
       i += Math.max(1, Math.round(texto.length / (total / passo) ));
@@ -583,7 +684,7 @@
     }, passo);
   }
   async function dizer(texto, g) {
-    legenda(texto, true); registrarConversa("jarvis", texto); setEstado("falando");
+    legenda(texto, true); registrarConversa("jarvis", texto); setEstado("falando"); avatar.impulso(.8);
     await JarvisVoice.falar(texto);
     if (g === geracao) setEstado(JarvisVoice.escutando ? "ouvindo" : "idle");
   }
@@ -698,7 +799,7 @@
     dados = id === "normal" ? {} : await JarvisData.get(id);
     if (g !== geracao) return;
     if (id === "leads") { $("painelLeads").open = true; renderLeads(); }
-    if (id === "contador") abrirFin(); else if (id === "gestao") abrirRotina("dia"); else fecharAreas();
+    if (id === "contador") abrirFin(); else if (id === "gestao") abrirRotina("dia"); else if (id === "social") abrirSocial(); else fecharAreas();
     renderModo(); sfx("ativar"); entrada(".col.left > .panel:not([hidden]), .sugestoes .sug");
     gravarLog({ tipo: "ativar", fonte: dados.source });
     await dizer((prefixo ? prefixo + " " : "") + MODOS[id].abertura(dados), g);
@@ -746,7 +847,7 @@
     if (it.tipo === "vazio") return;
     if (window.JarvisUI) JarvisUI.focarJarvis();
     limparCard();
-    acordadoAte = Date.now() + 12000; sfx("enviar");
+    acordadoAte = Date.now() + 12000; sfx("enviar"); avatar.impulso(1);
     registrarConversa("voce", texto.trim());
     gravarLog({ tipo: it.tipo, entrada: texto, fonte: origem });
 
@@ -768,6 +869,8 @@
     if (it.tipo === "crm_fechar") { fecharAreas(); return dizer("Fechei o CRM.", g); }
     if (it.tipo.startsWith("fin_")) return comandoFin(it, g);
     if (it.tipo.startsWith("rot_")) return comandoRot(it, g);
+    if (it.tipo.startsWith("soc_")) return comandoSoc(it, g);
+    if (it.tipo.startsWith("avisos_")) return comandoAvisos(it, g);
     if (it.tipo === "mensagem") {
       const lista = lerContatos(), achados = JarvisBrain.acharContato(it.nome, lista);
       if (!achados.length) {
@@ -903,7 +1006,20 @@
     if (modoId === "contador" || modoId === "gestao") JarvisData.get(modoId).then((d) => { dados = d; renderModo(); });
   });
   $("crmFechar").addEventListener("click", fecharAreas);
-  $("rotFechar").addEventListener("click", fecharAreas);
+  $("rotFechar").addEventListener("click", fecharAreas); $("socFechar").addEventListener("click", fecharAreas);
+  for (const f of SC.FORMATOS) { const o = document.createElement("option"); o.value = o.textContent = f; $("socFormato").append(o); }
+  $("socData").value = hojeISO();
+  $("socComForm").addEventListener("submit", (e) => { e.preventDefault(); const c = SC.novoComentario({ autor: $("socAutor").value, texto: $("socTexto").value }); if (c.erro) return; const d = SC.ler(); d.comentarios.push(c); SC.salvar(d); $("socTexto").value = ""; $("socAutor").value = ""; });
+  $("socPostForm").addEventListener("submit", (e) => { e.preventDefault(); const p = SC.novoPost({ tema: $("socTema").value, data: $("socData").value, formato: $("socFormato").value }, hojeISO()); if (p.erro) return; const d = SC.ler(); d.posts.push(p); SC.salvar(d); $("socTema").value = ""; });
+  $("socCsv").addEventListener("change", async (e) => {
+    const f = e.target.files[0]; if (!f) return; const r = SC.lerMetricas(JarvisContatos._lerCsvLinhas(await f.text()));
+    if (r.erro) { $("socStatus").textContent = r.erro; return; } const d = SC.ler(); d.metricas = r.posts; SC.salvar(d); $("socStatus").textContent = `${r.posts.length} publicações importadas.`; e.target.value = "";
+  });
+  $("socAnalisar").addEventListener("click", async () => {
+    const m = SC.melhores(SC.ler().metricas, 5); if (!m.length) { $("socStatus").textContent = "Importe o CSV antes de analisar."; return; }
+    setEstado("pensando"); const r = await JarvisBrain.perguntarClaude({ modo: MODOS.social, texto: "Analise estes posts do Instagram da clínica e diga o que repetir e o que mudar (3 a 5 itens curtos): " + m.map((x) => `${x.titulo} (alcance ${x.alcance}, curtidas ${x.curtidas}, comentários ${x.comentarios}, salvos ${x.salvos})`).join("; "), contexto: contextoClaude(), historico: [] });
+    setEstado("idle"); if (!r || r.erro) { mostrarCard("Análise", ["O Claude não está disponível agora. Veja os melhores posts na lista abaixo."]); return; } mostrarCard(r.titulo || "Análise dos posts", r.itens.length ? r.itens : [r.fala]);
+  });
   $("rotAbaDia").addEventListener("click", () => { rotAba = "dia"; renderRotina(); }); $("rotAbaSemana").addEventListener("click", () => { rotAba = "semana"; renderRotina(); });
   $("rotCompData").value = hojeISO();
   $("rotTarefaForm").addEventListener("submit", (e) => { e.preventDefault(); const t = $("rotTarefaTexto").value.trim(); if (!t) return; salvarPessoal((x) => x.tarefas.push({ id: "t" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), texto: t, dia: hojeISO(), feita: false })); $("rotTarefaTexto").value = ""; renderRotina(); });
@@ -984,6 +1100,7 @@
   $("btnTec").addEventListener("click", () => { $("tecnico").hidden = !$("tecnico").hidden; renderLog(); });
   $("btnLimpar").addEventListener("click", () => { gravar(LOG_KEY, []); renderLog(); });
   $("btnExportar").addEventListener("click", exportarLog);
+  $("entrada").addEventListener("input", () => avatar.impulso(.3));        // a luz reage a cada tecla
 
   // ---------- painel de voz ----------
   function popularVozes() {
@@ -1037,6 +1154,7 @@
       $("interim").textContent = t ? "🎙 " + t : "";
       if (t && infoVoz.entrada === "ditado") pulso(0.45 + Math.random() * 0.4);   // sem medidor real: reage ao texto
     },
+    onPalavra() { avatar.impulso(.55); },
     onNivel(n) { avatar.setNivel(n); $("medidor").style.width = Math.round(n * 100) + "%"; },
     onEstado(on) {
       if (on && estado !== "falando") { setEstado("ouvindo"); sfx("ouvir"); }
@@ -1078,4 +1196,5 @@
   if (window.matchMedia && matchMedia("(max-width:900px)").matches) $("entrada").placeholder = "O que vamos cuidar?";
   boot();
   legenda("Estou por aqui. O que merece sua atenção agora?");
+  setTimeout(() => vigiarAvisos(true), reduzido ? 600 : 2600); setInterval(() => vigiarAvisos(false), 10 * 60 * 1000);
 })();

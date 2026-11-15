@@ -156,5 +156,5 @@
     return { lista, adicionados, repetidos };
   }
 
-  window.JarvisContatos = { normalizarTel, formatarTel, importar, consolidar, mesclar, _lerVcf: lerVcf, _lerCsv: lerCsv };
+  window.JarvisContatos = { _lerCsvLinhas: lerCsvLinhas, normalizarTel, formatarTel, importar, consolidar, mesclar, _lerVcf: lerVcf, _lerCsv: lerCsv };
 })();
