@@ -17,7 +17,7 @@
       formato: FORMATO, criadoEm: new Date().toISOString(),
       origem: { leads: JarvisLeads.modo, financeiro: JarvisFin.modo },
       leads: JarvisLeads.lista(), financeiro: [...JarvisFin.lista(), ...JarvisFin.fechamentos(), ...JarvisFin.fixas()],
-      contatos: contatos(), pessoal: JarvisPessoal.ler(),
+      contatos: contatos(), pessoal: JarvisPessoal.ler(), rotina: JarvisRotina.ler(),
     };
   }
   function validar(raw) {
@@ -53,7 +53,7 @@
       if (!tel.tel || !str(c.nome, 60)) throw Error("Um contato do arquivo tem dados inválidos.");
       return { nome: str(c.nome, 60), tel: JarvisContatos.formatarTel(tel.tel) };
     });
-    return { leads, financeiro, contatos, pessoal: JarvisPessoal.validar(raw.pessoal) };
+    return { leads, financeiro, contatos, pessoal: JarvisPessoal.validar(raw.pessoal), rotina: JarvisRotina.validar(raw.rotina) };
   }
   async function restaurar(d) {
     if (!pronto()) throw Error("Aguarde a confirmação do armazenamento antes de restaurar.");
@@ -73,6 +73,12 @@
     atual.perfil = v.pessoal.perfil;
     // Compartilhar com o Claude é uma escolha deste aparelho, nunca herdada de um arquivo.
     atual.perfil.compartilhar = false;
+    // Rotina (compromissos, água, refeições): soma o que falta, sem sobrescrever o que já existe neste aparelho.
+    const rot = JarvisRotina.ler(), idsR = new Set(rot.compromissos.map((c) => c.id)), novosC = v.rotina.compromissos.filter((c) => !idsR.has(c.id));
+    rot.compromissos.push(...novosC); resultado.compromissos = novosC.length;
+    for (const [k, n] of Object.entries(v.rotina.agua)) if (!(k in rot.agua)) rot.agua[k] = n;
+    for (const [k, l] of Object.entries(v.rotina.refeicoes)) if (!(k in rot.refeicoes)) rot.refeicoes[k] = l;
+    if (!JarvisRotina.salvar(rot)) resultado.falhas++;
     resultado.pessoal = JarvisPessoal.salvar(atual);
     if (!resultado.pessoal) resultado.falhas++;
     return resultado;

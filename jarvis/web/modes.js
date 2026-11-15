@@ -80,29 +80,24 @@ window.JARVIS_MODES = {
     nome: "Dia a Dia",
     cor: "#ffd23f",
     aliases: ["dia a dia", "gestao do dia", "gestao", "secretaria", "meu dia", "rotina", "ceo"],
-    status: "demo",
-    resumo: "Confirmações da agenda de amanhã, e-mails que pedem resposta e contas a vencer.",
-    instrucao: "Organize o dia. Pacientes e e-mails nesta versão são DEMO; contas vêm dos lançamentos do usuário. Nunca trate demonstração como agenda real.",
-    sugestoes: ["Confirmar pacientes de amanhã", "Quais contas vencem esta semana?", "E-mails para responder", "Volta ao normal"],
+    status: "ativo",
+    resumo: "Seu dia e sua semana: prioridades, compromissos, retornos de leads, contas, água e alimentação.",
+    instrucao: "Organize o dia e a semana do usuário com base nos dados reais do CONTEXTO (prioridades, compromissos, leads, contas, água, refeições). Agenda da clínica (Clinicorp) e e-mails ainda NÃO estão conectados: nunca invente pacientes, horários nem mensagens.",
+    sugestoes: ["Resumo do dia", "Como está minha semana?", "Bebi um copo de água", "Marca reunião amanhã às 14h"],
     ferramentas: [
-      { id: "agenda.amanha", nivel: "READ", desc: "Agenda de amanhã (Clinicorp) com status de confirmação" },
-      { id: "agenda.preparar_confirmacoes", nivel: "PROPOSE", desc: "Montar mensagem de confirmação por paciente" },
-      { id: "whatsapp.enviar", nivel: "EXECUTE", desc: "Enviar a confirmação (só após aprovação)" },
-      { id: "gmail.triagem", nivel: "READ", desc: "E-mails que pedem resposta" },
-      { id: "gmail.rascunho", nivel: "PROPOSE", desc: "Rascunho de resposta" },
-      { id: "financeiro.a_vencer", nivel: "READ", desc: "Boletos e contas a vencer (extraídos do e-mail)" },
+      { id: "rotina.resumo", nivel: "READ", desc: "Resumo do dia e feedback da semana (prioridades, compromissos, leads, contas)" },
+      { id: "rotina.registrar", nivel: "LOCAL", desc: "Registrar prioridade, compromisso, água e refeições neste navegador" },
+      { id: "agenda.clinicorp", nivel: "READ", desc: "Agenda da clínica (planejado: ainda não conectado)" },
+      { id: "gmail.triagem", nivel: "READ", desc: "E-mails e boletos (planejado: ainda não conectado)" },
     ],
     kpis: (d) => [
-      ["Pacientes amanhã", String(d.pacientes.length)],
-      ["Sem confirmação", String(d.pacientes.filter((p) => !p.confirmado).length)],
-      ["E-mails p/ responder", String(d.emails.length)],
-      ["Contas na semana", String(d.contas.length)],
-      ["Total a pagar", d.total_contas_fmt],
+      ["Compromissos hoje", String((d.compromissos || []).length)],
+      ["Prioridades pendentes", String((d.tarefas || []).filter((t) => !t.feita).length)],
+      ["Retornos de leads", String((d.retornos || 0) + (d.atrasados || 0))],
+      ["Contas na semana", String((d.contas || []).length)],
+      ["Água hoje", `${d.agua || 0}/${d.meta || 8}`],
     ],
-    abertura: (d) => {
-      const sem = d.pacientes.filter((p) => !p.confirmado).length;
-      return `Modo Dia a Dia ativado. Agenda de demonstração: ${d.pacientes.length} pacientes, ${sem} sem confirmação. E-mails de demonstração: ${d.emails.length}. Suas contas pendentes na semana: ${d.contas.length}, ${d.total_contas_fmt}.`;
-    },
+    abertura: (d) => `Modo Dia a Dia ativado. ${d.resumo ? d.resumo.fala : "Diga “resumo do dia” ou “como está minha semana”."}`,
   },
 
   leads: {

@@ -7,7 +7,7 @@ function ambiente() {
   const map = new Map();
   const localStorage = { getItem: k => map.get(k) ?? null, setItem: (k, v) => map.set(k, v) };
   const ctx = vm.createContext({ localStorage, Date, setTimeout, clearTimeout, console }); ctx.window = ctx;
-  for (const name of ['contacts', 'store', 'leads', 'fin', 'pessoal', 'backup']) vm.runInContext(readFileSync(new URL(`../web/${name}.js`, import.meta.url), 'utf8'), ctx);
+  for (const name of ['contacts', 'store', 'leads', 'fin', 'pessoal', 'rotina', 'backup']) vm.runInContext(readFileSync(new URL(`../web/${name}.js`, import.meta.url), 'utf8'), ctx);
   return ctx;
 }
 

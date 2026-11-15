@@ -192,6 +192,49 @@
     return null;
   }
 
+
+  // ---------- rotina (modo Dia a Dia) ----------
+  const NUM = { um: 1, uma: 1, dois: 2, duas: 2, tres: 3, quatro: 4, cinco: 5, seis: 6, sete: 7, oito: 8, meio: 1 };
+  const maius = (x) => x ? x.charAt(0).toUpperCase() + x.slice(1) : x;
+  function lerRotina(original, t, hoje) {
+    const R = window.JarvisRotina, L = window.JarvisLeads; if (!R) return null;
+    hoje = hoje || new Date();
+    if (/^(oi|ola|e ai|opa|salve|bom dia|boa tarde|boa noite|tudo bem|como vai)( jarvis)?[.!?]*$/.test(t)) return { tipo: "rot_dia", saudacao: true };
+    if (/\bsemana\b/.test(t) && !/\d/.test(t) && /\b(como|resumo|feedback|balanco|panorama|organiza\w*|revisao|situacao|passa|mostra|ver|abre|abrir|programacao|planejamento)\b/.test(t)) return { tipo: "rot_semana" };
+    if (/\bamanha\b/.test(t) && /\b(o que|quais?|agenda|compromissos?|tenho|temos)\b/.test(t) && !/\b(marca|agenda\s+\w|lembrete|adiciona|cria)\b/.test(t.replace(/\bagenda\b(?= de| para| pra| do)/, ""))) return { tipo: "rot_dia", quando: "amanha" };
+    if (/\b(resumo|panorama|briefing|balanco)\b.*\b(dia|hoje)\b/.test(t) || /\bcomo\b.*\b(esta|ta|anda|vai)\b.*\b(meu dia|hoje|minha rotina)\b/.test(t)
+      || /\b(o que|quais?)\b.*\b(tenho|temos|preciso fazer|devo fazer|falta)\b.*\b(hoje|agora)\b/.test(t) || /^(?:minha agenda|agenda de hoje|agenda do dia|compromissos de hoje|meus compromissos)$/.test(t)) return { tipo: "rot_dia" };
+    if (/\b(quanta|quantos|quanto)\b.*\b(agua|copos)\b/.test(t)) return { tipo: "rot_agua_status" };
+    let m = t.match(/\b(\d+)\s*ml\b/);
+    if (/\b(bebi|tomei|tomando|beber)\b/.test(t) && /\b(agua|copos?|garrafas?)\b/.test(t)) {
+      let n = 1; const dg = t.match(/\b(\d+)\s*(?:copos?|garrafas?)/), pl = t.match(/\b(um|uma|dois|duas|tres|quatro|cinco|seis|sete|oito|meio)\s+(copos?|garrafas?)/);
+      if (m) n = Math.max(1, Math.round(+m[1] / 250)); else if (dg) n = +dg[1] * (/garrafa/.test(dg[0]) ? 2 : 1); else if (pl) n = NUM[pl[1]] * (/garrafa/.test(pl[2]) ? 2 : 1);
+      return { tipo: "rot_agua", n: Math.max(1, Math.min(20, n)) };
+    }
+    if (/\b(almocei|jantei|lanchei)\b/.test(t)) return { tipo: "rot_refeicao", refeicao: /almocei/.test(t) ? "almoco" : /jantei/.test(t) ? "jantar" : "lanche" };
+    if (/\b(tomei|fiz|ja tomei)\b.*\bcafe\b/.test(t) || /^cafe da manha$/.test(t)) return { tipo: "rot_refeicao", refeicao: "cafe" };
+    if (/^(?:ja )?comi\b/.test(t)) return { tipo: "rot_refeicao", refeicao: null };
+    m = original.match(new RegExp(PRE + "(?:adiciona|adicionar|adicione|cria|criar|crie|anota|anotar|anote|nova|novo|inclui|incluir)\\s+(?:uma\\s+|um\\s+)?(?:tarefa|prioridade)\\s*(?:de\\s+|para\\s+|pra\\s+|:)?\\s*(.+)$", "i"));
+    if (m) { let tx = m[1], dia = hoje && L ? L.iso(hoje) : null; const md = tx.match(/\b(amanh[aã]|hoje|depois de amanh[aã])(?![\\wÀ-ÿ])/i); if (md && L) { dia = L.dataDe(md[1], hoje); tx = tx.replace(md[0], " "); }
+      return { tipo: "rot_tarefa", tarefa: maius(tx.replace(/\s+/g, " ").trim().replace(/^(?:de|para|pra|que)\s+/i, "")), dia }; }
+    m = original.match(new RegExp(PRE + "(?:conclu[ií]|concluir|conclua|terminei|finalizei|completei|fiz|marca|marque|marcar)\\s+(?:a\\s+|o\\s+)?(?:tarefa|prioridade)\\s+(.+?)(?:\\s+como\\s+(?:feita|feito|concluida|conclu[ií]da|pronta|pronto))?$", "i"));
+    if (m) return { tipo: "rot_tarefa_feita", nome: norm(m[1]) };
+    m = original.match(new RegExp(PRE + "(?:agenda|agendar|agende|marca|marcar|marque|adiciona|adicionar|adicione|anota|anotar|anote|cria|criar|crie|coloca|colocar|coloque|lembra|lembrar)\\s+(?:de\\s+|que\\s+)?(?:um\\s+|uma\\s+|o\\s+|a\\s+)?(.+)$", "i"));
+    if (m) {
+      const frag = m[1], hora = R.lerHora(norm(frag)), temData = /\b(amanh[aã]|hoje|depois de amanh[aã]|dia\s+\d{1,2}|\d{1,2}\/\d{1,2}|segunda|ter[cç]a|quarta|quinta|sexta|s[aá]bado|domingo|semana que vem)(?![\\wÀ-ÿ])/i.test(frag);
+      const nome = /\b(compromisso|reuni[aã]o|consulta|evento|lembrete|encontro|call|almo[cç]o|jantar|entrevista|aula)(?![\\wÀ-ÿ])/i.test(frag);
+      if ((hora || temData) && (nome || hora || temData) && !/\b(como|etapa)\b/i.test(frag)) {
+        const data = (L && L.dataDe(frag, hoje)) || (L && L.iso(hoje));
+        let tt = frag.replace(/\b(depois de amanh[aã]|amanh[aã]|hoje|dia\s+\d{1,2}|\d{1,2}\/\d{1,2}|segunda|ter[cç]a|quarta|quinta|sexta|s[aá]bado|domingo|(?:na\s+)?semana que vem)(?:-feira)?(?![\\wÀ-ÿ])/gi, " ")
+          .replace(/\b(?:[àa]s?\s+)?\d{1,2}\s*(?:h|:|horas?)\s*(?:\d{2})?\b/gi, " ").replace(/\bmeio[- ]?dia\b/gi, " ").replace(/\b[àa]s\s+\d{1,2}\b/gi, " ")
+          .replace(/\s+/g, " ").trim().replace(/^(?:um|uma|o|a|que|de)\s+/i, "").replace(/\s+(?:no|na|em|para|pra|de|às|as|a)$/i, "").trim();
+        if (tt) return { tipo: "rot_compromisso", titulo: maius(tt), data, hora };
+      }
+    }
+    if (/\b(abre|abrir|mostra|mostrar|quero ver|ver)\b.*\b(rotina|agenda|minha agenda|meu dia)\b/.test(t)) return { tipo: "rot_abrir" };
+    return null;
+  }
+
   // Devolve { tipo, modo?, texto, nome?, mensagem? }
   //  tipo: "sair" | "ativar" | "confirmar" | "cancelar" | "mensagem" | "pergunta" | "vazio"
   function interpretar(textoBruto, modos, hoje) {
@@ -206,6 +249,9 @@
     if (lead) return { ...lead, texto: t };
     const fin = lerFin(textoBruto, t, hoje);
     if (fin) return { ...fin, texto: t };
+
+    const rot = lerRotina(textoBruto, t, hoje);
+    if (rot) return { ...rot, texto: t };
 
     const msg = lerMensagem(textoBruto);
     if (msg) return { tipo: "mensagem", texto: t, nome: msg.nome, mensagem: msg.mensagem };

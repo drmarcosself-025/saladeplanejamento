@@ -22,27 +22,9 @@
           posts_hoje: 10, posts_ok: 8, aguardando_aprovacao: 0, erros_3d: 11,
           serie: { rotulo: "Posts por dia (7 dias)", valores: [6, 8, 7, 9, 10, 9, 10] },
         };
-      case "gestao": {
-        const contas = window.JarvisFin ? window.JarvisFin.pendentes(window.JarvisFin.lista(), new Date(), 7)
-          .map((l) => ({ id: l.id, quem: l.descricao || l.categoria, valor: l.valor, vence: l.vencimento || l.data })) : [];
-        return {
-          pacientes: [
-            { hora: "08:00", nome: "Paciente A", proc: "Avaliação", confirmado: true },
-            { hora: "09:00", nome: "Paciente B", proc: "Limpeza", confirmado: false },
-            { hora: "10:30", nome: "Paciente C", proc: "Clareamento", confirmado: false },
-            { hora: "14:00", nome: "Paciente D", proc: "Retorno ortodontia", confirmado: true },
-            { hora: "15:00", nome: "Paciente E", proc: "Avaliação", confirmado: false },
-            { hora: "16:30", nome: "Paciente F", proc: "Restauração", confirmado: false },
-          ],
-          emails: [
-            { de: "Fornecedor X", assunto: "Orçamento resina" },
-            { de: "Contador", assunto: "Documentos de novembro" },
-            { de: "Paciente", assunto: "Dúvida sobre pagamento" },
-          ],
-          contas,
-          total_contas_fmt: brl(contas.reduce((s, c) => s + c.valor, 0)),
-          serie: { rotulo: "Consultas nos próximos 7 dias", valores: [6, 7, 5, 8, 6, 4, 3] },
-        };
+      case "gestao": {   // dados reais: rotina, prioridades, leads e contas do usuário
+        const R = window.JarvisRotina, agora = new Date(), c = R.montarDia(agora), sem = R.montarSemana(agora);
+        return { ...c, resumo: R.resumoDia(c), serie: { rotulo: "Compromissos nesta semana", valores: sem.dias.map((d) => d.compromissos.length) } };
       }
       case "programador":
         return { ultimo_projeto: "projeto-jarvis" };
@@ -63,7 +45,7 @@
     async get(modeId) {
       if (modeId === "leads" || modeId === "contador") return { source: "seus", ...demo(modeId) };
       if (modeId === "designer" || modeId === "programador") return { source: "criacao", ...demo(modeId) };
-      if (modeId === "gestao") return { source: "misto", ...demo(modeId) };
+      if (modeId === "gestao") return { source: "seus", ...demo(modeId) };
       return { source: "demo", ...demo(modeId) };
     },
   };

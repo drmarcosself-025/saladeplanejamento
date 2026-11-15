@@ -169,7 +169,7 @@
     // Com agente, veias, núcleo e brilho assumem a cor dele; o corpo recebe um tingimento suave.
     let corAg=null,tint=null,tintA=0,tintAlvo=0,tintOld=null,tintOldA=0;
     // Vida: respiração, balanço, cabeça que acena/inclina/olha conforme o estado, e o efeito de troca de agente.
-    const scene=document.createElement('canvas'),sx=scene.getContext('2d'),headC=document.createElement('canvas'),hx=headC.getContext('2d');
+    const scene=document.createElement('canvas'),sx=scene.getContext('2d');
     const pesos={idle:1,ouvindo:0,pensando:0,falando:0,executando:0};let envS=0,troca=null,estadoT=-1e9,dprAtual=1,corIni=true;
     let fase=0,velS=.17,luzS=.35;                       // fase da onda de energia (sobe pelas veias), velocidade e brilho da luz do rosto
     const parts=Array.from({length:mobile?14:26},()=>({x:.5+(Math.random()-.5)*.55,y:.3+Math.random()*.67,v:.05+Math.random()*.09,s:.6+Math.random()*1.3,a:.35+Math.random()*.5,ph:Math.random()*6.28}));
@@ -189,7 +189,7 @@
       dprAtual=d;
       if(canvas.width===Math.floor(W*d)&&canvas.height===Math.floor(H*d)){ctx.setTransform(d,0,0,d,0,0);return;}
       canvas.width=W*d;canvas.height=H*d;ctx.setTransform(d,0,0,d,0,0);
-      scene.width=headC.width=canvas.width;scene.height=headC.height=canvas.height;sx.setTransform(d,0,0,d,0,0);
+      scene.width=canvas.width;scene.height=canvas.height;sx.setTransform(d,0,0,d,0,0);
       last=-Infinity;delete canvas.dataset.rendered;
     };
     const observer=new ResizeObserver(resize);observer.observe(canvas);resize();
@@ -310,7 +310,7 @@
         tintA+=(tintAlvo-tintA)*(quiet?1:1-Math.pow(.88,dft));if(tintOld){tintOldA*=quiet?0:Math.pow(.88,dft);if(tintOldA<.02)tintOld=null;}
         if(Math.abs(tintAlvo-tintA)>.01||tintOld)inter=ms; }
       const tx=tiltX*W*.02,ty=tiltY*H*.012,rot=tiltX*.03;
-      if(scene.width!==canvas.width){scene.width=headC.width=canvas.width;scene.height=headC.height=canvas.height;}
+      if(scene.width!==canvas.width){scene.width=canvas.width;scene.height=canvas.height;}
       sx.setTransform(dprAtual,0,0,dprAtual,0,0);sx.clearRect(0,0,W,H);
       sx.save();sx.translate(W/2+panX+tx,H/2+panY+ty);sx.rotate(rot);sx.scale(zoom,zoom);sx.translate(-W/2,-H/2);
       sx.drawImage(base,x,y,dw,dh);
@@ -372,24 +372,25 @@
         ty:Math.sin(t*.95)*H*.003+env*Math.sin(t*6.1)*H*.002-jolt*H*.006,
         rot:Math.sin(t*.37)*.006+pw.pensando*Math.sin(t*.5)*.007,
         sc:1+Math.sin(t*.95)*.004+jolt*.035+pw.executando*Math.sin(t*9)*.004,
-        hr:Math.sin(t*.61+1)*.014+pw.pensando*(.05+.03*Math.sin(t*.4))+pw.ouvindo*(.035+.01*Math.sin(t*1.3))+pw.falando*env*.03*Math.sin(t*4.4)+jolt*.07*Math.sin(t*22)+kick*.03*Math.sin(t*14),
-        hx:Math.sin(t*.5)*W*.006+pw.pensando*Math.sin(t*.55)*W*.02+pw.ouvindo*W*.01+jolt*Math.sin(t*30)*W*.006,
+        hr:Math.sin(t*.61+1)*.022+Math.sin(t*.23)*.012+pw.pensando*(.05+.03*Math.sin(t*.4))+pw.ouvindo*(.035+.01*Math.sin(t*1.3))+pw.falando*env*.03*Math.sin(t*4.4)+jolt*.07*Math.sin(t*22)+kick*.03*Math.sin(t*14),
+        hx:Math.sin(t*.5)*W*.010+Math.sin(t*.29+2)*W*.006+pw.pensando*Math.sin(t*.55)*W*.02+pw.ouvindo*W*.01+jolt*Math.sin(t*30)*W*.006,
         hy:Math.sin(t*.95+.4)*H*.002+pw.falando*(Math.sin(t*6.1)*.5+.5)*env*H*.010+pw.ouvindo*H*.012+pw.executando*Math.abs(Math.sin(t*5))*H*.006+kick*H*.008,
       };
       const fw=(px,py)=>{const cr=Math.cos(rot),sr=Math.sin(rot),qx=px-W/2,qy=py-H/2;return[W/2+panX+tx+(qx*cr-qy*sr)*zoom,H/2+panY+ty+(qx*sr+qy*cr)*zoom];};
-      const nk=fw(x+dw*.5,y+dh*.43),yB=nk[1]-dh*.030*zoom,yF=nk[1]+dh*.045*zoom;
+      const nk=fw(x+dw*.5,y+dh*.56),y0n=fw(x+dw*.5,y+dh*.60)[1],y1n=fw(x+dw*.5,y+dh*.43)[1];   // pivô no pescoço; a flexão vai da base do pescoço ao queixo
       const pbx=W/2,pby=H*.985;
       ctx.save();ctx.translate(pbx+M.tx,pby+M.ty);ctx.rotate(M.rot);ctx.scale(M.sc,M.sc*(1+(M.sc-1)*.6));ctx.translate(-pbx,-pby);
       if(quiet){ctx.drawImage(scene,0,0,W,H);}
       else{
-        ctx.save();ctx.beginPath();ctx.rect(0,yB,W,H-yB);ctx.clip();ctx.drawImage(scene,0,0,W,H);ctx.restore();
-        const hh=Math.min(canvas.height,Math.ceil(yF*dprAtual));
-        if(hh>2){
-          hx.setTransform(1,0,0,1,0,0);hx.globalCompositeOperation='source-over';hx.clearRect(0,0,headC.width,headC.height);hx.drawImage(scene,0,0,scene.width,hh,0,0,scene.width,hh);
-          const gm=hx.createLinearGradient(0,yB*dprAtual,0,yF*dprAtual);gm.addColorStop(0,'rgba(0,0,0,1)');gm.addColorStop(1,'rgba(0,0,0,0)');
-          hx.globalCompositeOperation='destination-in';hx.fillStyle=gm;hx.fillRect(0,0,headC.width,hh);hx.globalCompositeOperation='source-over';
-          ctx.translate(nk[0]+M.hx,nk[1]+M.hy);ctx.rotate(M.hr);ctx.translate(-nk[0],-nk[1]);
-          ctx.drawImage(headC,0,0,headC.width,hh,0,0,W,hh/dprAtual);
+        // Sem emenda: o tronco fica parado e, daí para cima, cada faixa horizontal se desloca um pouco mais que a de baixo.
+        // O pescoço entorta de forma contínua e a cabeça se move inteira, como uma pessoa de verdade.
+        const yb=Math.max(2,Math.min(H,y0n));
+        ctx.save();ctx.beginPath();ctx.rect(0,yb,W,H-yb);ctx.clip();ctx.drawImage(scene,0,0,W,H);ctx.restore();
+        const passo=3,span=Math.max(8,y0n-y1n),d=dprAtual;
+        for(let ya=0;ya<yb;ya+=passo){
+          const yc=Math.min(yb,ya+passo),ym=(ya+yc)/2,u=limitar((y0n-ym)/span,0,1),w=u*u*(3-2*u);
+          const dx=w*M.hx+Math.sin(M.hr)*(nk[1]-ym)*w,dy=w*M.hy,ov=yc<yb?1:0;
+          ctx.drawImage(scene,0,ya*d,scene.width,(yc-ya+ov)*d,dx,ya+dy,W,yc-ya+ov);
         }
       }
       ctx.restore();

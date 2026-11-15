@@ -237,6 +237,27 @@
   </aside></div>
 </section>
 
+<section id="rotinaTela" class="workspace" hidden aria-label="Dia a Dia">
+  <header class="workspace-head"><div><h1>Dia a Dia</h1><p id="rotStatus" class="muted small"></p></div><button id="rotFechar" class="btn" type="button">Voltar ao Jarvis</button></header>
+  <div class="fin-filtros" role="tablist" aria-label="Período"><button id="rotAbaDia" class="chip on" type="button" role="tab" aria-pressed="true">Hoje</button><button id="rotAbaSemana" class="chip" type="button" role="tab" aria-pressed="false">Semana</button></div>
+  <div id="rotDia">
+    <p id="rotResumo" class="rot-resumo"></p>
+    <div class="rot-grid">
+      <section class="fin-painel"><h2>Prioridades de hoje</h2><ul id="rotTarefas" class="rot-lista"></ul>
+        <form id="rotTarefaForm" class="rot-form"><input id="rotTarefaTexto" maxlength="120" placeholder="Nova prioridade" aria-label="Nova prioridade"><button class="btn" type="submit">Adicionar</button></form></section>
+      <section class="fin-painel"><h2>Compromissos</h2><ul id="rotCompromissos" class="rot-lista"></ul>
+        <form id="rotCompForm" class="rot-form"><input id="rotCompTitulo" required maxlength="120" placeholder="Ex.: Reunião com contadora" aria-label="Compromisso"><input id="rotCompData" type="date" aria-label="Data"><input id="rotCompHora" type="time" aria-label="Hora"><button class="btn" type="submit">Marcar</button></form></section>
+      <section class="fin-painel"><h2>Água</h2><div id="rotAgua" class="rot-agua" role="img"></div><div class="row"><button id="rotAguaMenos" class="btn" type="button" aria-label="Tirar um copo">−</button><button id="rotAguaMais" class="btn primary" type="button">+ 1 copo</button></div></section>
+      <section class="fin-painel"><h2>Refeições</h2><div id="rotRefeicoes" class="fin-filtros"></div></section>
+      <section class="fin-painel rot-largo"><h2>Retornos e contas</h2><ul id="rotPendencias" class="rot-lista"></ul></section>
+    </div>
+  </div>
+  <div id="rotSemana" hidden>
+    <div id="rotDias" class="rot-dias"></div>
+    <section class="fin-painel"><h2>Feedback da semana</h2><ul id="rotFeedback" class="fin-conferencia"></ul><div class="row"><button id="rotCopiar" class="btn" type="button">Copiar resumo</button></div></section>
+  </div>
+</section>
+
 <form id="barra" class="barra" autocomplete="off">
   <button type="button" id="btnPtt" class="icon" title="Segure para falar (ou segure a tecla Espaço)" aria-label="Segurar para falar"><span data-icon="mic"></span></button>
   <button type="button" id="btnMic" class="icon" title="Microfone sempre ligado (responde quando ouvir “Jarvis”)" aria-pressed="false" aria-label="Microfone contínuo"><span data-icon="wave"></span></button>
@@ -265,6 +286,7 @@
 <script src="store.js"></script>
 <script src="leads.js"></script>
 <script src="fin.js"></script>
+<script src="rotina.js"></script>
 <script src="data.js"></script>
 <script src="brain.js"></script>
 <script src="fundo.js"></script>

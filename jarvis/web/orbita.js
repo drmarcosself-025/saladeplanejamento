@@ -54,7 +54,7 @@
   // Os atalhos NÃO repetem data-command/data-open/data-view (para não duplicar seletores da interface):
   // acionam os controles que já existem, como se você os tivesse tocado.
   const clicar = (sel) => { const e = document.querySelector(sel); if (e) e.click(); };
-  const comando = (t) => { clicar('.main-nav [data-view="conversa"]'); const i = $("entrada"); if (i) { i.value = t; $("barra").requestSubmit(); } };
+  const comando = (t) => { if (window.JarvisUI) JarvisUI.focarJarvis(); const i = $("entrada"); if (i) { i.value = t; $("barra").requestSubmit(); } };
   const focar = (id) => setTimeout(() => { const t = $(id); if (t) { t.scrollIntoView({ block: "center", behavior: reduzido ? "auto" : "smooth" }); t.focus({ preventScroll: true }); } }, 90);
   // lado "e" (esquerda) e "d" (direita); y em fração da altura do avatar
   const SATS = [
@@ -62,7 +62,7 @@
     { id: "fin", rot: "Financeiro", ic: "wallet", lado: "e", y: 0.47, x: 3, run: () => comando("ativa o agente contador") },
     { id: "contatos", rot: "Contatos", ic: "book", lado: "e", y: 0.72, x: 8, run: () => clicar('.utility-card[data-open="painelContatos"]') },
     { id: "hoje", rot: "Prioridades", ic: "check", lado: "d", y: 0.22, x: 8, run: () => { clicar('.main-nav [data-view="hoje"]'); focar("tarefaTexto"); } },
-    { id: "conversa", rot: "Conversar", ic: "chat", lado: "d", y: 0.47, x: 3, run: () => { clicar('.main-nav [data-view="conversa"]'); focar("entrada"); } },
+    { id: "conversa", rot: "Conversar", ic: "chat", lado: "d", y: 0.47, x: 3, run: () => { if (window.JarvisUI) JarvisUI.focarJarvis(); focar("entrada"); } },
     { id: "som", rot: "Som", ic: "volume", lado: "d", y: 0.72, x: 8, run: () => { const m = $("btnMudo"); if (m) m.click(); setTimeout(atualizarSom, 30); } },
   ];
   const sats = el("div", "orb-sats"), satEl = {};
@@ -209,14 +209,14 @@
   // e a função abre ao lado. O CSS decide o desenho a partir de body[data-dock] e body[data-area].
   const corpo = document.body;
   function atualizarDock() {
-    const vista = corpo.dataset.vista || "hoje", crm = $("crmTela"), fin = $("finTela");
-    const area = crm && !crm.hidden ? "crm" : fin && !fin.hidden ? "fin" : "";
+    const vista = corpo.dataset.vista || "hoje", crm = $("crmTela"), fin = $("finTela"), rot = $("rotinaTela");
+    const area = crm && !crm.hidden ? "crm" : fin && !fin.hidden ? "fin" : rot && !rot.hidden ? "rotina" : "";
     if (area) corpo.dataset.area = area; else delete corpo.dataset.area;
     const dock = ["espacos", "pessoal", "utilidade"].includes(vista) || !!area;
     if (dock) corpo.dataset.dock = "1"; else delete corpo.dataset.dock;
   }
   new MutationObserver(atualizarDock).observe(corpo, { attributes: true, attributeFilter: ["data-vista"] });
-  for (const id of ["crmTela", "finTela"]) { const e = $(id); if (e) new MutationObserver(atualizarDock).observe(e, { attributes: true, attributeFilter: ["hidden"] }); }
+  for (const id of ["crmTela", "finTela", "rotinaTela"]) { const e = $(id); if (e) new MutationObserver(atualizarDock).observe(e, { attributes: true, attributeFilter: ["hidden"] }); }
   atualizarDock();
   raiz.dataset.vida = "1";
 })();

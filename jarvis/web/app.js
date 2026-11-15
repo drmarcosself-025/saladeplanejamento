@@ -296,8 +296,8 @@
     const box = $(alvo); box.textContent = "";
     for (const [nome, n] of pares) { const e = mk("div", "metrica"), s = mk("span", "", nome), b = mk("strong", "", String(n)); e.append(s, b); box.appendChild(e); }
   };
-  function abrirCrm(id) { $("crmTela").hidden = false; $("finTela").hidden = true; $("crmTela").querySelector(".workspace-head").after($("respostaCard")); if (id) leadAberto = id; renderCrm(); }
-  function fecharAreas() { $("crmTela").hidden = true; $("finTela").hidden = true; $("legendaSr").after($("respostaCard")); }
+  function abrirCrm(id) { $("crmTela").hidden = false; $("finTela").hidden = true; $("rotinaTela").hidden = true; $("crmTela").querySelector(".workspace-head").after($("respostaCard")); if (id) leadAberto = id; renderCrm(); }
+  function fecharAreas() { $("crmTela").hidden = true; $("finTela").hidden = true; $("rotinaTela").hidden = true; $("legendaSr").after($("respostaCard")); }
   function renderCrm() {
     const ls = L.lista(), r = L.resumo(ls);
     $("crmStatus").textContent = L.aviso || (L.modo === "claude" ? "Dados salvos no seu artefato Claude." : "Dados salvos neste navegador.");
@@ -335,7 +335,7 @@
     d.append(row, mk("h2", "", "Histórico")); const ol = mk("ol");
     for (const h of (l.historico || []).slice(-20).reverse()) ol.append(mk("li", "", `${String(h.ts).slice(0, 10)} · ${h.texto}`)); d.append(ol);
   }
-  function abrirFin() { $("finTela").hidden = false; $("crmTela").hidden = true; $("finTela").querySelector(".workspace-head").after($("respostaCard")); renderFin(); }
+  function abrirFin() { $("finTela").hidden = false; $("crmTela").hidden = true; $("rotinaTela").hidden = true; $("finTela").querySelector(".workspace-head").after($("respostaCard")); renderFin(); }
   let filtroFin = "todos";
   const SVG = "http://www.w3.org/2000/svg";
   function graficoMeses(serie) {
@@ -424,7 +424,103 @@
     const devidos = L.filtrar(ls, "devidos").slice(0, 5).map((l) => `${l.nome}: ${l.interesse || "sem interesse informado"}, retorno ${l.proximo}`).join("; ");
     return [window.JarvisPessoal ? JarvisPessoal.contexto() : "", `Modo: ${modo.nome}; ${modo.resumo}`, `Leads: ${r.ativos} ativos, ${r.hoje} hoje, ${r.atrasados} atrasados. Devidos: ${devidos || "nenhum"}.`,
       `Financeiro ${mes}: recebido ${valor(f.receitas)}, pago ${valor(f.despesas)}, a pagar ${valor(f.aPagar)}, a receber ${valor(f.aReceber)}.`,
-      modoId === "gestao" ? "Agenda e e-mails na tela são apenas demonstração; não use esses nomes como dados reais." : ""].filter(Boolean).join("\n");
+      modoId === "gestao" && dados && dados.resumo ? "Dia a Dia de hoje: " + dados.resumo.itens.join("; ") + ". Agenda da clínica e e-mails NÃO estão conectados." : ""].filter(Boolean).join("\n");
+  }
+
+  // ---------- Dia a Dia (rotina) ----------
+  const RT = window.JarvisRotina, P = window.JarvisPessoal;
+  let rotAba = "dia";
+  const dataExt = (d) => new Date(d + "T12:00").toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
+  function abrirRotina(aba) {
+    $("rotinaTela").hidden = false; $("crmTela").hidden = true; $("finTela").hidden = true;
+    $("rotinaTela").querySelector(".workspace-head").after($("respostaCard")); if (aba) rotAba = aba; renderRotina();
+  }
+  function salvarPessoal(fn) { const d = P.ler(); fn(d); const ok = P.salvar(d); if (ok && window.JarvisUI) JarvisUI.render(); return ok; }
+  function renderRotina() {
+    if ($("rotinaTela").hidden) return;
+    const agora = new Date(), hoje = hojeISO(), c = RT.montarDia(agora), d = RT.ler();
+    $("rotAbaDia").classList.toggle("on", rotAba === "dia"); $("rotAbaSemana").classList.toggle("on", rotAba === "semana");
+    $("rotAbaDia").setAttribute("aria-pressed", String(rotAba === "dia")); $("rotAbaSemana").setAttribute("aria-pressed", String(rotAba === "semana"));
+    $("rotDia").hidden = rotAba !== "dia"; $("rotSemana").hidden = rotAba !== "semana";
+    $("rotStatus").textContent = dataExt(hoje).replace(/^./, (x) => x.toUpperCase()) + " · salvo neste navegador";
+    if (rotAba === "dia") {
+      $("rotResumo").textContent = RT.resumoDia({ ...c, saudacao: "" }).fala;
+      const tl = $("rotTarefas"); tl.textContent = "";
+      for (const t of c.tarefas) {
+        const li = mk("li", t.feita ? "feito" : ""), lb = mk("label"), ck = mk("input"); ck.type = "checkbox"; ck.checked = t.feita;
+        ck.addEventListener("change", () => { salvarPessoal((x) => { const i = x.tarefas.find((y) => y.id === t.id); if (i) i.feita = ck.checked; }); renderRotina(); });
+        lb.append(ck, mk("span", "", t.texto)); const rm = mk("button", "task-delete", "×"); rm.type = "button"; rm.setAttribute("aria-label", "Remover " + t.texto);
+        rm.addEventListener("click", () => { salvarPessoal((x) => { x.tarefas = x.tarefas.filter((y) => y.id !== t.id); }); renderRotina(); }); li.append(lb, rm); tl.append(li);
+      }
+      if (!c.tarefas.length) tl.append(mk("li", "muted", "Nenhuma prioridade para hoje."));
+      const cl = $("rotCompromissos"); cl.textContent = "";
+      for (const x of c.compromissos) {
+        const li = mk("li", x.feito ? "feito" : ""), lb = mk("label"), ck = mk("input"); ck.type = "checkbox"; ck.checked = x.feito;
+        ck.addEventListener("change", () => { const n = RT.ler(), i = n.compromissos.find((y) => y.id === x.id); if (i) i.feito = ck.checked; RT.salvar(n); });
+        lb.append(ck, mk("span", "", (x.hora ? RT.hhmm(x.hora) + " · " : "") + x.titulo)); const rm = mk("button", "task-delete", "×"); rm.type = "button"; rm.setAttribute("aria-label", "Remover " + x.titulo);
+        rm.addEventListener("click", () => { const n = RT.ler(); n.compromissos = n.compromissos.filter((y) => y.id !== x.id); RT.salvar(n); }); li.append(lb, rm); cl.append(li);
+      }
+      if (!c.compromissos.length) cl.append(mk("li", "muted", "Nenhum compromisso para hoje."));
+      const ag = $("rotAgua"); ag.textContent = ""; ag.setAttribute("aria-label", `${c.agua} de ${c.meta} copos de água`);
+      for (let i = 0; i < Math.max(c.meta, c.agua); i++) ag.append(mk("i", i < c.agua ? "cheio" : ""));
+      ag.append(mk("span", "small muted", `${c.agua} de ${c.meta} copos`));
+      const rf = $("rotRefeicoes"); rf.textContent = "";
+      for (const r of RT.REFEICOES) { const b = mk("button", "chip" + (c.refeicoes.includes(r.id) ? " on" : ""), r.nome); b.type = "button"; b.setAttribute("aria-pressed", String(c.refeicoes.includes(r.id))); b.addEventListener("click", () => RT.salvar(RT.comRefeicao(RT.ler(), r.id, hoje))); rf.append(b); }
+      const pl = $("rotPendencias"); pl.textContent = "";
+      const dev = c.retornos + c.atrasados; if (dev) { const li = mk("li"); const b = mk("button", "btn", "Abrir CRM"); b.type = "button"; b.addEventListener("click", () => abrirCrm()); li.append(mk("span", "", `${dev} retorno${dev > 1 ? "s" : ""} de leads${c.atrasados ? ` (${c.atrasados} atrasado${c.atrasados > 1 ? "s" : ""})` : ""}`), b); pl.append(li); }
+      for (const x of c.contas.slice(0, 6)) pl.append(mk("li", "", `${x.descricao} · ${valor(x.valor)} · ${x.atrasada ? "atrasada" : "vence " + x.vencimento.slice(8) + "/" + x.vencimento.slice(5, 7)}`));
+      if (!pl.children.length) pl.append(mk("li", "muted", "Nenhum retorno nem conta pendente."));
+    } else {
+      const s = RT.montarSemana(agora), box = $("rotDias"); box.textContent = "";
+      for (const dia of s.dias) {
+        const col = mk("div", "rot-dia" + (dia.iso === hoje ? " hoje" : "")); col.append(mk("strong", "", `${dia.rotulo} ${dia.iso.slice(8)}`));
+        for (const x of dia.compromissos.slice(0, 4)) col.append(mk("span", x.feito ? "feito" : "", `${x.hora ? RT.hhmm(x.hora) + " " : ""}${x.titulo}`));
+        if (dia.tarefasTotal) col.append(mk("small", "muted", `${dia.tarefasFeitas}/${dia.tarefasTotal} prioridades`));
+        if (!dia.compromissos.length && !dia.tarefasTotal) col.append(mk("small", "muted", "livre"));
+        box.append(col);
+      }
+      const fb = RT.feedbackSemana(s), ul = $("rotFeedback"); ul.textContent = "";
+      for (const i of fb.itens) ul.append(mk("li", i.nivel === "atencao" ? "alerta" : i.nivel === "bom" ? "ok" : "info", i.texto));
+    }
+  }
+  RT.aoMudar(renderRotina); L.aoMudar(renderRotina); F.aoMudar(renderRotina);
+  async function comandoRot(it, g) {
+    const agora = new Date(), hoje = hojeISO(), h = agora.getHours();
+    if (it.tipo === "rot_dia") {
+      const amanha = it.quando === "amanha", dia = amanha ? L.somar(hoje, 1) : hoje, c = RT.montarDia(agora, dia), r = RT.resumoDia({ ...c, saudacao: it.saudacao ? c.saudacao : "" });
+      if (it.saudacao) mostrarCard("Seu dia", r.itens); else { abrirRotina("dia"); mostrarCard(amanha ? "Amanhã" : "Seu dia", r.itens); }
+      const fala = amanha ? (c.compromissos.length ? `Amanhã você tem ${c.compromissos.length} compromisso${c.compromissos.length > 1 ? "s" : ""}${c.compromissos[0].hora ? `, o primeiro às ${RT.hhmm(c.compromissos[0].hora)}: ${c.compromissos[0].titulo}` : ""}.` : "Amanhã você não tem compromissos marcados.") : r.fala;
+      return dizer(fala, g);
+    }
+    if (it.tipo === "rot_semana") {
+      abrirRotina("semana"); const f = RT.feedbackSemana(RT.montarSemana(agora)); mostrarCard("Feedback da semana", f.itens.map((x) => x.texto)); return dizer(f.fala, g);
+    }
+    if (it.tipo === "rot_abrir") { abrirRotina(); return dizer("Abri o seu Dia a Dia.", g); }
+    if (it.tipo === "rot_agua" || it.tipo === "rot_agua_status") {
+      const n = it.tipo === "rot_agua" ? it.n : 0, d = n ? RT.comAgua(RT.ler(), n, hoje) : RT.ler(); if (n && !RT.salvar(d)) return dizer("Não consegui salvar agora.", g);
+      const tot = RT.agua(d, hoje), meta = d.metaAgua;
+      return dizer(n ? `Anotei ${n} copo${n > 1 ? "s" : ""}. Hoje: ${tot} de ${meta}${tot >= meta ? ". Meta batida, parabéns!" : "."}` : `Hoje você bebeu ${tot} de ${meta} copos de água.`, g);
+    }
+    if (it.tipo === "rot_refeicao") {
+      const id = it.refeicao || (h < 10 ? "cafe" : h < 15 ? "almoco" : h < 18 ? "lanche" : "jantar"), nome = RT.REFEICOES.find((x) => x.id === id).nome.toLowerCase();
+      if (!RT.salvar(RT.comRefeicao(RT.ler(), id, hoje, true))) return dizer("Não consegui salvar agora.", g);
+      return dizer(`Anotei: ${nome}.`, g);
+    }
+    if (it.tipo === "rot_tarefa") {
+      if (!it.tarefa) return dizer("Qual é a tarefa?", g); const dia = it.dia || hoje;
+      if (!salvarPessoal((x) => { x.tarefas.push({ id: "t" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), texto: it.tarefa, dia, feita: false }); })) return dizer("Não consegui salvar a tarefa.", g);
+      return dizer(`Anotei a prioridade: ${it.tarefa}${dia === hoje ? "" : ", para " + dataExt(dia)}.`, g);
+    }
+    if (it.tipo === "rot_tarefa_feita") {
+      const ach = P.ler().tarefas.filter((t) => !t.feita && JarvisBrain.norm(t.texto).includes(it.nome));
+      if (ach.length !== 1) return dizer(ach.length ? "Achei mais de uma prioridade com esse nome. Abra o Dia a Dia e marque a certa." : "Não achei essa prioridade pendente.", g);
+      salvarPessoal((x) => { const i = x.tarefas.find((y) => y.id === ach[0].id); if (i) i.feita = true; }); return dizer(`Marquei como concluída: ${ach[0].texto}.`, g);
+    }
+    if (it.tipo === "rot_compromisso") {
+      const c = RT.novoCompromisso({ titulo: it.titulo, data: it.data, hora: it.hora }, agora); if (c.erro) return dizer("Qual é o compromisso?", g);
+      const d = RT.ler(); d.compromissos.push(c); if (!RT.salvar(d)) return dizer("Não consegui salvar o compromisso.", g);
+      return dizer(`Marquei ${c.titulo} para ${c.data === hoje ? "hoje" : dataExt(c.data)}${c.hora ? ", às " + RT.hhmm(c.hora) : ""}.`, g);
+    }
   }
   async function comandoFin(it, g) {
     if (it.tipo === "fin_lancar") {
@@ -597,12 +693,12 @@
   // ---------- fluxo principal ----------
   async function ativar(id, g, prefixo) {
     setEstado("pensando");
-    if (window.JarvisUI) JarvisUI.navegar("conversa");
+    if (window.JarvisUI) JarvisUI.focarJarvis();
     modoId = id; pendente = null; aguardando = null; renderPendente();
     dados = id === "normal" ? {} : await JarvisData.get(id);
     if (g !== geracao) return;
     if (id === "leads") { $("painelLeads").open = true; renderLeads(); }
-    if (id === "contador") abrirFin(); else fecharAreas();
+    if (id === "contador") abrirFin(); else if (id === "gestao") abrirRotina("dia"); else fecharAreas();
     renderModo(); sfx("ativar"); entrada(".col.left > .panel:not([hidden]), .sugestoes .sug");
     gravarLog({ tipo: "ativar", fonte: dados.source });
     await dizer((prefixo ? prefixo + " " : "") + MODOS[id].abertura(dados), g);
@@ -648,7 +744,7 @@
     JarvisVoice.parar();
     const it = JarvisBrain.interpretar(texto, MODOS);
     if (it.tipo === "vazio") return;
-    if (window.JarvisUI) JarvisUI.navegar("conversa");
+    if (window.JarvisUI) JarvisUI.focarJarvis();
     limparCard();
     acordadoAte = Date.now() + 12000; sfx("enviar");
     registrarConversa("voce", texto.trim());
@@ -671,6 +767,7 @@
     if (it.tipo === "crm_abrir") { abrirCrm(); return dizer("Abri o CRM. Mostrei as etapas e os retornos na tela.", g); }
     if (it.tipo === "crm_fechar") { fecharAreas(); return dizer("Fechei o CRM.", g); }
     if (it.tipo.startsWith("fin_")) return comandoFin(it, g);
+    if (it.tipo.startsWith("rot_")) return comandoRot(it, g);
     if (it.tipo === "mensagem") {
       const lista = lerContatos(), achados = JarvisBrain.acharContato(it.nome, lista);
       if (!achados.length) {
@@ -708,15 +805,8 @@
       gravarLog({ tipo: "executar", entrada: p.id, fonte: dados.source });
       return dizer(`Confirmação registrada para ${p.titulo}. Nenhum envio externo foi feito.`, g);
     }
-    if (modoId === "gestao" && /\b(paciente|agenda|confirmac)/.test(it.texto)) {
-      const pend = (dados.pacientes || []).filter((p) => !p.confirmado);
-      mostrarCard("Agenda de demonstração", pend.map((p) => `${p.hora} · ${p.nome} · ${p.proc}`));
-      return dizer(`A agenda é fictícia nesta versão. Mostrei ${pend.length} pacientes de demonstração sem confirmação.`, g);
-    }
-    if (modoId === "gestao" && /\b(e mail|email)/.test(it.texto)) {
-      mostrarCard("E-mails de demonstração", (dados.emails || []).map((e) => `${e.de} · ${e.assunto}`));
-      return dizer("Os e-mails são fictícios nesta versão. Mostrei a demonstração na tela.", g);
-    }
+    if (/\b(paciente|pacientes|confirmac\w*|clinicorp)\b/.test(it.texto)) { gravarLog({ tipo: "resposta", fonte: "local" }); return dizer("A agenda da clínica ainda não está conectada ao Jarvis. Por enquanto organizo seus compromissos aqui: diga, por exemplo, “marca consulta amanhã às 9h”.", g); }
+    if (/\b(e mail|email|gmail)\b/.test(it.texto)) { gravarLog({ tipo: "resposta", fonte: "local" }); return dizer("Seus e-mails ainda não estão conectados ao Jarvis. Quando estiverem, eu separo o que pede resposta e os boletos.", g); }
     // pergunta aberta
     setEstado("pensando"); legenda("…");
     const r = await JarvisBrain.perguntarClaude({ modo: MODOS[modoId], texto, contexto: contextoClaude(), historico: conversa.slice(-4) });
@@ -813,6 +903,13 @@
     if (modoId === "contador" || modoId === "gestao") JarvisData.get(modoId).then((d) => { dados = d; renderModo(); });
   });
   $("crmFechar").addEventListener("click", fecharAreas);
+  $("rotFechar").addEventListener("click", fecharAreas);
+  $("rotAbaDia").addEventListener("click", () => { rotAba = "dia"; renderRotina(); }); $("rotAbaSemana").addEventListener("click", () => { rotAba = "semana"; renderRotina(); });
+  $("rotCompData").value = hojeISO();
+  $("rotTarefaForm").addEventListener("submit", (e) => { e.preventDefault(); const t = $("rotTarefaTexto").value.trim(); if (!t) return; salvarPessoal((x) => x.tarefas.push({ id: "t" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), texto: t, dia: hojeISO(), feita: false })); $("rotTarefaTexto").value = ""; renderRotina(); });
+  $("rotCompForm").addEventListener("submit", (e) => { e.preventDefault(); const c = RT.novoCompromisso({ titulo: $("rotCompTitulo").value, data: $("rotCompData").value, hora: $("rotCompHora").value }); if (c.erro) return; const d = RT.ler(); d.compromissos.push(c); RT.salvar(d); $("rotCompTitulo").value = ""; $("rotCompHora").value = ""; });
+  $("rotAguaMais").addEventListener("click", () => RT.salvar(RT.comAgua(RT.ler(), 1, hojeISO()))); $("rotAguaMenos").addEventListener("click", () => RT.salvar(RT.comAgua(RT.ler(), -1, hojeISO())));
+  $("rotCopiar").addEventListener("click", () => { const f = RT.feedbackSemana(RT.montarSemana(new Date())); copiar("Feedback da semana\n" + f.itens.map((x) => "- " + x.texto).join("\n")); });
   $("finFechar").addEventListener("click", fecharAreas);
   $("finAnterior").addEventListener("click", () => { mesFin = F.mesAnterior(mesFin); renderFin(); });
   $("finSeguinte").addEventListener("click", () => { mesFin = F.mesSeguinte(mesFin); renderFin(); });
@@ -959,7 +1056,7 @@
     const el = $("boot"); if (reduzido || sessionStorageVisto()) return;
     el.hidden = false;
     const linhas = [["Núcleo", "ok"], ["Voz", infoVoz.entrada === "ditado" ? "ditado + voz Claude" : infoVoz.entrada === "navegador" ? "navegador" : "só texto"],
-                    ["Agentes", JARVIS_ORDEM.length + " carregados"], ["Contatos", String(lerContatos().length)], ["Dados", "leads/finanças seus; outras áreas demo"]];
+                    ["Agentes", JARVIS_ORDEM.length + " carregados"], ["Contatos", String(lerContatos().length)], ["Dados", "seus leads, contas e rotina"]];
     const ul = $("bootLinhas"); ul.textContent = "";
     linhas.forEach(([k, v], i) => setTimeout(() => {
       const li = document.createElement("li"), a = document.createElement("span"), b = document.createElement("span");
@@ -967,7 +1064,7 @@
     }, 160 + i * 170));
     const sair = () => { el.classList.add("sai"); setTimeout(() => { el.hidden = true; }, 650); document.removeEventListener("keydown", sair); el.removeEventListener("pointerdown", sair); };
     el.addEventListener("pointerdown", sair); document.addEventListener("keydown", sair, { once: true });
-    setTimeout(sair, 1700 + linhas.length * 120);
+    setTimeout(sair, 1300 + linhas.length * 90);
   }
   function sessionStorageVisto() { try { if (sessionStorage.getItem("jarvis_boot")) return true; sessionStorage.setItem("jarvis_boot", "1"); } catch (_) {} return false; }
 

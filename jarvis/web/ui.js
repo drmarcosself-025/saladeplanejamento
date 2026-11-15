@@ -25,7 +25,15 @@
   const origins = new Map();
   for (const id of ["painelContatos", "painelVoz", "painelLeads"]) { const e = $(id), marker = document.createComment(id); e.before(marker); origins.set(id, marker); }
   document.querySelector(".presence-caption").after($("painelPendente"));
-  function comando(texto) { navegar("conversa"); $("entrada").value = texto; $("barra").requestSubmit(); }
+  // Falar, digitar ou tocar num atalho NÃO tira o Jarvis da tela: ele continua à frente e responde ali mesmo.
+  // Só quem está em Espaços/Você/utilidades volta para o início (onde o Jarvis está).
+  function focarJarvis() {
+    const v = document.body.dataset.vista;
+    if (v !== "hoje" && v !== "conversa") navegar("hoje");
+    const c = document.querySelector(".stage .center");
+    if (c && !document.body.dataset.dock) c.scrollIntoView({ block: "start", behavior: "smooth" });
+  }
+  function comando(texto) { focarJarvis(); $("entrada").value = texto; $("barra").requestSubmit(); }
   function restaurar() { for (const [id, marker] of origins) marker.after($(id)); }
   function navegar(vista) {
     if (!["hoje", "conversa", "espacos", "pessoal", "utilidade"].includes(vista)) return;
@@ -33,7 +41,7 @@
     $("espacosTela").hidden = vista !== "espacos"; $("pessoalTela").hidden = vista !== "pessoal"; $("utilityTela").hidden = vista !== "utilidade";
     document.querySelectorAll(".main-nav [data-view]").forEach((b) => { b.classList.toggle("on", b.dataset.view === vista); b.setAttribute("aria-current", b.dataset.view === vista ? "page" : "false"); });
     if (vista === "pessoal") popularPerfil();
-    if (vista !== "conversa") { $("crmTela").hidden = true; $("finTela").hidden = true; }
+    if (vista !== "conversa") { $("crmTela").hidden = true; $("finTela").hidden = true; $("rotinaTela").hidden = true; }
     window.scrollTo({ top: 0, behavior: "instant" });
     // O compositor mantém posição própria, sem cobrir o conteúdo no celular.
   }
@@ -102,6 +110,6 @@
   const estados = { idle: "Por aqui, com você", ouvindo: "Estou ouvindo", pensando: "Organizando as ideias", falando: "Conversando com você", executando: "Abrindo a ação confirmada" };
   new MutationObserver(() => { $("presencaEstado").textContent = estados[document.documentElement.dataset.estado] || estados.idle; }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-estado"] });
   JarvisLeads.aoMudar(render); JarvisFin.aoMudar(render);
-  window.JarvisUI = { navegar, comando, iconizar, render };
+  window.JarvisUI = { navegar, comando, focarJarvis, iconizar, render };
   iconizar(); render(); popularPerfil(); navegar("hoje");
 })();
