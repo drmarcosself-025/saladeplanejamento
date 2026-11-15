@@ -16,7 +16,7 @@
     return {
       formato: FORMATO, criadoEm: new Date().toISOString(),
       origem: { leads: JarvisLeads.modo, financeiro: JarvisFin.modo },
-      leads: JarvisLeads.lista(), financeiro: [...JarvisFin.lista(), ...JarvisFin.fechamentos()],
+      leads: JarvisLeads.lista(), financeiro: [...JarvisFin.lista(), ...JarvisFin.fechamentos(), ...JarvisFin.fixas()],
       contatos: contatos(), pessoal: JarvisPessoal.ler(),
     };
   }
@@ -41,8 +41,12 @@
         if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(f.mes) || f.id !== "f" + f.mes) throw Error("Um fechamento do arquivo é inválido.");
         return { id: f.id, tipo: "fechamento", mes: f.mes, receitas: numero(f.receitas), despesas: numero(f.despesas), saldo: numero(f.saldo), aPagar: numero(f.aPagar), aReceber: numero(f.aReceber), qtd: numero(f.qtd), fechadoEm: str(f.fechadoEm, 35) };
       }
+      if (f.tipo === "fixa") {
+        if (!(numero(f.valor) > 0) || !str(f.descricao, 100) || !Number.isInteger(f.dia) || f.dia < 1 || f.dia > 31) throw Error("Uma despesa fixa do arquivo é inválida.");
+        return { id: f.id, tipo: "fixa", valor: f.valor, descricao: str(f.descricao, 100), categoria: str(f.categoria, 60) || JarvisFin.categorizar(f.descricao, "despesa"), dia: f.dia, ativa: f.ativa !== false, criado: str(f.criado, 35) };
+      }
       if (!["receita", "despesa"].includes(f.tipo) || !(numero(f.valor) > 0) || !data(f.data)) throw Error("Um lançamento do arquivo tem dados inválidos.");
-      return { id: f.id, tipo: f.tipo, valor: f.valor, descricao: str(f.descricao, 100), categoria: str(f.categoria, 60) || JarvisFin.categorizar(f.descricao, f.tipo), data: f.data, status: f.status === "pendente" ? "pendente" : "pago", vencimento: data(f.vencimento), criado: str(f.criado, 35), dataOriginal: data(f.dataOriginal), pagoEm: data(f.pagoEm) };
+      return { id: f.id, tipo: f.tipo, valor: f.valor, descricao: str(f.descricao, 100), categoria: str(f.categoria, 60) || JarvisFin.categorizar(f.descricao, f.tipo), data: f.data, status: f.status === "pendente" ? "pendente" : "pago", vencimento: data(f.vencimento), criado: str(f.criado, 35), dataOriginal: data(f.dataOriginal), pagoEm: data(f.pagoEm), fixa: /^[a-zA-Z0-9_-]{2,65}$/.test(f.fixa) ? f.fixa : "" };
     });
     const contatos = raw.contatos.map((c) => {
       const tel = JarvisContatos.normalizarTel(c && c.tel);

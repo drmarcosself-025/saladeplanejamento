@@ -17,10 +17,11 @@ test('backup completo só depois que as coleções estão prontas; restauração
   await Promise.all([L.iniciar(), F.iniciar()]);
   const lead = L.novo({ nome: 'Pessoa Teste', tel: '27 99999-9999', interesse: 'consulta' });
   const fin = F.novo({ tipo: 'despesa', descricao: 'Material', valor: 25 });
-  await L.salvar(lead); await F.salvar(fin);
+  const fixa = F.novaFixa({ descricao: 'Assinatura fictícia', valor: 15, dia: 5 });
+  await L.salvar(lead); await F.salvar(fin); await F.salvar(fixa);
   const original = B.gerar();
   assert.equal(original.formato, 'jarvis-backup-v1');
-  assert.equal(original.leads.length, 1); assert.equal(original.financeiro.length, 1);
+  assert.equal(original.leads.length, 1); assert.equal(original.financeiro.length, 2);
   const p = w.JarvisPessoal.ler(); p.perfil.foco = 'Prioridade de teste'; p.perfil.compartilhar = true;
   p.tarefas.push({ id: 't1', dia: '2026-11-15', texto: 'Tarefa de teste', feita: false });
   assert.equal(w.JarvisPessoal.salvar(p), true);
@@ -29,7 +30,8 @@ test('backup completo só depois que as coleções estão prontas; restauração
   original.contatos = w.JarvisBackup.gerar().contatos;
   const w2 = ambiente(); await Promise.all([w2.JarvisLeads.iniciar(), w2.JarvisFin.iniciar()]);
   const r = await w2.JarvisBackup.restaurar(JSON.parse(JSON.stringify(original)));
-  assert.equal(r.leads, 1); assert.equal(r.financeiro, 1); assert.equal(r.contatos, 1); assert.equal(r.falhas, 0);
+  assert.equal(r.leads, 1); assert.equal(r.financeiro, 2); assert.equal(r.contatos, 1); assert.equal(r.falhas, 0);
+  assert.equal(w2.JarvisFin.fixas().length, 1);
   assert.equal(w2.JarvisPessoal.ler().perfil.compartilhar, false);
   assert.equal(w2.JarvisPessoal.ler().tarefas.length, 1);
   const again = await w2.JarvisBackup.restaurar(JSON.parse(JSON.stringify(original)));

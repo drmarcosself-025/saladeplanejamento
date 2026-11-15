@@ -14,6 +14,7 @@ try {
     await page.waitForFunction(() => JarvisBackup.pronto());
     await page.evaluate(async () => {
       await JarvisFin.salvar(JarvisFin.novo({ tipo: 'despesa', descricao: 'Item fictício', valor: 25 }));
+      await JarvisFin.salvar(JarvisFin.novaFixa({ descricao: 'Assinatura fictícia', valor: 15, dia: 5 }));
       const p = JarvisPessoal.ler(); p.perfil.foco = 'Teste de cópia'; p.perfil.compartilhar = true;
       p.tarefas.push({ id: 'teste1', dia: JarvisLeads.iso(new Date()), texto: 'Tarefa fictícia', feita: false });
       JarvisPessoal.salvar(p);
@@ -32,10 +33,11 @@ try {
     await restored.locator('.main-nav [data-view="pessoal"]').click();
     await restored.locator('#backupArquivo').setInputFiles({ name: 'copia.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(raw)) });
     await restored.waitForFunction(() => document.getElementById('backupPrevia').textContent.includes('registros financeiros'));
-    assert.match(await restored.locator('#backupPrevia').innerText(), /1 registros financeiros/);
+    assert.match(await restored.locator('#backupPrevia').innerText(), /2 registros financeiros/);
     await restored.locator('#backupRestaurar').click();
     await restored.waitForFunction(() => document.getElementById('backupStatus').textContent.includes('Restaurado:'));
     assert.equal(await restored.evaluate(() => JarvisFin.lista().length), 1);
+    assert.equal(await restored.evaluate(() => JarvisFin.fixas().length), 1);
     assert.equal(await restored.evaluate(() => JarvisPessoal.ler().perfil.compartilhar), false);
     assert.equal(await restored.evaluate(() => JarvisPessoal.ler().tarefas.length), 1);
     await second.close(); await context.close();
