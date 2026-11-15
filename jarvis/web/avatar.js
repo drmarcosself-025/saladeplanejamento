@@ -171,6 +171,8 @@
     // Vida: respiração, balanço, cabeça que acena/inclina/olha conforme o estado, e o efeito de troca de agente.
     const scene=document.createElement('canvas'),sx=scene.getContext('2d'),headC=document.createElement('canvas'),hx=headC.getContext('2d');
     const pesos={idle:1,ouvindo:0,pensando:0,falando:0,executando:0};let envS=0,troca=null,estadoT=-1e9,dprAtual=1,corIni=true;
+    let fase=0,velS=.17,luzS=.35;                       // fase da onda de energia (sobe pelas veias), velocidade e brilho da luz do rosto
+    const parts=Array.from({length:mobile?14:26},()=>({x:.5+(Math.random()-.5)*.55,y:.3+Math.random()*.67,v:.05+Math.random()*.09,s:.6+Math.random()*1.3,a:.35+Math.random()*.5,ph:Math.random()*6.28}));
     const COR_NORMAL='#35b8ff';
     function prepararTint(){            // pré-calcula o corpo tingido (uma vez por troca de agente, não por quadro)
       if(!ready||!corAg)return;
@@ -322,17 +324,40 @@
         flow.addColorStop(k/8,`rgba(${cor.map(Math.round).join(',')},${limitar(a,.60,1)})`);
       }
       e.fillStyle=flow;e.fillRect(0,0,iw,ih);e.globalCompositeOperation='source-over';
+      // energia correndo pelas veias: ondas que nascem na base do tronco e sobem até o rosto (como recarregando)
+      const dtS=Math.min(.1,Math.max(0,(ms-(frame.ant4||ms))/1000));frame.ant4=ms;
+      const velAlvo=quiet?0:estado==='executando'?.95:estado==='pensando'?.55:estado==='falando'?.36+envS*.25:estado==='ouvindo'?.28+nivel*.5:.17;
+      velS+=(velAlvo-velS)*Math.min(1,dtS*3);fase+=velS*dtS;
+      // luz do rosto: respira parado, pulsa na fala, vibra ao pensar, segue o microfone ao ouvir, pisca de tempos em tempos
+      const pis=quiet?1:((t%5.3)<.15||(t%8.7)<.12)?.45:1;
+      const luzAlvo=quiet?.5:estado==='falando'?.45+.55*envS+.1*Math.sin(t*13):estado==='pensando'?.55+.35*Math.sin(t*9)*Math.sin(t*4.3):estado==='ouvindo'?.35+nivel*.9:estado==='executando'?.7+.3*Math.sin(t*16):.32+.12*Math.sin(t*1.3);
+      luzS+=(luzAlvo-luzS)*(quiet?1:Math.min(1,dtS*14));
+      const luz=limitar(luzS*pis+Math.exp(-(ms-estadoT)/450)*.5,0,1.3);
+      if(!quiet){
+        const cl=claroAlvo.join(',');e.globalCompositeOperation='source-atop';
+        for(let k=0;k<3;k++){const q=(fase+k/3)%1,R=q*ih*1.1,cxp=iw*.5,cyp=ih*.985,a=(1-q)*.9*(.6+luz*.5);
+          const g2=e.createRadialGradient(cxp,cyp,Math.max(0,R-ih*.11),cxp,cyp,R+ih*.02);
+          g2.addColorStop(0,`rgba(${cl},0)`);g2.addColorStop(.86,`rgba(${cl},${a})`);g2.addColorStop(1,`rgba(${cl},0)`);e.fillStyle=g2;e.fillRect(0,0,iw,ih);}
+        e.globalCompositeOperation='source-over';
+      }
       sx.translate(tiltX*dw*.010,tiltY*dh*.006);
-      sx.globalCompositeOperation='screen';sx.globalAlpha=quiet?1:.98+pulse*.025;sx.drawImage(energy,x,y,dw,dh);sx.globalAlpha=1;
+      sx.globalCompositeOperation='screen';sx.globalAlpha=quiet?1:.86+Math.min(.14,luz*.16);sx.drawImage(energy,x,y,dw,dh);sx.globalAlpha=1;
       if(toque){const dt=ms-toque.t;
         if(dt>1100)toque=null;
         else{const q=paraImagem(toque.x,toque.y,tx,ty,rot),a=1-dt/1100;sx.save();sx.beginPath();sx.arc(q[0],q[1],dw*(.08+.34*(dt/1100)),0,TAU);sx.clip();sx.globalAlpha=.95*a;sx.drawImage(energy,x,y,dw,dh);sx.restore();}
       }
+      if(!quiet){ // faíscas de energia subindo pelo corpo
+        const cs=claroAlvo.join(',');sx.globalCompositeOperation='lighter';
+        for(const pt of parts){pt.y-=dtS*pt.v*(.4+velS*2.4);if(pt.y<.16){pt.y=.97;pt.x=.5+(Math.random()-.5)*.55;}
+          const al=pt.a*Math.min(1,(1-pt.y)*4)*Math.min(1,(pt.y-.15)*6)*(.35+luz*.65);
+          sx.fillStyle=`rgba(${cs},${al})`;sx.beginPath();sx.arc(x+dw*(pt.x+Math.sin(t*1.5+pt.ph)*.012),y+dh*pt.y,pt.s*dw/650+.5,0,TAU);sx.fill();}
+        sx.globalCompositeOperation='source-over';
+      }
       // Projeção volumétrica suave, sempre centrada na cabeça da imagem.
-      const cx=x+dw*.5,cy=y+dh*.255,rx=dw*(.060+(estado==='ouvindo'?nivel*.008:0)),ry=dh*.080;
+      const cx=x+dw*.5,cy=y+dh*.255,rx=dw*(.060+(estado==='ouvindo'?nivel*.008:0))*(quiet?1:1+luz*.55),ry=dh*.080*(quiet?1:1+luz*.45);
       sx.save();sx.translate(cx,cy);sx.scale(rx,ry);
       const g=sx.createRadialGradient(0,0,0,0,0,1);
-      g.addColorStop(0,`rgba(${claroAlvo.join(',')},${.075+(quiet?0:(pulse+1)*.012)})`);g.addColorStop(1,`rgba(${cor.map(Math.round).join(',')},0)`);
+      g.addColorStop(0,`rgba(${claroAlvo.join(',')},${quiet?.075:.05+luz*.34})`);g.addColorStop(.35,`rgba(${claroAlvo.join(',')},${quiet?0:luz*.12})`);g.addColorStop(1,`rgba(${cor.map(Math.round).join(',')},0)`);
       sx.fillStyle=g;sx.beginPath();sx.arc(0,0,1,0,TAU);sx.fill();sx.restore();sx.globalCompositeOperation='source-over';
       sx.restore();                                                  // fim da transformação de zoom/inclinação
       // ---------- vida: movimento do tronco e da cabeça ----------
