@@ -31,6 +31,7 @@ try {
     await restored.waitForFunction(() => JarvisBackup.pronto());
     await restored.locator('.main-nav [data-view="pessoal"]').click();
     await restored.locator('#backupArquivo').setInputFiles({ name: 'copia.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(raw)) });
+    await restored.waitForFunction(() => document.getElementById('backupPrevia').textContent.includes('registros financeiros'));
     assert.match(await restored.locator('#backupPrevia').innerText(), /1 registros financeiros/);
     await restored.locator('#backupRestaurar').click();
     await restored.waitForFunction(() => document.getElementById('backupStatus').textContent.includes('Restaurado:'));
