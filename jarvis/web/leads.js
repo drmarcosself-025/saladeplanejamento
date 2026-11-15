@@ -192,7 +192,7 @@
     iso, deIso, somar, dif, rotulo, dataDe, novo, garantirRegra, comEtapa, comProximo, comNota, comValor, aposContato, ordenar, filtrar, resumo, mensagemRetorno, csv,
     // armazenamento
     iniciar: store.iniciar, salvar: store.salvar, remover: store.remover, lista: store.lista, porId: store.porId, aoMudar: store.aoMudar,
-    get modo() { return store.modo; }, get aviso() { return store.aviso; },
+    get modo() { return store.modo; }, get pronto() { return store.pronto; }, get aviso() { return store.aviso; },
     buscar(consulta) { return window.JarvisBrain.acharContato(consulta, store.lista()); },
   };
 })();

@@ -26,6 +26,8 @@ O link do WhatsApp abre uma conversa com a mensagem pronta; você precisa tocar 
 
 No artefato, leads e financeiro são documentos privados para o dono, sincronizados pelo armazenamento `db` do Claude. Fora do artefato, ficam apenas no navegador em que foram lançados. Contatos importados e registro técnico ficam no navegador. Evite registrar dados clínicos e guarde só o necessário para o atendimento.
 
+Em **Você → Sua cópia dos dados**, baixe um JSON com leads, lançamentos e fechamentos financeiros, contatos, perfil e tarefas. Aguarde a confirmação do armazenamento antes de baixar ou restaurar. O arquivo contém dados pessoais e fica no local em que você o salvar. Para restaurar, escolha esse JSON, confira as quantidades e toque em **Restaurar este arquivo**. Os registros com o mesmo identificador permanecem como estão; os ausentes são acrescentados. O perfil do arquivo substitui o atual e a opção de compartilhar contexto com o Claude fica desligada. A restauração pode ser parcial se o armazenamento falhar; o painel informa quantos itens não foram salvos.
+
 ## Gerar e verificar
 
 ```bash

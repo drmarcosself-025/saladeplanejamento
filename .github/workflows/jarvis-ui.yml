@@ -26,6 +26,7 @@ jobs:
         run: |
           python3 -m http.server 8000 --directory jarvis/web > /tmp/jarvis-server.log 2>&1 &
           JARVIS_SCREENSHOTS=/tmp/jarvis-functional-shots node jarvis/tests/browser.mjs
+          node jarvis/tests/backup-browser.mjs
           node jarvis/tests/avatar-browser.mjs
           node jarvis/tests/vida-browser.mjs
           node jarvis/tests/contador-browser.mjs

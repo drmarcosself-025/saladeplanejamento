@@ -65,6 +65,7 @@
     const ok = gravar(CT_KEY, l);
     cacheCt = null; return ok;
   }
+  window.addEventListener("jarvis:restaurado", () => { cacheCt = null; renderContatos(); renderSugestoes(); renderLeads(); renderCrm(); renderFin(); });
   const MAX_LISTA = 40;
   function renderContatos() {
     const todos = lerContatos(), ul = $("contatosLista"); ul.textContent = "";

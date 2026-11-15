@@ -207,6 +207,6 @@
       const r = resumoMes(lancs(), mes, agora);
       return store.salvar({ id: "f" + mes, tipo: "fechamento", mes, receitas: r.receitas, despesas: r.despesas, saldo: r.saldo, aPagar: r.aPagar, aReceber: r.aReceber, qtd: r.qtd, fechadoEm: (agora || new Date()).toISOString() });
     },
-    get modo() { return store.modo; }, get aviso() { return store.aviso; },
+    get modo() { return store.modo; }, get pronto() { return store.pronto; }, get aviso() { return store.aviso; },
   };
 })();

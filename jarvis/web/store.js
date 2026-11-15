@@ -25,7 +25,7 @@
     async function iniciar() {
       let db = null;
       try { if (window.claude && typeof window.claude.use === "function") db = await window.claude.use("db"); } catch (_) { db = null; }
-      if (!db) { S.modo = "local"; S.itens = lerLocal(); avisar(); return S.modo; }
+      if (!db) { S.modo = "local"; S.itens = lerLocal(); S.confirmado = true; avisar(); return S.modo; }
       S.modo = "claude"; S.db = db;
       S.timer = setTimeout(() => { if (!S.confirmado) { S.aviso = "Ainda não consegui alcançar o armazenamento do claude.ai. Os dados podem estar desatualizados."; avisar(); } }, 10000);
       db.collection(cfg.colecao).onSnapshot((snap) => {
@@ -41,16 +41,21 @@
         try { await enfileirar(id, () => S.db.doc(cfg.colecao + "/" + id).set(corpo)); S.aviso = ""; return true; }
         catch (e) { S.aviso = msgErro(e); avisar(); return false; }
       }
-      const i = S.itens.findIndex((x) => x.id === id);
+      const i = S.itens.findIndex((x) => x.id === id), anterior = S.itens;
+      S.itens = anterior.slice();
       if (i >= 0) S.itens[i] = item; else S.itens.push(item);
-      const ok = gravarLocal(); avisar(); return ok;
+      const ok = gravarLocal(); if (!ok) S.itens = anterior;
+      avisar(); return ok;
     }
     async function remover(id) {
       if (S.modo === "claude") {
         try { await enfileirar(id, () => S.db.doc(cfg.colecao + "/" + id).delete()); return true; }
         catch (e) { S.aviso = msgErro(e); avisar(); return false; }
       }
-      S.itens = S.itens.filter((x) => x.id !== id); gravarLocal(); avisar(); return true;
+      const anterior = S.itens;
+      S.itens = anterior.filter((x) => x.id !== id);
+      const ok = gravarLocal(); if (!ok) S.itens = anterior;
+      avisar(); return ok;
     }
     return {
       iniciar, salvar, remover,
@@ -58,6 +63,7 @@
       porId: (id) => S.itens.find((x) => x.id === id) || null,
       aoMudar: (f) => S.ouvintes.push(f),
       get modo() { return S.modo; },
+      get pronto() { return S.confirmado; },
       get aviso() { return S.aviso; },
     };
   }

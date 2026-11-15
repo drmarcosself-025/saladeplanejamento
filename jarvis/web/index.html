@@ -48,7 +48,7 @@
     <label class="check-label"><input id="perfilCompartilhar" type="checkbox"><span>Usar este contexto nas respostas do Claude<small>Quando ativado, estes campos vão junto da sua pergunta para o Claude.</small></span></label>
     <p class="privacy-note">Este perfil e suas tarefas ficam só neste navegador. Não sincronizam entre aparelhos. Leads e financeiro mantêm o armazenamento próprio do artefato.</p>
     <div class="row"><button type="submit" class="btn primary">Salvar meu contexto</button><button type="button" id="perfilApagar" class="btn">Apagar meu contexto</button></div><p id="perfilStatus" role="status" class="small muted"></p>
-  </form><aside class="personal-aside"><div class="panel"><span class="mini-orbit" aria-hidden="true"></span><h2>Presença que se constrói.</h2><p class="muted">O Jarvis usa o que você registra e o que está conectado. Se algo ainda não estiver disponível, ele vai dizer.</p></div><div class="panel"><h2>Conexões</h2><ul class="connection-list"><li><span>Leads & financeiro</span><b id="connDados">Verificando</b></li><li><span>Perfil & tarefas</span><b>Neste navegador</b></li><li><span>Agenda & e-mail</span><b>Sem conexão</b></li><li><span>WhatsApp</span><b>Mensagem por link</b></li><li><span>Claude</span><b>Disponível no artefato*</b></li></ul><p class="small muted">*Depende da capacidade de perguntas e da sua autorização no Claude.</p></div></aside></div>
+  </form><aside class="personal-aside"><div class="panel"><span class="mini-orbit" aria-hidden="true"></span><h2>Presença que se constrói.</h2><p class="muted">O Jarvis usa o que você registra e o que está conectado. Se algo ainda não estiver disponível, ele vai dizer.</p></div><div class="panel"><h2>Conexões</h2><ul class="connection-list"><li><span>Leads & financeiro</span><b id="connDados">Verificando</b></li><li><span>Perfil & tarefas</span><b>Neste navegador</b></li><li><span>Agenda & e-mail</span><b>Sem conexão</b></li><li><span>WhatsApp</span><b>Mensagem por link</b></li><li><span>Claude</span><b>Disponível no artefato*</b></li></ul><p class="small muted">*Depende da capacidade de perguntas e da sua autorização no Claude.</p></div><div class="panel"><h2>Sua cópia dos dados</h2><p class="small muted">Baixe leads, financeiro, contatos, perfil e tarefas em um arquivo JSON. Ele contém informações pessoais: guarde em local privado. A restauração acrescenta registros que faltam e mantém os existentes.</p><div class="row"><button type="button" class="btn" id="backupBaixar">Baixar backup</button><label class="btn" for="backupArquivo">Escolher arquivo</label><input id="backupArquivo" type="file" accept=".json,application/json" hidden></div><p id="backupPrevia" class="small muted"></p><button type="button" class="btn primary" id="backupRestaurar" hidden>Restaurar este arquivo</button><p id="backupStatus" class="small muted" role="status"></p></div></aside></div>
 </section>
 <section id="utilityTela" class="view-page" hidden><div class="row between"><h1 id="utilityTitulo">Preferências</h1><button type="button" class="btn" id="utilityVoltar">Voltar</button></div><div id="utilityConteudo"></div></section>
 <main class="stage">
@@ -272,8 +272,10 @@
 <script src="avatar.js"></script>
 <script src="voice.js"></script>
 <script src="pessoal.js"></script>
+<script src="backup.js"></script>
 <script src="app.js"></script>
 <script src="ui.js"></script>
 <script src="orbita.js"></script>
+<script src="backup-ui.js"></script>
 </body>
 </html>
