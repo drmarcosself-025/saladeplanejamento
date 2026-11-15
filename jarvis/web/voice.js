@@ -19,7 +19,7 @@
   const dormir = (ms) => new Promise((r) => setTimeout(r, ms));
 
   let cb = { onTexto() {}, onInterim() {}, onEstado() {}, onErro() {}, onNivel() {}, onVozes() {} };
-  let config = { voz: "", rate: 1.05 };
+  let config = { voz: "", rate: 1.0 };
   try { Object.assign(config, JSON.parse(localStorage.getItem(LS) || "{}")); } catch (_) {}
   function salvar() { try { localStorage.setItem(LS, JSON.stringify(config)); } catch (_) {} }
 
@@ -163,6 +163,19 @@
   }
 
   // ---------- fala em navegador comum (por frases: o Chrome corta falas longas) ----------
+  // Nota de "naturalidade" de uma voz pelo nome: vozes neurais/aprimoradas soam bem mais humanas que as básicas.
+  function nota(nome, lang) {
+    const n = String(nome || ""); let p = 0;
+    if (/pt[-_]BR/i.test(lang || "") || /brasil|brazil|\(pt-BR\)/i.test(n)) p += 40; else if (/^pt/i.test(lang || "")) p += 10;
+    if (/neural|natural|online/i.test(n)) p += 60;
+    if (/premium|aprimorad|enhanced/i.test(n)) p += 50;
+    if (/siri/i.test(n)) p += 45;
+    if (/google/i.test(n)) p += 35;
+    if (/francisca|thalita|antonio|antônio|fernanda|camila|vit[oó]ria|luciana|felipe|giovanna|leila|ricardo|donato|brenda/i.test(n)) p += 20;
+    if (/compact|espeak|eloquence|novelty|bad news|bubbles|whisper|zarvox|trinoids|albert|organ|cellos|bells|boing|jester/i.test(n)) p -= 80;
+    return p;
+  }
+  const melhor = (nomes) => nomes.slice().sort((a, b) => nota(b) - nota(a))[0] || "";
   let vozesSis = [];
   function carregarVozes() {
     if (!("speechSynthesis" in window)) return;
@@ -171,12 +184,21 @@
   }
   function vozSisEscolhida() {
     return vozesSis.find((v) => v.name === config.voz)
-      || vozesSis.find((v) => /pt-BR/i.test(v.lang) && /natural|google|luciana|francisca|microsoft/i.test(v.name))
-      || vozesSis.find((v) => /pt-BR/i.test(v.lang)) || vozesSis[0] || null;
+      || vozesSis.slice().sort((a, b) => nota(b.name, b.lang) - nota(a.name, a.lang))[0] || null;
   }
   if ("speechSynthesis" in window) { carregarVozes(); speechSynthesis.onvoiceschanged = carregarVozes; }
 
+  // Deixa o texto mais falável: dinheiro por extenso, sem símbolos soltos.
+  function paraFala(t) {
+    return String(t)
+      .replace(/R\$\s*(\d{1,3}(?:\.\d{3})*|\d+)(?:,(\d{1,2}))?/g, (m, i, c) => {
+        const n = i.replace(/\./g, ""), cent = c ? +(c.length === 1 ? c + "0" : c) : 0;
+        return (n === "1" ? "1 real" : n + " reais") + (cent ? " e " + cent + " centavos" : "");
+      })
+      .replace(/(\d+)\s*%/g, "$1 por cento").replace(/\bvs\.?\b/gi, "contra").replace(/[·•|]/g, ", ").replace(/[*_#`~]/g, "").replace(/\s{2,}/g, " ");
+  }
   function partes(texto) {
+    texto = paraFala(texto);
     const frases = (String(texto).match(/[^.!?\n]+[.!?]*/g) || []).map((s) => s.trim()).filter(Boolean);
     const out = [];
     for (let f of frases) {
@@ -191,7 +213,7 @@
   function falarParte(txt, meuToken) {
     return new Promise((resolve) => {
       const u = new SpeechSynthesisUtterance(txt);
-      u.lang = "pt-BR"; u.rate = config.rate; const v = vozSisEscolhida(); if (v) u.voice = v;
+      u.lang = (vozSisEscolhida() && vozSisEscolhida().lang) || "pt-BR"; u.rate = config.rate; u.pitch = 1; const v = vozSisEscolhida(); if (v) u.voice = v;
       let fim = false; const done = () => { if (!fim) { fim = true; resolve(); } };
       u.onend = done; u.onerror = done;
       setTimeout(done, 3000 + txt.length * 110);
@@ -219,7 +241,7 @@
   if (typeof document !== "undefined") ["pointerdown", "touchend", "keydown", "click"].forEach((ev) => document.addEventListener(ev, destravar, { once: true, passive: true }));
 
   window.JarvisVoice = {
-    _partes: partes,
+    _partes: partes, _nota: nota, _paraFala: paraFala,
     pronto: prontoP,
     info,
     configurar(c) { cb = Object.assign(cb, c); },
@@ -230,7 +252,7 @@
 
     vozes() { return ttsCap ? ttsVozes.slice() : vozesSis.map((v) => v.name); },
     get vozAtual() {
-      if (ttsCap) return ttsVozes.includes(config.voz) ? config.voz : (ttsVozes[0] || "");
+      if (ttsCap) return ttsVozes.includes(config.voz) ? config.voz : melhor(ttsVozes);
       const v = vozSisEscolhida(); return v ? v.name : "";
     },
     get velocidade() { return config.rate; },
@@ -301,8 +323,8 @@
         for (let i = 0; i < 5; i++) {
           try {
             const op = { language: "pt-BR", rate: config.rate };
-            if (ttsVozes.includes(config.voz)) op.voice = config.voz;
-            await ttsCap.speak(texto.slice(0, 2000), op);
+            const vz = ttsVozes.includes(config.voz) ? config.voz : melhor(ttsVozes); if (vz) op.voice = vz;
+            await ttsCap.speak(paraFala(texto).slice(0, 2000), op);
             return;
           } catch (e) {
             if (meu !== tokenFala) return;

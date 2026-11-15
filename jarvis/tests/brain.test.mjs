@@ -94,3 +94,11 @@ test("fala longa é dividida em partes curtas (Chrome corta ~15 s)", () => {
   assert.deepEqual(Array.from(_partes("Oi.")), ["Oi."]);
   assert.deepEqual(Array.from(_partes("")), []);
 });
+test("voz natural: escolhe a melhor voz pt-BR e lê dinheiro por extenso", () => {
+  const { _nota, _paraFala } = win.JarvisVoice;
+  assert.ok(_nota("Microsoft Francisca Online (Natural) - Portuguese (Brazil)", "pt-BR") > _nota("Microsoft Maria", "pt-BR"));
+  assert.ok(_nota("Luciana (Aprimorada)", "pt-BR") > _nota("Luciana", "pt-BR"));
+  assert.ok(_nota("Google português do Brasil", "pt-BR") > _nota("eSpeak Portuguese", "pt"));
+  assert.equal(_paraFala("Recebido: R$ 1.234,50 · saldo R$ 1,00 e 15%"), "Recebido: 1234 reais e 50 centavos , saldo 1 real e 15 por cento");
+  assert.equal(_paraFala("R$ 0,00"), "0 reais");
+});

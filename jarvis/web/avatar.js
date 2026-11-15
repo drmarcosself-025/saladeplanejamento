@@ -168,6 +168,9 @@
     // Cor do agente: null = Jarvis de referência (estados em âmbar/azul/violeta/verde).
     // Com agente, veias, núcleo e brilho assumem a cor dele; o corpo recebe um tingimento suave.
     let corAg=null,tint=null,tintA=0,tintAlvo=0,tintOld=null,tintOldA=0;
+    // Vida: respiração, balanço, cabeça que acena/inclina/olha conforme o estado, e o efeito de troca de agente.
+    const scene=document.createElement('canvas'),sx=scene.getContext('2d'),headC=document.createElement('canvas'),hx=headC.getContext('2d');
+    const pesos={idle:1,ouvindo:0,pensando:0,falando:0,executando:0};let envS=0,troca=null,estadoT=-1e9,dprAtual=1,corIni=true;
     const COR_NORMAL='#35b8ff';
     function prepararTint(){            // pré-calcula o corpo tingido (uma vez por troca de agente, não por quadro)
       if(!ready||!corAg)return;
@@ -181,8 +184,10 @@
       const r=canvas.getBoundingClientRect(),d=Math.min(devicePixelRatio||1,mobile?1.5:2);
       W=Math.max(1,r.width);H=Math.max(1,r.height);
       // O ResizeObserver dispara uma vez ao observar. Se o tamanho é o mesmo, não mexe: redimensionar apaga o desenho.
+      dprAtual=d;
       if(canvas.width===Math.floor(W*d)&&canvas.height===Math.floor(H*d)){ctx.setTransform(d,0,0,d,0,0);return;}
       canvas.width=W*d;canvas.height=H*d;ctx.setTransform(d,0,0,d,0,0);
+      scene.width=headC.width=canvas.width;scene.height=headC.height=canvas.height;sx.setTransform(d,0,0,d,0,0);
       last=-Infinity;delete canvas.dataset.rendered;
     };
     const observer=new ResizeObserver(resize);observer.observe(canvas);resize();
@@ -282,7 +287,7 @@
     };
     function frame(ms){
       if(!ativo||fallback)return;raf=requestAnimationFrame(frame);
-      const ativoToque=ms-inter<900;if(!ready||document.hidden||W<3||H<3||ms-last<(ativoToque?14:quiet?180:32))return;
+      const ativoToque=ms-inter<900;if(!ready||document.hidden||W<3||H<3||ms-last<(ativoToque||troca||estado==='falando'?14:quiet?180:26))return;
       last=ms;const t=quiet?0:ms/1000,p=PALETAS[estado]||PALETAS.idle;
       // com agente: repouso/fala = cor dele; ouvindo/raciocinando misturam com azul/violeta; executando segue verde
       const alvo=corAg?(estado==='executando'?p.cor:(estado==='idle'||estado==='falando')?corAg:corAg.map((v,i)=>v+(p.cor[i]-v)*.45)):p.cor;
@@ -303,11 +308,13 @@
         tintA+=(tintAlvo-tintA)*(quiet?1:1-Math.pow(.88,dft));if(tintOld){tintOldA*=quiet?0:Math.pow(.88,dft);if(tintOldA<.02)tintOld=null;}
         if(Math.abs(tintAlvo-tintA)>.01||tintOld)inter=ms; }
       const tx=tiltX*W*.02,ty=tiltY*H*.012,rot=tiltX*.03;
-      ctx.save();ctx.translate(W/2+panX+tx,H/2+panY+ty);ctx.rotate(rot);ctx.scale(zoom,zoom);ctx.translate(-W/2,-H/2);
-      ctx.drawImage(base,x,y,dw,dh);
-      if(tintOld&&tintOldA>.02){ctx.globalAlpha=tintOldA;ctx.drawImage(tintOld,x,y,dw,dh);}
-      if(tint&&tintA>.02){ctx.globalAlpha=tintA;ctx.drawImage(tint,x,y,dw,dh);}
-      ctx.globalAlpha=1;
+      if(scene.width!==canvas.width){scene.width=headC.width=canvas.width;scene.height=headC.height=canvas.height;}
+      sx.setTransform(dprAtual,0,0,dprAtual,0,0);sx.clearRect(0,0,W,H);
+      sx.save();sx.translate(W/2+panX+tx,H/2+panY+ty);sx.rotate(rot);sx.scale(zoom,zoom);sx.translate(-W/2,-H/2);
+      sx.drawImage(base,x,y,dw,dh);
+      if(tintOld&&tintOldA>.02){sx.globalAlpha=tintOldA;sx.drawImage(tintOld,x,y,dw,dh);}
+      if(tint&&tintA>.02){sx.globalAlpha=tintA;sx.drawImage(tint,x,y,dw,dh);}
+      sx.globalAlpha=1;
       const e=energy.getContext('2d');e.clearRect(0,0,iw,ih);e.globalCompositeOperation='source-over';e.drawImage(mask,0,0);
       e.globalCompositeOperation='source-in';const flow=e.createLinearGradient(0,0,0,ih);
       for(let k=0;k<=8;k++){
@@ -315,19 +322,61 @@
         flow.addColorStop(k/8,`rgba(${cor.map(Math.round).join(',')},${limitar(a,.60,1)})`);
       }
       e.fillStyle=flow;e.fillRect(0,0,iw,ih);e.globalCompositeOperation='source-over';
-      ctx.translate(tiltX*dw*.010,tiltY*dh*.006);
-      ctx.globalCompositeOperation='screen';ctx.globalAlpha=quiet?1:.98+pulse*.025;ctx.drawImage(energy,x,y,dw,dh);ctx.globalAlpha=1;
+      sx.translate(tiltX*dw*.010,tiltY*dh*.006);
+      sx.globalCompositeOperation='screen';sx.globalAlpha=quiet?1:.98+pulse*.025;sx.drawImage(energy,x,y,dw,dh);sx.globalAlpha=1;
       if(toque){const dt=ms-toque.t;
         if(dt>1100)toque=null;
-        else{const q=paraImagem(toque.x,toque.y,tx,ty,rot),a=1-dt/1100;ctx.save();ctx.beginPath();ctx.arc(q[0],q[1],dw*(.08+.34*(dt/1100)),0,TAU);ctx.clip();ctx.globalAlpha=.95*a;ctx.drawImage(energy,x,y,dw,dh);ctx.restore();}
+        else{const q=paraImagem(toque.x,toque.y,tx,ty,rot),a=1-dt/1100;sx.save();sx.beginPath();sx.arc(q[0],q[1],dw*(.08+.34*(dt/1100)),0,TAU);sx.clip();sx.globalAlpha=.95*a;sx.drawImage(energy,x,y,dw,dh);sx.restore();}
       }
       // Projeção volumétrica suave, sempre centrada na cabeça da imagem.
       const cx=x+dw*.5,cy=y+dh*.255,rx=dw*(.060+(estado==='ouvindo'?nivel*.008:0)),ry=dh*.080;
-      ctx.save();ctx.translate(cx,cy);ctx.scale(rx,ry);
-      const g=ctx.createRadialGradient(0,0,0,0,0,1);
+      sx.save();sx.translate(cx,cy);sx.scale(rx,ry);
+      const g=sx.createRadialGradient(0,0,0,0,0,1);
       g.addColorStop(0,`rgba(${claroAlvo.join(',')},${.075+(quiet?0:(pulse+1)*.012)})`);g.addColorStop(1,`rgba(${cor.map(Math.round).join(',')},0)`);
-      ctx.fillStyle=g;ctx.beginPath();ctx.arc(0,0,1,0,TAU);ctx.fill();ctx.restore();ctx.globalCompositeOperation='source-over';
-      ctx.restore();                                                  // fim da transformação de zoom/inclinação
+      sx.fillStyle=g;sx.beginPath();sx.arc(0,0,1,0,TAU);sx.fill();sx.restore();sx.globalCompositeOperation='source-over';
+      sx.restore();                                                  // fim da transformação de zoom/inclinação
+      // ---------- vida: movimento do tronco e da cabeça ----------
+      { const wk=quiet?1:1-Math.pow(.9,Math.min(6,Math.max(.25,(ms-(frame.ant3||ms-16))/16.7)));frame.ant3=ms;
+        for(const k in pesos)pesos[k]+=((k===estado?1:0)-pesos[k])*wk;
+        const envAlvo=estado==='falando'?limitar(.55+.45*Math.sin(t*6.1)*Math.sin(t*2.3+1.2)+.2*Math.sin(t*11.7),0,1):estado==='ouvindo'?nivel:0;envS+=(envAlvo-envS)*(quiet?1:.18); }
+      const pj=troca?(ms-troca.t)/1400:1;if(pj>=1)troca=null;
+      const jolt=troca?Math.sin(Math.PI*Math.min(1,pj*1.6))*Math.max(0,1-pj)*1.4:0,kick=Math.exp(-(ms-estadoT)/450);
+      const pw=pesos,env=envS;
+      const M=quiet?{tx:0,ty:0,rot:0,sc:1,hr:0,hx:0,hy:0}:{
+        tx:Math.sin(t*.43)*W*.004+jolt*Math.sin(t*38)*W*.004,
+        ty:Math.sin(t*.95)*H*.003+env*Math.sin(t*6.1)*H*.002-jolt*H*.006,
+        rot:Math.sin(t*.37)*.006+pw.pensando*Math.sin(t*.5)*.007,
+        sc:1+Math.sin(t*.95)*.004+jolt*.035+pw.executando*Math.sin(t*9)*.004,
+        hr:Math.sin(t*.61+1)*.014+pw.pensando*(.05+.03*Math.sin(t*.4))+pw.ouvindo*(.035+.01*Math.sin(t*1.3))+pw.falando*env*.03*Math.sin(t*4.4)+jolt*.07*Math.sin(t*22)+kick*.03*Math.sin(t*14),
+        hx:Math.sin(t*.5)*W*.006+pw.pensando*Math.sin(t*.55)*W*.02+pw.ouvindo*W*.01+jolt*Math.sin(t*30)*W*.006,
+        hy:Math.sin(t*.95+.4)*H*.002+pw.falando*(Math.sin(t*6.1)*.5+.5)*env*H*.010+pw.ouvindo*H*.012+pw.executando*Math.abs(Math.sin(t*5))*H*.006+kick*H*.008,
+      };
+      const fw=(px,py)=>{const cr=Math.cos(rot),sr=Math.sin(rot),qx=px-W/2,qy=py-H/2;return[W/2+panX+tx+(qx*cr-qy*sr)*zoom,H/2+panY+ty+(qx*sr+qy*cr)*zoom];};
+      const nk=fw(x+dw*.5,y+dh*.43),yB=nk[1]-dh*.030*zoom,yF=nk[1]+dh*.045*zoom;
+      const pbx=W/2,pby=H*.985;
+      ctx.save();ctx.translate(pbx+M.tx,pby+M.ty);ctx.rotate(M.rot);ctx.scale(M.sc,M.sc*(1+(M.sc-1)*.6));ctx.translate(-pbx,-pby);
+      if(quiet){ctx.drawImage(scene,0,0,W,H);}
+      else{
+        ctx.save();ctx.beginPath();ctx.rect(0,yB,W,H-yB);ctx.clip();ctx.drawImage(scene,0,0,W,H);ctx.restore();
+        const hh=Math.min(canvas.height,Math.ceil(yF*dprAtual));
+        if(hh>2){
+          hx.setTransform(1,0,0,1,0,0);hx.globalCompositeOperation='source-over';hx.clearRect(0,0,headC.width,headC.height);hx.drawImage(scene,0,0,scene.width,hh,0,0,scene.width,hh);
+          const gm=hx.createLinearGradient(0,yB*dprAtual,0,yF*dprAtual);gm.addColorStop(0,'rgba(0,0,0,1)');gm.addColorStop(1,'rgba(0,0,0,0)');
+          hx.globalCompositeOperation='destination-in';hx.fillStyle=gm;hx.fillRect(0,0,headC.width,hh);hx.globalCompositeOperation='source-over';
+          ctx.translate(nk[0]+M.hx,nk[1]+M.hy);ctx.rotate(M.hr);ctx.translate(-nk[0],-nk[1]);
+          ctx.drawImage(headC,0,0,headC.width,hh,0,0,W,hh/dprAtual);
+        }
+      }
+      ctx.restore();
+      if(troca){ // onda de energia + varredura na cor do novo agente
+        const cc=troca.cor.map(Math.round).join(','),gx=geo?geo.cx:W/2,gy=geo?geo.cy:H*.3,gr=Math.max(40,dw*.30*zoom);
+        ctx.save();ctx.globalCompositeOperation='screen';
+        for(let k=0;k<2;k++){const q=limitar(pj*1.25-k*.18,0,1);if(q<=0||q>=1)continue;ctx.strokeStyle=`rgba(${cc},${(1-q)*.85})`;ctx.lineWidth=1+4*(1-q);ctx.beginPath();ctx.ellipse(gx,gy,gr*(.35+1.7*q),gr*(.35+1.7*q)*.92,0,0,TAU);ctx.stroke();}
+        const by=H*(1.02-pj*1.15);
+        ctx.save();ctx.translate(W/2,by);ctx.scale(W*.5,H*.10);const gb=ctx.createRadialGradient(0,0,0,0,0,1);gb.addColorStop(0,`rgba(${cc},${.55*(1-pj)})`);gb.addColorStop(1,`rgba(${cc},0)`);ctx.fillStyle=gb;ctx.beginPath();ctx.arc(0,0,1,0,TAU);ctx.fill();ctx.restore();
+        const gl=ctx.createRadialGradient(gx,gy,0,gx,gy,gr*1.05);gl.addColorStop(0,`rgba(${cc},${.38*Math.max(0,1-pj*1.6)})`);gl.addColorStop(1,`rgba(${cc},0)`);ctx.fillStyle=gl;ctx.beginPath();ctx.arc(gx,gy,gr*1.05,0,TAU);ctx.fill();
+        ctx.restore();inter=ms;
+      }
       { // centro da cabeça já com zoom/arraste/inclinação (para o anel e as linhas ao redor)
         const hx=cx-W/2,hy=cy-H/2,cr=Math.cos(rot),sr=Math.sin(rot);
         geo={cx:W/2+panX+tx+(hx*cr-hy*sr)*zoom,cy:H/2+panY+ty+(hx*sr+hy*cr)*zoom,r:dw*.30*zoom,zoom:zoomAlvo,w:W,h:H,nivel:nivelAtual,cor:cor.map(Math.round)};
@@ -337,10 +386,13 @@
     }
     raf=requestAnimationFrame(frame);
     return{
-      setEstado(e){estado=PALETAS[e]?e:'idle';if(fallback)fallback.setEstado(estado);last=-Infinity;delete canvas.dataset.rendered;},
+      setEstado(e){const n=PALETAS[e]?e:'idle';if(n!==estado)estadoT=performance.now();estado=n;if(fallback)fallback.setEstado(estado);last=-Infinity;delete canvas.dataset.rendered;},
       setCor(h){
         const n=parseInt(String(h).replace('#',''),16);
         if(Number.isFinite(n)){
+          const nova=[(n>>16)&255,(n>>8)&255,n&255],ant=corAg||[53,184,255];
+          if(!corIni&&!quiet&&nova.some((v,i)=>Math.abs(v-ant[i])>8))troca={t:performance.now(),cor:nova};
+          corIni=false;
           if(String(h).toLowerCase()===COR_NORMAL){corAg=null;tintAlvo=0;}      // agente padrão: Jarvis de referência
           else{corAg=[(n>>16)&255,(n>>8)&255,n&255];tintAlvo=.78;prepararTint();}
           last=-Infinity;
