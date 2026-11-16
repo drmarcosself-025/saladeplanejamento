@@ -429,22 +429,41 @@
 
   // ---------- Dia a Dia (rotina) ----------
   const RT = window.JarvisRotina, P = window.JarvisPessoal;
-  let rotAba = "dia";
+  let rotAba = "dia", rotDia = hojeISO(), rotMes = hojeISO().slice(0, 7), rotAno = new Date().getFullYear();
   const dataExt = (d) => new Date(d + "T12:00").toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
-  function abrirRotina(aba) {
+  const maiusc = (x) => x.replace(/^./, (c) => c.toUpperCase());
+  function abrirRotina(aba, dia) {
+    if (dia) { rotDia = dia; rotMes = dia.slice(0, 7); rotAno = +dia.slice(0, 4); }
     $("rotinaTela").hidden = false; $("crmTela").hidden = true; $("finTela").hidden = true; $("socialTela").hidden = true;
     $("rotinaTela").querySelector(".workspace-head").after($("respostaCard")); if (aba) rotAba = aba; renderRotina();
   }
   function salvarPessoal(fn) { const d = P.ler(); fn(d); const ok = P.salvar(d); if (ok && window.JarvisUI) JarvisUI.render(); return ok; }
+  function listaMetas(box, escopo, ref) {
+    const d = RT.ler(), ul = mk("ul", "rot-lista"); box.append(mk("h2", "", escopo === "mes" ? "Metas do mês" : "Metas do ano"), ul);
+    for (const m of RT.metasDe(d, escopo, ref)) {
+      const li = mk("li", m.feita ? "feito" : ""), lb = mk("label"), ck = mk("input"); ck.type = "checkbox"; ck.checked = m.feita;
+      ck.addEventListener("change", () => { const n = RT.ler(), i = n.metas.find((y) => y.id === m.id); if (i) i.feita = ck.checked; RT.salvar(n); });
+      lb.append(ck, mk("span", "", m.texto)); const rm = mk("button", "task-delete", "×"); rm.type = "button"; rm.setAttribute("aria-label", "Remover meta " + m.texto);
+      rm.addEventListener("click", () => { const n = RT.ler(); n.metas = n.metas.filter((y) => y.id !== m.id); RT.salvar(n); }); li.append(lb, rm); ul.append(li);
+    }
+    if (!ul.children.length) ul.append(mk("li", "muted", "Nenhuma meta definida."));
+    const f = mk("form", "rot-form"), inp = mk("input"); inp.maxLength = 160; inp.placeholder = escopo === "mes" ? "Nova meta do mês" : "Nova meta do ano"; inp.setAttribute("aria-label", inp.placeholder);
+    const bt = mk("button", "btn", "Adicionar"); bt.type = "submit"; f.append(inp, bt);
+    f.addEventListener("submit", (e) => { e.preventDefault(); const n = RT.comMeta(RT.ler(), { texto: inp.value, escopo, ref }); if (!n.erro) RT.salvar(n); }); box.append(f);
+  }
   function renderRotina() {
     if ($("rotinaTela").hidden) return;
-    const agora = new Date(), hoje = hojeISO(), c = RT.montarDia(agora), d = RT.ler();
-    $("rotAbaDia").classList.toggle("on", rotAba === "dia"); $("rotAbaSemana").classList.toggle("on", rotAba === "semana");
-    $("rotAbaDia").setAttribute("aria-pressed", String(rotAba === "dia")); $("rotAbaSemana").setAttribute("aria-pressed", String(rotAba === "semana"));
-    $("rotDia").hidden = rotAba !== "dia"; $("rotSemana").hidden = rotAba !== "semana";
-    $("rotStatus").textContent = dataExt(hoje).replace(/^./, (x) => x.toUpperCase()) + " · salvo neste navegador";
+    const agora = new Date(), hoje = hojeISO(), d = RT.ler();
+    for (const [id, a] of [["rotAbaDia", "dia"], ["rotAbaSemana", "semana"], ["rotAbaMes", "mes"], ["rotAbaAno", "ano"]]) { $(id).classList.toggle("on", rotAba === a); $(id).setAttribute("aria-pressed", String(rotAba === a)); }
+    for (const [id, a] of [["rotDia", "dia"], ["rotSemana", "semana"], ["rotMes", "mes"], ["rotAno", "ano"]]) $(id).hidden = rotAba !== a;
+    const sem = RT.semanaDe(rotDia);
+    $("rotTitulo").textContent = rotAba === "dia" ? maiusc(dataExt(rotDia)) : rotAba === "semana" ? `Semana de ${sem[0].slice(8)}/${sem[0].slice(5, 7)} a ${sem[6].slice(8)}/${sem[6].slice(5, 7)}` : rotAba === "mes" ? maiusc(RT.nomeMes(rotMes)) : String(rotAno);
+    $("rotStatus").textContent = "Planeje o dia, a semana, o mês e o ano · salvo neste navegador";
     if (rotAba === "dia") {
+      const c = RT.montarDia(agora, rotDia);
       $("rotResumo").textContent = RT.resumoDia({ ...c, saudacao: "" }).fala;
+      if (document.activeElement !== $("rotCompData")) $("rotCompData").value = rotDia;
+      $("rotPendBox").hidden = rotDia !== hoje;
       const tl = $("rotTarefas"); tl.textContent = "";
       for (const t of c.tarefas) {
         const li = mk("li", t.feita ? "feito" : ""), lb = mk("label"), ck = mk("input"); ck.type = "checkbox"; ck.checked = t.feita;
@@ -452,7 +471,7 @@
         lb.append(ck, mk("span", "", t.texto)); const rm = mk("button", "task-delete", "×"); rm.type = "button"; rm.setAttribute("aria-label", "Remover " + t.texto);
         rm.addEventListener("click", () => { salvarPessoal((x) => { x.tarefas = x.tarefas.filter((y) => y.id !== t.id); }); renderRotina(); }); li.append(lb, rm); tl.append(li);
       }
-      if (!c.tarefas.length) tl.append(mk("li", "muted", "Nenhuma prioridade para hoje."));
+      if (!c.tarefas.length) tl.append(mk("li", "muted", rotDia === hoje ? "Nenhuma prioridade para hoje." : "Nenhuma prioridade neste dia."));
       const cl = $("rotCompromissos"); cl.textContent = "";
       for (const x of c.compromissos) {
         const li = mk("li", x.feito ? "feito" : ""), lb = mk("label"), ck = mk("input"); ck.type = "checkbox"; ck.checked = x.feito;
@@ -460,40 +479,74 @@
         lb.append(ck, mk("span", "", (x.hora ? RT.hhmm(x.hora) + " · " : "") + x.titulo)); const rm = mk("button", "task-delete", "×"); rm.type = "button"; rm.setAttribute("aria-label", "Remover " + x.titulo);
         rm.addEventListener("click", () => { const n = RT.ler(); n.compromissos = n.compromissos.filter((y) => y.id !== x.id); RT.salvar(n); }); li.append(lb, rm); cl.append(li);
       }
-      if (!c.compromissos.length) cl.append(mk("li", "muted", "Nenhum compromisso para hoje."));
+      if (!c.compromissos.length) cl.append(mk("li", "muted", "Nenhum compromisso neste dia."));
       const ag = $("rotAgua"); ag.textContent = ""; ag.setAttribute("aria-label", `${c.agua} de ${c.meta} copos de água`);
       for (let i = 0; i < Math.max(c.meta, c.agua); i++) ag.append(mk("i", i < c.agua ? "cheio" : ""));
       ag.append(mk("span", "small muted", `${c.agua} de ${c.meta} copos`));
       const rf = $("rotRefeicoes"); rf.textContent = "";
-      for (const r of RT.REFEICOES) { const b = mk("button", "chip" + (c.refeicoes.includes(r.id) ? " on" : ""), r.nome); b.type = "button"; b.setAttribute("aria-pressed", String(c.refeicoes.includes(r.id))); b.addEventListener("click", () => RT.salvar(RT.comRefeicao(RT.ler(), r.id, hoje))); rf.append(b); }
+      for (const r of RT.REFEICOES) { const b = mk("button", "chip" + (c.refeicoes.includes(r.id) ? " on" : ""), r.nome); b.type = "button"; b.setAttribute("aria-pressed", String(c.refeicoes.includes(r.id))); b.addEventListener("click", () => RT.salvar(RT.comRefeicao(RT.ler(), r.id, rotDia))); rf.append(b); }
       const pl = $("rotPendencias"); pl.textContent = "";
       const dev = c.retornos + c.atrasados; if (dev) { const li = mk("li"); const b = mk("button", "btn", "Abrir CRM"); b.type = "button"; b.addEventListener("click", () => abrirCrm()); li.append(mk("span", "", `${dev} retorno${dev > 1 ? "s" : ""} de leads${c.atrasados ? ` (${c.atrasados} atrasado${c.atrasados > 1 ? "s" : ""})` : ""}`), b); pl.append(li); }
       for (const x of c.contas.slice(0, 6)) pl.append(mk("li", "", `${x.descricao} · ${valor(x.valor)} · ${x.atrasada ? "atrasada" : "vence " + x.vencimento.slice(8) + "/" + x.vencimento.slice(5, 7)}`));
       if (!pl.children.length) pl.append(mk("li", "muted", "Nenhum retorno nem conta pendente."));
-    } else {
-      const s = RT.montarSemana(agora), box = $("rotDias"); box.textContent = "";
+    } else if (rotAba === "semana") {
+      const s = RT.montarSemana(agora, rotDia), box = $("rotDias"); box.textContent = "";
       for (const dia of s.dias) {
-        const col = mk("div", "rot-dia" + (dia.iso === hoje ? " hoje" : "")); col.append(mk("strong", "", `${dia.rotulo} ${dia.iso.slice(8)}`));
+        const col = mk("button", "rot-dia" + (dia.iso === hoje ? " hoje" : "") + (dia.iso === rotDia ? " sel" : "")); col.type = "button"; col.setAttribute("aria-label", "Abrir " + dataExt(dia.iso)); col.append(mk("strong", "", `${dia.rotulo} ${dia.iso.slice(8)}`));
         for (const x of dia.compromissos.slice(0, 4)) col.append(mk("span", x.feito ? "feito" : "", `${x.hora ? RT.hhmm(x.hora) + " " : ""}${x.titulo}`));
         if (dia.tarefasTotal) col.append(mk("small", "muted", `${dia.tarefasFeitas}/${dia.tarefasTotal} prioridades`));
         if (!dia.compromissos.length && !dia.tarefasTotal) col.append(mk("small", "muted", "livre"));
-        box.append(col);
+        col.addEventListener("click", () => { rotDia = dia.iso; rotAba = "dia"; renderRotina(); }); box.append(col);
       }
       const fb = RT.feedbackSemana(s), ul = $("rotFeedback"); ul.textContent = "";
       for (const i of fb.itens) ul.append(mk("li", i.nivel === "atencao" ? "alerta" : i.nivel === "bom" ? "ok" : "info", i.texto));
+    } else if (rotAba === "mes") {
+      const r = RT.montarMes(agora, rotMes), box = $("rotMes"); box.textContent = "";
+      const grade = mk("div", "rot-mes-grade"); for (const n of ["seg", "ter", "qua", "qui", "sex", "sáb", "dom"]) grade.append(mk("span", "rot-cab", n));
+      const mapa = new Map(r.dias.map((x) => [x.dia, x]));
+      for (const dia of RT.diasDoMes(rotMes)) {
+        if (!dia) { grade.append(mk("span", "rot-vazio")); continue; } const x = mapa.get(dia);
+        const b = mk("button", "rot-cel" + (dia === hoje ? " hoje" : "") + (x.c || x.t ? " tem" : "")); b.type = "button"; b.setAttribute("aria-label", `${dataExt(dia)}: ${x.c} compromissos, ${x.t} prioridades`);
+        b.append(mk("b", "", String(+dia.slice(8)))); const pt = mk("span", "pts"); for (let i = 0; i < Math.min(x.c, 3); i++) pt.append(mk("i", "c")); for (let i = 0; i < Math.min(x.t, 3); i++) pt.append(mk("i", "t")); b.append(pt);
+        b.addEventListener("click", () => { rotDia = dia; rotAba = "dia"; renderRotina(); }); grade.append(b);
+      }
+      box.append(grade); const resumo = mk("section", "fin-painel"); resumo.append(mk("h2", "", "Como está o mês")); const ul = mk("ul", "fin-conferencia"); for (const i of r.itens) ul.append(mk("li", i.nivel === "bom" ? "ok" : "info", i.texto)); resumo.append(ul);
+      const metas = mk("section", "fin-painel"); listaMetas(metas, "mes", rotMes); const duo = mk("div", "rot-grid"); duo.append(resumo, metas); box.append(duo);
+    } else {
+      const r = RT.montarAno(agora, rotAno), box = $("rotAno"); box.textContent = "";
+      const grade = mk("div", "rot-ano-grade");
+      for (const m of r.meses) {
+        const b = mk("button", "rot-mes-card" + (m.mes === hoje.slice(0, 7) ? " hoje" : "")); b.type = "button"; b.setAttribute("aria-label", `${RT.nomeMes(m.mes)}: ${m.c} compromissos`);
+        b.append(mk("strong", "", maiusc(m.rotulo)), mk("span", "", `${m.c} compromisso${m.c === 1 ? "" : "s"}`), mk("small", "muted", m.t ? `${m.feitas}/${m.t} prioridades` : "sem prioridades"), m.metas ? mk("small", "", `${m.metas} meta${m.metas > 1 ? "s" : ""}`) : mk("small", "muted", "—"));
+        b.addEventListener("click", () => { rotMes = m.mes; rotAba = "mes"; renderRotina(); }); grade.append(b);
+      }
+      const metas = mk("section", "fin-painel"); listaMetas(metas, "ano", String(rotAno)); box.append(grade, metas);
     }
   }
   RT.aoMudar(renderRotina); L.aoMudar(renderRotina); F.aoMudar(renderRotina);
+  window.JarvisRotinaUI = { abrir: abrirRotina };
   async function comandoRot(it, g) {
     const agora = new Date(), hoje = hojeISO(), h = agora.getHours();
     if (it.tipo === "rot_dia") {
-      const amanha = it.quando === "amanha", dia = amanha ? L.somar(hoje, 1) : hoje, c = RT.montarDia(agora, dia), r = RT.resumoDia({ ...c, saudacao: it.saudacao ? c.saudacao : "" });
-      if (it.saudacao) mostrarCard("Seu dia", r.itens); else { abrirRotina("dia"); mostrarCard(amanha ? "Amanhã" : "Seu dia", r.itens); }
-      const fala = amanha ? (c.compromissos.length ? `Amanhã você tem ${c.compromissos.length} compromisso${c.compromissos.length > 1 ? "s" : ""}${c.compromissos[0].hora ? `, o primeiro às ${RT.hhmm(c.compromissos[0].hora)}: ${c.compromissos[0].titulo}` : ""}.` : "Amanhã você não tem compromissos marcados.") : r.fala;
-      return dizer(fala, g);
+      const amanha = it.quando === "amanha", dia = it.data || (amanha ? L.somar(hoje, 1) : hoje), c = RT.montarDia(agora, dia), r = RT.resumoDia({ ...c, saudacao: it.saudacao ? c.saudacao : "" });
+      if (it.saudacao) mostrarCard("Seu dia", r.itens); else { abrirRotina("dia", dia); mostrarCard(dia === hoje ? "Seu dia" : maiusc(dataExt(dia)), r.itens); }
+      return dizer(r.fala, g);
     }
     if (it.tipo === "rot_semana") {
-      abrirRotina("semana"); const f = RT.feedbackSemana(RT.montarSemana(agora)); mostrarCard("Feedback da semana", f.itens.map((x) => x.texto)); return dizer(f.fala, g);
+      abrirRotina("semana"); const f = RT.feedbackSemana(RT.montarSemana(agora, rotDia)); mostrarCard("Feedback da semana", f.itens.map((x) => x.texto)); return dizer(f.fala, g);
+    }
+    if (it.tipo === "rot_mes") {
+      rotMes = it.seguinte ? RT.somarMes(hoje.slice(0, 7), 1) : hoje.slice(0, 7); abrirRotina("mes"); const r = RT.montarMes(agora, rotMes);
+      mostrarCard(maiusc(RT.nomeMes(rotMes)), r.itens.map((x) => x.texto)); return dizer(r.fala, g);
+    }
+    if (it.tipo === "rot_ano") {
+      rotAno = new Date().getFullYear() + (it.seguinte ? 1 : 0); abrirRotina("ano"); const r = RT.montarAno(agora, rotAno);
+      mostrarCard(String(rotAno), r.meses.filter((m) => m.c || m.t || m.metas).map((m) => `${maiusc(m.rotulo)}: ${m.c} compromisso${m.c === 1 ? "" : "s"}${m.t ? `, ${m.feitas}/${m.t} prioridades` : ""}`).concat(r.metas.map((m) => "Meta: " + m.texto)));
+      return dizer(r.fala, g);
+    }
+    if (it.tipo === "rot_meta") {
+      const ref = it.escopo === "mes" ? hoje.slice(0, 7) : String(new Date().getFullYear()), n = RT.comMeta(RT.ler(), { texto: it.meta, escopo: it.escopo, ref });
+      if (n.erro || !RT.salvar(n)) return dizer("Não consegui anotar a meta.", g); return dizer(`Anotei a meta ${it.escopo === "mes" ? "do mês" : "do ano"}: ${it.meta}.`, g);
     }
     if (it.tipo === "rot_abrir") { abrirRotina(); return dizer("Abri o seu Dia a Dia.", g); }
     if (it.tipo === "rot_agua" || it.tipo === "rot_agua_status") {
@@ -1020,12 +1073,15 @@
     setEstado("pensando"); const r = await JarvisBrain.perguntarClaude({ modo: MODOS.social, texto: "Analise estes posts do Instagram da clínica e diga o que repetir e o que mudar (3 a 5 itens curtos): " + m.map((x) => `${x.titulo} (alcance ${x.alcance}, curtidas ${x.curtidas}, comentários ${x.comentarios}, salvos ${x.salvos})`).join("; "), contexto: contextoClaude(), historico: [] });
     setEstado("idle"); if (!r || r.erro) { mostrarCard("Análise", ["O Claude não está disponível agora. Veja os melhores posts na lista abaixo."]); return; } mostrarCard(r.titulo || "Análise dos posts", r.itens.length ? r.itens : [r.fala]);
   });
-  $("rotAbaDia").addEventListener("click", () => { rotAba = "dia"; renderRotina(); }); $("rotAbaSemana").addEventListener("click", () => { rotAba = "semana"; renderRotina(); });
+  for (const [id, a] of [["rotAbaDia", "dia"], ["rotAbaSemana", "semana"], ["rotAbaMes", "mes"], ["rotAbaAno", "ano"]]) $(id).addEventListener("click", () => { rotAba = a; renderRotina(); });
+  const passo = (n) => { if (rotAba === "dia") rotDia = L.somar(rotDia, n); else if (rotAba === "semana") rotDia = L.somar(rotDia, 7 * n); else if (rotAba === "mes") { rotMes = RT.somarMes(rotMes, n); rotDia = rotMes + "-01"; } else { rotAno += n; rotDia = rotAno + "-01-01"; } rotMes = rotDia.slice(0, 7); renderRotina(); };
+  $("rotAnt").addEventListener("click", () => passo(-1)); $("rotSeg").addEventListener("click", () => passo(1));
+  $("rotHoje").addEventListener("click", () => { rotDia = hojeISO(); rotMes = rotDia.slice(0, 7); rotAno = +rotDia.slice(0, 4); renderRotina(); });
   $("rotCompData").value = hojeISO();
-  $("rotTarefaForm").addEventListener("submit", (e) => { e.preventDefault(); const t = $("rotTarefaTexto").value.trim(); if (!t) return; salvarPessoal((x) => x.tarefas.push({ id: "t" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), texto: t, dia: hojeISO(), feita: false })); $("rotTarefaTexto").value = ""; renderRotina(); });
-  $("rotCompForm").addEventListener("submit", (e) => { e.preventDefault(); const c = RT.novoCompromisso({ titulo: $("rotCompTitulo").value, data: $("rotCompData").value, hora: $("rotCompHora").value }); if (c.erro) return; const d = RT.ler(); d.compromissos.push(c); RT.salvar(d); $("rotCompTitulo").value = ""; $("rotCompHora").value = ""; });
-  $("rotAguaMais").addEventListener("click", () => RT.salvar(RT.comAgua(RT.ler(), 1, hojeISO()))); $("rotAguaMenos").addEventListener("click", () => RT.salvar(RT.comAgua(RT.ler(), -1, hojeISO())));
-  $("rotCopiar").addEventListener("click", () => { const f = RT.feedbackSemana(RT.montarSemana(new Date())); copiar("Feedback da semana\n" + f.itens.map((x) => "- " + x.texto).join("\n")); });
+  $("rotTarefaForm").addEventListener("submit", (e) => { e.preventDefault(); const t = $("rotTarefaTexto").value.trim(); if (!t) return; salvarPessoal((x) => x.tarefas.push({ id: "t" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), texto: t, dia: rotDia, feita: false })); $("rotTarefaTexto").value = ""; renderRotina(); });
+  $("rotCompForm").addEventListener("submit", (e) => { e.preventDefault(); const c = RT.novoCompromisso({ titulo: $("rotCompTitulo").value, data: $("rotCompData").value || rotDia, hora: $("rotCompHora").value }); if (c.erro) return; const d = RT.ler(); d.compromissos.push(c); RT.salvar(d); $("rotCompTitulo").value = ""; $("rotCompHora").value = ""; });
+  $("rotAguaMais").addEventListener("click", () => RT.salvar(RT.comAgua(RT.ler(), 1, rotDia))); $("rotAguaMenos").addEventListener("click", () => RT.salvar(RT.comAgua(RT.ler(), -1, rotDia)));
+  $("rotCopiar").addEventListener("click", () => { const f = RT.feedbackSemana(RT.montarSemana(new Date(), rotDia)); copiar("Feedback da semana\n" + f.itens.map((x) => "- " + x.texto).join("\n")); });
   $("finFechar").addEventListener("click", fecharAreas);
   $("finAnterior").addEventListener("click", () => { mesFin = F.mesAnterior(mesFin); renderFin(); });
   $("finSeguinte").addEventListener("click", () => { mesFin = F.mesSeguinte(mesFin); renderFin(); });

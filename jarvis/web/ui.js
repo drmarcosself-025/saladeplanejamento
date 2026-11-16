@@ -105,11 +105,23 @@
     for (const [n, label, cmd] of [[devidos, "retornos pendentes", "quem preciso retornar hoje"], [contas.length, "contas na semana", "contas a pagar"]]) {
       const b = node("button", "priority-stat"); b.type = "button"; b.dataset.command = cmd; b.append(node("strong", "", String(n)), node("span", "", label)); pr.append(b);
     }
+    // agenda real do dia e faixa da semana
+    try {
+      const RT = window.JarvisRotina, agora = new Date(), c = RT.montarDia(agora), ag = $("hojeAgenda"); ag.textContent = "";
+      const itens = [...c.compromissos.filter((x) => !x.feito).map((x) => (x.hora ? RT.hhmm(x.hora) + " · " : "") + x.titulo), ...c.tarefas.filter((t) => !t.feita).map((t) => "Prioridade: " + t.texto)].slice(0, 4);
+      for (const t of itens) ag.append(node("li", "", t)); if (!itens.length) ag.append(node("li", "muted", "Dia livre. Que tal planejar algo?"));
+      const sm = $("semanaMini"); sm.textContent = ""; const s = RT.montarSemana(agora);
+      for (const d of s.dias) {
+        const n = d.compromissos.length + d.tarefasTotal - d.tarefasFeitas, b = node("button", "sem-dia" + (d.iso === c.hoje ? " hoje" : ""));
+        b.type = "button"; b.setAttribute("aria-label", `Abrir ${d.rotulo} ${d.iso.slice(8)}: ${n} item${n === 1 ? "" : "s"}`); b.append(node("small", "", d.rotulo), node("strong", "", String(+d.iso.slice(8))), node("i", n ? "on" : ""));
+        b.addEventListener("click", () => { if (window.JarvisRotinaUI) JarvisRotinaUI.abrir("dia", d.iso); }); sm.append(b);
+      }
+    } catch (_) {}
     $("connDados").textContent = JarvisLeads.modo === "claude" && JarvisFin.modo === "claude" ? "Seu artefato Claude" : "Neste navegador";
   }
   const estados = { idle: "Por aqui, com você", ouvindo: "Estou ouvindo", pensando: "Organizando as ideias", falando: "Conversando com você", executando: "Abrindo a ação confirmada" };
   new MutationObserver(() => { $("presencaEstado").textContent = estados[document.documentElement.dataset.estado] || estados.idle; }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-estado"] });
-  JarvisLeads.aoMudar(render); JarvisFin.aoMudar(render);
+  JarvisLeads.aoMudar(render); JarvisFin.aoMudar(render); if (window.JarvisRotina) JarvisRotina.aoMudar(render);
   window.JarvisUI = { navegar, comando, focarJarvis, iconizar, render };
   iconizar(); render(); popularPerfil(); navegar("hoje");
 })();

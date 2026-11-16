@@ -53,7 +53,7 @@
 <section id="utilityTela" class="view-page" hidden><div class="row between"><h1 id="utilityTitulo">Preferências</h1><button type="button" class="btn" id="utilityVoltar">Voltar</button></div><div id="utilityConteudo"></div></section>
 <main class="stage">
   <aside class="col left">
-    <section class="panel briefing-panel"><div class="panel-heading"><span class="eyebrow">SEU DIA, COM CLAREZA</span><span data-icon="spark"></span></div><h2>O próximo passo</h2><p id="proximoPasso" class="briefing-text">Organize suas prioridades e eu acompanho com você.</p><div id="prioridades" class="prioridades"></div><button class="text-button" type="button" data-command="quem preciso retornar hoje">Ver meus retornos <span>↗</span></button></section>
+    <section class="panel briefing-panel"><div class="panel-heading"><span class="eyebrow">SEU DIA, COM CLAREZA</span><button type="button" class="text-button" data-command="resumo do dia" aria-label="Resumo do dia"><span data-icon="spark"></span></button></div><h2>O próximo passo</h2><p id="proximoPasso" class="briefing-text">Organize suas prioridades e eu acompanho com você.</p><ul id="hojeAgenda" class="agenda-mini"></ul><div id="semanaMini" class="semana-mini" role="group" aria-label="Sua semana"></div><div id="prioridades" class="prioridades"></div><div class="row"><button class="text-button" type="button" data-command="como está minha semana">Planejar a semana <span>↗</span></button><button class="text-button" type="button" data-command="quem preciso retornar hoje">Ver retornos <span>↗</span></button></div></section>
     <section class="panel routine-panel"><div class="panel-heading"><h2>Um passo de cada vez</h2><span id="tarefasProgresso" class="small muted">0 de 0</span></div><ul id="tarefasLista" class="tasks"></ul><form id="tarefaForm" class="task-form"><input id="tarefaTexto" maxlength="120" required aria-label="Nova prioridade de hoje" placeholder="Uma prioridade para hoje…"><button type="submit" aria-label="Adicionar prioridade">+</button></form><p id="tarefasStatus" class="small muted" role="status"></p></section>
 
     <section class="panel mode-panel">
@@ -156,7 +156,7 @@
 
   <aside class="col right">
     <section class="panel intention-panel"><p class="eyebrow">EM SINTONIA</p><h2 id="focoTitulo">Mais espaço para você.</h2><p class="muted" id="focoTexto">Me conte suas prioridades para tornar este espaço mais seu.</p><button class="text-button" type="button" data-view="pessoal">Ajustar meu contexto <span>↗</span></button></section>
-    <section class="panel access-panel"><h2>À sua mão</h2><button type="button" class="quick-link" data-command="abre o CRM"><span data-icon="people"></span><span>Leads & retornos<small>Seu comercial em movimento</small></span><b>↗</b></button><button type="button" class="quick-link" data-command="ativa o agente contador"><span data-icon="wallet"></span><span>Meu financeiro<small>Contas e clareza no mês</small></span><b>↗</b></button><button type="button" class="quick-link" data-command="quais minhas notificações"><span data-icon="spark"></span><span>Avisos e pendências<small>O que precisa de você agora</small></span><b>↗</b></button><button type="button" class="quick-link" data-command="abre o instagram"><span data-icon="chat"></span><span>Social media<small>Comentários e calendário de posts</small></span><b>↗</b></button><button type="button" class="quick-link" data-view="espacos"><span data-icon="grid"></span><span>Todos os espaços<small>Criação, trabalho e rotina</small></span><b>↗</b></button></section>
+    <section class="panel access-panel"><h2>À sua mão</h2><button type="button" class="quick-link" data-command="resumo do dia" style="--c:#ffd23f"><span data-icon="sun"></span><span>Dia a Dia<small>Hoje, semana, mês e ano</small></span><b>↗</b></button><button type="button" class="quick-link" data-command="abre o CRM" style="--c:#19e6c1"><span data-icon="people"></span><span>Leads & retornos<small>Seu comercial em movimento</small></span><b>↗</b></button><button type="button" class="quick-link" data-command="ativa o agente contador" style="--c:#8fb6ff"><span data-icon="wallet"></span><span>Meu financeiro<small>Contas e clareza no mês</small></span><b>↗</b></button><button type="button" class="quick-link" data-command="quais minhas notificações" style="--c:#ff8a2a"><span data-icon="spark"></span><span>Avisos e pendências<small>O que precisa de você agora</small></span><b>↗</b></button><button type="button" class="quick-link" data-command="abre o instagram" style="--c:#ff3fbf"><span data-icon="chat"></span><span>Social media<small>Comentários e calendário de posts</small></span><b>↗</b></button><button type="button" class="quick-link" data-view="espacos" style="--c:#b6c4d6"><span data-icon="grid"></span><span>Todos os espaços<small>Criação, trabalho e rotina</small></span><b>↗</b></button></section>
     <section class="panel status-panel">
       <h2>Estado</h2>
       <div id="relogio" class="relogio">--:--:--</div>
@@ -239,23 +239,28 @@
 
 <section id="rotinaTela" class="workspace" hidden aria-label="Dia a Dia">
   <header class="workspace-head"><div><h1>Dia a Dia</h1><p id="rotStatus" class="muted small"></p></div><button id="rotFechar" class="btn" type="button">Voltar ao Jarvis</button></header>
-  <div class="fin-filtros" role="tablist" aria-label="Período"><button id="rotAbaDia" class="chip on" type="button" role="tab" aria-pressed="true">Hoje</button><button id="rotAbaSemana" class="chip" type="button" role="tab" aria-pressed="false">Semana</button></div>
+  <div class="rot-barra">
+    <div class="fin-filtros" role="tablist" aria-label="Período"><button id="rotAbaDia" class="chip on" type="button" role="tab" aria-pressed="true">Dia</button><button id="rotAbaSemana" class="chip" type="button" role="tab" aria-pressed="false">Semana</button><button id="rotAbaMes" class="chip" type="button" role="tab" aria-pressed="false">Mês</button><button id="rotAbaAno" class="chip" type="button" role="tab" aria-pressed="false">Ano</button></div>
+    <div class="rot-nav"><button id="rotAnt" class="btn" type="button" aria-label="Anterior">‹</button><strong id="rotTitulo"></strong><button id="rotSeg" class="btn" type="button" aria-label="Próximo">›</button><button id="rotHoje" class="btn" type="button">Hoje</button></div>
+  </div>
   <div id="rotDia">
     <p id="rotResumo" class="rot-resumo"></p>
     <div class="rot-grid">
-      <section class="fin-painel"><h2>Prioridades de hoje</h2><ul id="rotTarefas" class="rot-lista"></ul>
+      <section class="fin-painel"><h2>Prioridades</h2><ul id="rotTarefas" class="rot-lista"></ul>
         <form id="rotTarefaForm" class="rot-form"><input id="rotTarefaTexto" maxlength="120" placeholder="Nova prioridade" aria-label="Nova prioridade"><button class="btn" type="submit">Adicionar</button></form></section>
       <section class="fin-painel"><h2>Compromissos</h2><ul id="rotCompromissos" class="rot-lista"></ul>
         <form id="rotCompForm" class="rot-form"><input id="rotCompTitulo" required maxlength="120" placeholder="Ex.: Reunião com contadora" aria-label="Compromisso"><input id="rotCompData" type="date" aria-label="Data"><input id="rotCompHora" type="time" aria-label="Hora"><button class="btn" type="submit">Marcar</button></form></section>
       <section class="fin-painel"><h2>Água</h2><div id="rotAgua" class="rot-agua" role="img"></div><div class="row"><button id="rotAguaMenos" class="btn" type="button" aria-label="Tirar um copo">−</button><button id="rotAguaMais" class="btn primary" type="button">+ 1 copo</button></div></section>
       <section class="fin-painel"><h2>Refeições</h2><div id="rotRefeicoes" class="fin-filtros"></div></section>
-      <section class="fin-painel rot-largo"><h2>Retornos e contas</h2><ul id="rotPendencias" class="rot-lista"></ul></section>
+      <section class="fin-painel rot-largo" id="rotPendBox"><h2>Retornos e contas</h2><ul id="rotPendencias" class="rot-lista"></ul></section>
     </div>
   </div>
   <div id="rotSemana" hidden>
     <div id="rotDias" class="rot-dias"></div>
     <section class="fin-painel"><h2>Feedback da semana</h2><ul id="rotFeedback" class="fin-conferencia"></ul><div class="row"><button id="rotCopiar" class="btn" type="button">Copiar resumo</button></div></section>
   </div>
+  <div id="rotMes" hidden></div>
+  <div id="rotAno" hidden></div>
 </section>
 
 <section id="socialTela" class="workspace" hidden aria-label="Social Media">

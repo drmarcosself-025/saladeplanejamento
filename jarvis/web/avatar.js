@@ -171,6 +171,7 @@
     // Vida: respiração, balanço, cabeça que acena/inclina/olha conforme o estado, e o efeito de troca de agente.
     const scene=document.createElement('canvas'),sx=scene.getContext('2d');
     const pesos={idle:1,ouvindo:0,pensando:0,falando:0,executando:0};let envS=0,troca=null,estadoT=-1e9,dprAtual=1,corIni=true;
+    let miraX=0,miraY=0,miraAX=0,miraAY=0,miraT=-1e9;     // para onde o Jarvis olha (segue o ponteiro e os atalhos tocados)
     let imp=0,boca=0,proxSil=0,arcos=[];                 // impulso instantâneo (fala, toque, tecla, envio), abertura da boca e raios de energia
     const NOS=[[.30,.66],[.70,.66],[.13,.80],[.87,.80],[.5,.60]];   // pontos de articulação que acendem quando a onda de energia passa
     let fase=0,velS=.17,luzS=.35;                       // fase da onda de energia (sobe pelas veias), velocidade e brilho da luz do rosto
@@ -389,15 +390,16 @@
         const envAlvo=estado==='falando'?limitar(.55+.45*Math.sin(t*6.1)*Math.sin(t*2.3+1.2)+.2*Math.sin(t*11.7),0,1):estado==='ouvindo'?nivel:0;envS+=(envAlvo-envS)*(quiet?1:.18); }
       const pj=troca?(ms-troca.t)/1400:1;if(pj>=1)troca=null;
       const jolt=troca?Math.sin(Math.PI*Math.min(1,pj*1.6))*Math.max(0,1-pj)*1.4:0,kick=Math.exp(-(ms-estadoT)/450);
+      { const alvoX=ms-miraT<2600?miraAX:0,alvoY=ms-miraT<2600?miraAY:0,km=quiet?1:1-Math.pow(.9,Math.min(6,Math.max(.25,(ms-(frame.ant5||ms-16))/16.7)));frame.ant5=ms;miraX+=(alvoX-miraX)*km;miraY+=(alvoY-miraY)*km;if(Math.abs(alvoX-miraX)>.004||Math.abs(alvoY-miraY)>.004)inter=ms; }
       const pw=pesos,env=envS;
       const M=quiet?{tx:0,ty:0,rot:0,sc:1,hr:0,hx:0,hy:0}:{
         tx:Math.sin(t*.43)*W*.004+jolt*Math.sin(t*38)*W*.004,
         ty:Math.sin(t*.95)*H*.003+env*Math.sin(t*6.1)*H*.002-jolt*H*.006,
-        rot:Math.sin(t*.37)*.006+pw.pensando*Math.sin(t*.5)*.007,
+        rot:Math.sin(t*.37)*.006+pw.pensando*Math.sin(t*.5)*.007+miraX*.005,
         sc:1+Math.sin(t*.95)*.004+jolt*.035+pw.executando*Math.sin(t*9)*.004,
-        hr:Math.sin(t*.61+1)*.022+Math.sin(t*.23)*.012+pw.pensando*(.05+.03*Math.sin(t*.4))+pw.ouvindo*(.035+.01*Math.sin(t*1.3))+pw.falando*env*.03*Math.sin(t*4.4)+jolt*.07*Math.sin(t*22)+kick*.03*Math.sin(t*14),
-        hx:Math.sin(t*.5)*W*.010+Math.sin(t*.29+2)*W*.006+pw.pensando*Math.sin(t*.55)*W*.02+pw.ouvindo*W*.01+jolt*Math.sin(t*30)*W*.006,
-        hy:Math.sin(t*.95+.4)*H*.002+pw.falando*(Math.sin(t*6.1)*.5+.5)*env*H*.010+pw.ouvindo*H*.012+pw.executando*Math.abs(Math.sin(t*5))*H*.006+kick*H*.008,
+        hr:miraX*.07+Math.sin(t*.61+1)*.022+Math.sin(t*.23)*.012+pw.pensando*(.05+.03*Math.sin(t*.4))+pw.ouvindo*(.035+.01*Math.sin(t*1.3))+pw.falando*env*.03*Math.sin(t*4.4)+jolt*.07*Math.sin(t*22)+kick*.03*Math.sin(t*14),
+        hx:miraX*W*.022+Math.sin(t*.5)*W*.010+Math.sin(t*.29+2)*W*.006+pw.pensando*Math.sin(t*.55)*W*.02+pw.ouvindo*W*.01+jolt*Math.sin(t*30)*W*.006,
+        hy:miraY*H*.010+Math.sin(t*.95+.4)*H*.002+pw.falando*(Math.sin(t*6.1)*.5+.5)*env*H*.010+pw.ouvindo*H*.012+pw.executando*Math.abs(Math.sin(t*5))*H*.006+kick*H*.008,
       };
       const fw=(px,py)=>{const cr=Math.cos(rot),sr=Math.sin(rot),qx=px-W/2,qy=py-H/2;return[W/2+panX+tx+(qx*cr-qy*sr)*zoom,H/2+panY+ty+(qx*sr+qy*cr)*zoom];};
       const nk=fw(x+dw*.5,y+dh*.56),y0n=fw(x+dw*.5,y+dh*.60)[1],y1n=fw(x+dw*.5,y+dh*.43)[1];   // pivô no pescoço; a flexão vai da base do pescoço ao queixo
@@ -433,8 +435,9 @@
       if(toque){const pr=(ms-toque.t)/1100;if(pr<1){ctx.save();ctx.globalCompositeOperation='screen';ctx.strokeStyle=`rgba(${cor.map(Math.round).join(',')},${(1-pr)*.75})`;ctx.lineWidth=.6+2.4*(1-pr);ctx.beginPath();ctx.arc(toque.x,toque.y,10+pr*80,0,TAU);ctx.stroke();ctx.restore();}}
       canvas.dataset.renderer='cinematografico';canvas.dataset.rendered='true';canvas.dataset.estado=estado;
     }
+    let onMove=null,seguirT=0;
     raf=requestAnimationFrame(frame);
-    return{
+    const api={
       setEstado(e){const n=PALETAS[e]?e:'idle';if(n!==estado)estadoT=performance.now();estado=n;if(fallback)fallback.setEstado(estado);last=-Infinity;delete canvas.dataset.rendered;},
       setCor(h){
         const n=parseInt(String(h).replace('#',''),16);
@@ -450,14 +453,17 @@
       },
       get corAgente(){return corAg;},
       setNivel(n){nivel=limitar(n||0,0,1);nivelAtual=nivel;if(fallback)fallback.setNivel(nivel);},
+      olharPara(cx,cy){const r=canvas.getBoundingClientRect();if(!r.width)return;miraAX=limitar((cx-(r.left+r.width/2))/(Math.max(r.width,520)*.62),-1,1);miraAY=limitar((cy-(r.top+r.height*.3))/(Math.max(r.height,420)*.7),-1,1);miraT=performance.now();last=-Infinity;},
       impulso(f){imp=Math.max(imp,limitar(f||0,0,1.2));last=-Infinity;},       // reação instantânea: tecla, envio, palavra falada, toque
       zoomEm(z){definirZoom(z);},                         // 1 a 2,6
       resetar(){definirZoom(1);tiltAX=tiltAY=0;interagir();},
       get zoom(){return zoomAlvo;},
       geom(){return geo;},                                // {cx,cy,r,zoom,w,h,nivel,cor} em px do canvas
       aoToque(fn){cbToque=fn;},
-      destroy(){ativo=false;cancelAnimationFrame(raf);observer.disconnect();img.onload=img.onerror=null;if(fallback)fallback.destroy();},
+      destroy(){ativo=false;if(onMove)removeEventListener('pointermove',onMove);cancelAnimationFrame(raf);observer.disconnect();img.onload=img.onerror=null;if(fallback)fallback.destroy();},
     };
+    if(canvas.id==='avatar'&&!quiet){onMove=(e)=>{if(e.pointerType==='touch')return;const t=performance.now();if(t-seguirT<40)return;seguirT=t;api.olharPara(e.clientX,e.clientY);};addEventListener('pointermove',onMove,{passive:true});}
+    return api;
   }
 
   // `principal` = a instância do avatar da tela (a órbita ao redor usa para medir e ampliar).

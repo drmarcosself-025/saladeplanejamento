@@ -225,6 +225,15 @@
     const R = window.JarvisRotina, L = window.JarvisLeads; if (!R) return null;
     hoje = hoje || new Date();
     if (/^(oi|ola|e ai|opa|salve|bom dia|boa tarde|boa noite|tudo bem|como vai)( jarvis)?[.!?]*$/.test(t)) return { tipo: "rot_dia", saudacao: true };
+
+    // planejamento: dia específico, mês, ano e metas
+    const DIAWD = /\b(segunda|terca|quarta|quinta|sexta|sabado|domingo)\b|\bdia\s+\d{1,2}\b|\b\d{1,2}\/\d{1,2}\b/;
+    const dinheiro = /\b(gastei|gasto|gastos|financeiro|financas|caixa|saldo|receitas?|despesas?|lucro|contas?|pagar|faturamento|fecha\w*|boletos?)\b/;
+    const mm = original.match(new RegExp(PRE + "(?:(?:adiciona|adicionar|adicione|cria|criar|crie|anota|anotar|anote|nova|novo|define|definir|defina|coloca|colocar)\\s+(?:uma\\s+|um\\s+)?)?meta\\s+(?:d[oa]|para\\s+o|pra\\s+o|no|para|pra)?\\s*(m[eê]s|ano)\\s*(?:[:,\\-–]|é|e)?\\s*(.+)$", "i"));
+    if (mm && !/^(m[eê]s|ano)$/i.test(mm[2].trim())) return { tipo: "rot_meta", escopo: /^m/i.test(mm[1]) ? "mes" : "ano", meta: maius(mm[2].trim().replace(/^(?:de|para|pra|que)\s+/i, "")) };
+    if (!/\d/.test(t) && !dinheiro.test(t) && /\b(meu|minha|esse|este|do|no|o)\s+mes\b|\bmes que vem\b|\bproximo mes\b/.test(t) && /\b(como|organiza\w*|planeja\w*|panorama|agenda|compromissos|programacao|planejamento|metas|mostra\w*|ver|abre|abrir)\b/.test(t)) return { tipo: "rot_mes", seguinte: /\b(mes que vem|proximo mes)\b/.test(t) };
+    if (!/\d/.test(t) && /\b(meu|minha|esse|este|do|no|o)\s+ano\b|\bano que vem\b|\bproximo ano\b/.test(t) && /\b(como|organiza\w*|planeja\w*|panorama|planejamento|metas|mostra\w*|ver|abre|abrir|visao)\b/.test(t)) return { tipo: "rot_ano", seguinte: /\b(ano que vem|proximo ano)\b/.test(t) };
+    if (L && DIAWD.test(t) && /^\W*(?:o que|quais|como (?:esta|fica|vai)|me (?:diz|fala|mostra)|mostra|ver|resumo|programacao|agenda d[aeo]s?|minha agenda|meus compromissos|compromissos d[aeo]s?)\b/.test(t) && !/\b(marca|adiciona|cria|anota|coloca|lembra|nova)\b/.test(t)) { const data = L.dataDe(original, hoje); if (data) return { tipo: "rot_dia", data }; }
     if (/\bsemana\b/.test(t) && !/\d/.test(t) && /\b(como|resumo|feedback|balanco|panorama|organiza\w*|revisao|situacao|passa|mostra|ver|abre|abrir|programacao|planejamento)\b/.test(t)) return { tipo: "rot_semana" };
     if (/\bamanha\b/.test(t) && /\b(o que|quais?|agenda|compromissos?|tenho|temos)\b/.test(t) && !/\b(marca|agenda\s+\w|lembrete|adiciona|cria)\b/.test(t.replace(/\bagenda\b(?= de| para| pra| do)/, ""))) return { tipo: "rot_dia", quando: "amanha" };
     if (/\b(resumo|panorama|briefing|balanco)\b.*\b(dia|hoje)\b/.test(t) || /\bcomo\b.*\b(esta|ta|anda|vai)\b.*\b(meu dia|hoje|minha rotina)\b/.test(t)
@@ -240,17 +249,17 @@
     if (/\b(tomei|fiz|ja tomei)\b.*\bcafe\b/.test(t) || /^cafe da manha$/.test(t)) return { tipo: "rot_refeicao", refeicao: "cafe" };
     if (/^(?:ja )?comi\b/.test(t)) return { tipo: "rot_refeicao", refeicao: null };
     m = original.match(new RegExp(PRE + "(?:adiciona|adicionar|adicione|cria|criar|crie|anota|anotar|anote|nova|novo|inclui|incluir)\\s+(?:uma\\s+|um\\s+)?(?:tarefa|prioridade)\\s*(?:de\\s+|para\\s+|pra\\s+|:)?\\s*(.+)$", "i"));
-    if (m) { let tx = m[1], dia = hoje && L ? L.iso(hoje) : null; const md = tx.match(/\b(amanh[aã]|hoje|depois de amanh[aã])(?![\\wÀ-ÿ])/i); if (md && L) { dia = L.dataDe(md[1], hoje); tx = tx.replace(md[0], " "); }
+    if (m) { let tx = m[1], dia = hoje && L ? L.iso(hoje) : null; const md = tx.match(/\b(amanh[aã]|hoje|depois de amanh[aã]|segunda|ter[cç]a|quarta|quinta|sexta|s[aá]bado|domingo|dia\s+\d{1,2}|\d{1,2}\/\d{1,2})(?:-feira)?(?![\wÀ-ÿ])/i); if (md && L) { dia = L.dataDe(md[0], hoje) || dia; tx = tx.replace(md[0], " "); }
       return { tipo: "rot_tarefa", tarefa: maius(tx.replace(/\s+/g, " ").trim().replace(/^(?:de|para|pra|que)\s+/i, "")), dia }; }
     m = original.match(new RegExp(PRE + "(?:conclu[ií]|concluir|conclua|terminei|finalizei|completei|fiz|marca|marque|marcar)\\s+(?:a\\s+|o\\s+)?(?:tarefa|prioridade)\\s+(.+?)(?:\\s+como\\s+(?:feita|feito|concluida|conclu[ií]da|pronta|pronto))?$", "i"));
     if (m) return { tipo: "rot_tarefa_feita", nome: norm(m[1]) };
     m = original.match(new RegExp(PRE + "(?:agenda|agendar|agende|marca|marcar|marque|adiciona|adicionar|adicione|anota|anotar|anote|cria|criar|crie|coloca|colocar|coloque|lembra|lembrar)\\s+(?:de\\s+|que\\s+)?(?:um\\s+|uma\\s+|o\\s+|a\\s+)?(.+)$", "i"));
     if (m) {
-      const frag = m[1], hora = R.lerHora(norm(frag)), temData = /\b(amanh[aã]|hoje|depois de amanh[aã]|dia\s+\d{1,2}|\d{1,2}\/\d{1,2}|segunda|ter[cç]a|quarta|quinta|sexta|s[aá]bado|domingo|semana que vem)(?![\\wÀ-ÿ])/i.test(frag);
-      const nome = /\b(compromisso|reuni[aã]o|consulta|evento|lembrete|encontro|call|almo[cç]o|jantar|entrevista|aula)(?![\\wÀ-ÿ])/i.test(frag);
+      const frag = m[1], hora = R.lerHora(norm(frag)), temData = /\b(amanh[aã]|hoje|depois de amanh[aã]|dia\s+\d{1,2}|\d{1,2}\/\d{1,2}|segunda|ter[cç]a|quarta|quinta|sexta|s[aá]bado|domingo|semana que vem)(?![\wÀ-ÿ])/i.test(frag);
+      const nome = /\b(compromisso|reuni[aã]o|consulta|evento|lembrete|encontro|call|almo[cç]o|jantar|entrevista|aula)(?![\wÀ-ÿ])/i.test(frag);
       if ((hora || temData) && (nome || hora || temData) && !/\b(como|etapa)\b/i.test(frag)) {
         const data = (L && L.dataDe(frag, hoje)) || (L && L.iso(hoje));
-        let tt = frag.replace(/\b(depois de amanh[aã]|amanh[aã]|hoje|dia\s+\d{1,2}|\d{1,2}\/\d{1,2}|segunda|ter[cç]a|quarta|quinta|sexta|s[aá]bado|domingo|(?:na\s+)?semana que vem)(?:-feira)?(?![\\wÀ-ÿ])/gi, " ")
+        let tt = frag.replace(/\b(depois de amanh[aã]|amanh[aã]|hoje|dia\s+\d{1,2}|\d{1,2}\/\d{1,2}|segunda|ter[cç]a|quarta|quinta|sexta|s[aá]bado|domingo|(?:na\s+)?semana que vem)(?:-feira)?(?![\wÀ-ÿ])/gi, " ")
           .replace(/\b(?:[àa]s?\s+)?\d{1,2}\s*(?:h|:|horas?)\s*(?:\d{2})?\b/gi, " ").replace(/\bmeio[- ]?dia\b/gi, " ").replace(/\b[àa]s\s+\d{1,2}\b/gi, " ")
           .replace(/\s+/g, " ").trim().replace(/^(?:um|uma|o|a|que|de)\s+/i, "").replace(/\s+(?:no|na|em|para|pra|de|às|as|a)$/i, "").trim();
         if (tt) return { tipo: "rot_compromisso", titulo: maius(tt), data, hora };

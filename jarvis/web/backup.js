@@ -76,6 +76,7 @@
     // Rotina (compromissos, água, refeições): soma o que falta, sem sobrescrever o que já existe neste aparelho.
     const rot = JarvisRotina.ler(), idsR = new Set(rot.compromissos.map((c) => c.id)), novosC = v.rotina.compromissos.filter((c) => !idsR.has(c.id));
     rot.compromissos.push(...novosC); resultado.compromissos = novosC.length;
+    const idsM = new Set(rot.metas.map((m) => m.id)); rot.metas.push(...v.rotina.metas.filter((m) => !idsM.has(m.id)));
     for (const [k, n] of Object.entries(v.rotina.agua)) if (!(k in rot.agua)) rot.agua[k] = n;
     for (const [k, l] of Object.entries(v.rotina.refeicoes)) if (!(k in rot.refeicoes)) rot.refeicoes[k] = l;
     if (!JarvisRotina.salvar(rot)) resultado.falhas++;

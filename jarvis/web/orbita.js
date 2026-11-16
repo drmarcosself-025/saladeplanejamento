@@ -26,6 +26,10 @@
     chat: '<path d="M20 11.5a8 8 0 0 1-8 8H5l-3 2v-8a9 9 0 1 1 18-2Z"/><path d="M7 9h8m-8 4h5"/>',
     volume: '<path d="M3 9v6h4l5 4V5L7 9H3m13-1a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/>',
     mudo: '<path d="M3 9v6h4l5 4V5L7 9H3m13 1 5 5m0-5-5 5"/>',
+    sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/>',
+    cal: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4m8-4v4"/>',
+    bell: '<path d="M6 17v-6a6 6 0 0 1 12 0v6l2 2H4zM10 21h4"/>',
+    camera: '<rect x="3" y="6" width="18" height="14" rx="3"/><circle cx="12" cy="13" r="3.5"/><path d="M8 6l1.5-2h5L16 6"/>',
     mais: '<path d="M12 5v14M5 12h14"/>', menos: '<path d="M5 12h14"/>',
   };
   const icone = (nome) => { const s = sv("svg", { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "1.6", "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": "true" }); s.innerHTML = ICONES[nome]; return s; };
@@ -58,21 +62,25 @@
   const focar = (id) => setTimeout(() => { const t = $(id); if (t) { t.scrollIntoView({ block: "center", behavior: reduzido ? "auto" : "smooth" }); t.focus({ preventScroll: true }); } }, 90);
   // lado "e" (esquerda) e "d" (direita); y em fração da altura do avatar
   const SATS = [
-    { id: "leads", rot: "Leads", ic: "people", lado: "e", y: 0.22, x: 8, run: () => comando("abre o CRM") },
-    { id: "fin", rot: "Financeiro", ic: "wallet", lado: "e", y: 0.47, x: 3, run: () => comando("ativa o agente contador") },
-    { id: "contatos", rot: "Contatos", ic: "book", lado: "e", y: 0.72, x: 8, run: () => clicar('.utility-card[data-open="painelContatos"]') },
-    { id: "hoje", rot: "Prioridades", ic: "check", lado: "d", y: 0.22, x: 8, run: () => { clicar('.main-nav [data-view="hoje"]'); focar("tarefaTexto"); } },
-    { id: "conversa", rot: "Conversar", ic: "chat", lado: "d", y: 0.47, x: 3, run: () => { if (window.JarvisUI) JarvisUI.focarJarvis(); focar("entrada"); } },
-    { id: "som", rot: "Som", ic: "volume", lado: "d", y: 0.72, x: 8, run: () => { const m = $("btnMudo"); if (m) m.click(); setTimeout(atualizarSom, 30); } },
+    { id: "leads", rot: "Leads", ic: "people", cor: "#19e6c1", lado: "e", y: 0.10, x: 6, run: () => comando("abre o CRM") },
+    { id: "fin", rot: "Financeiro", ic: "wallet", cor: "#8fb6ff", lado: "e", y: 0.30, x: 2, run: () => comando("ativa o agente contador") },
+    { id: "contatos", rot: "Contatos", ic: "book", cor: "#b69cff", lado: "e", y: 0.50, x: 0, run: () => clicar('.utility-card[data-open="painelContatos"]') },
+    { id: "social", rot: "Social", ic: "camera", cor: "#ff3fbf", lado: "e", y: 0.70, x: 2, run: () => comando("abre o instagram") },
+    { id: "conversa", rot: "Conversar", ic: "chat", cor: "#6fd0ff", lado: "e", y: 0.90, x: 6, run: () => { if (window.JarvisUI) JarvisUI.focarJarvis(); focar("entrada"); } },
+    { id: "rotina", rot: "Dia a Dia", ic: "sun", cor: "#ffd23f", lado: "d", y: 0.10, x: 6, run: () => comando("resumo do dia") },
+    { id: "semana", rot: "Semana", ic: "cal", cor: "#ffa24a", lado: "d", y: 0.30, x: 2, run: () => comando("como está minha semana") },
+    { id: "avisos", rot: "Avisos", ic: "bell", cor: "#ff6b6b", lado: "d", y: 0.50, x: 0, run: () => comando("quais minhas notificações") },
+    { id: "hoje", rot: "Prioridades", ic: "check", cor: "#7be38f", lado: "d", y: 0.70, x: 2, run: () => { clicar('.main-nav [data-view="hoje"]'); focar("tarefaTexto"); } },
+    { id: "som", rot: "Som", ic: "volume", cor: "#d9e5ee", lado: "d", y: 0.90, x: 6, run: () => { const m = $("btnMudo"); if (m) m.click(); setTimeout(atualizarSom, 30); } },
   ];
   const sats = el("div", "orb-sats"), satEl = {};
   for (const s of SATS) {
     const b = el("button", "orb-sat lado-" + s.lado); b.type = "button"; b.dataset.sat = s.id;
-    b.style.setProperty("--y", s.y); b.style.setProperty("--x", s.x + "%");
+    b.style.setProperty("--y", s.y); b.style.setProperty("--x", s.x + "%"); b.style.setProperty("--c", s.cor); b.style.setProperty("--atraso", (-(SATS.indexOf(s) * 0.7) % 4).toFixed(1) + "s");
     const bolha = el("span", "orb-bolha"); bolha.appendChild(icone(s.ic));
     const badge = el("em", "orb-badge"); badge.hidden = true;
     b.append(bolha, el("span", "orb-rot", s.rot), badge); b.setAttribute("aria-label", s.rot);
-    b.addEventListener("click", s.run);
+    b.addEventListener("click", () => { const A = window.JarvisAvatar && JarvisAvatar.principal; if (A) { A.impulso(1); A.olharPara(b.getBoundingClientRect().left + b.offsetWidth / 2, b.getBoundingClientRect().top + b.offsetHeight / 2); } s.run(); });
     sats.appendChild(b); satEl[s.id] = { b, badge, bolha, def: s };
   }
   orb.append(svg, pill, metricas, sats, zoomBox, dica);
@@ -102,10 +110,14 @@
   function atualizarContagens() {
     try { if (L) { const r = L.resumo(L.lista()); setBadge("leads", r.hoje + r.atrasados + r.semData, r.atrasados > 0); } } catch (_) {}
     try { if (F) setBadge("fin", F.pendentes(F.lista(), new Date(), 7).length, F.pendentes(F.lista(), new Date(), 0).some((x) => x.atrasada)); } catch (_) {}
+    try { const AV = window.JarvisAvisos; if (AV) { const m = AV.montar(AV.coletar(new Date())); setBadge("avisos", m.total, m.urgentes > 0); } } catch (_) {}
+    try { const S = window.JarvisSocial; if (S) setBadge("social", S.pendentes(S.ler()).length, false); } catch (_) {}
+    try { const R = window.JarvisRotina; if (R) { const c = R.montarDia(new Date()); setBadge("rotina", c.compromissos.filter((x) => !x.feito).length, false); } } catch (_) {}
     const tp = $("tarefasProgresso"); if (tp) { const m = tp.textContent.match(/(\d+)\s*de\s*(\d+)/); if (m) setBadge("hoje", Math.max(0, +m[2] - +m[1]), false); }
     const ct = $("contatosTitulo"); if (ct) { const m = ct.textContent.match(/\((\d+)\)/); satEl.contatos.b.title = m ? m[1] + " contatos" : "Contatos"; }
   }
   function atualizarSom() { const m = $("btnMudo"), mudo = m && m.getAttribute("aria-pressed") === "true"; const s = satEl.som; s.bolha.textContent = ""; s.bolha.appendChild(icone(mudo ? "mudo" : "volume")); s.b.classList.toggle("desligado", !!mudo); s.b.setAttribute("aria-pressed", String(!!mudo)); }
+  for (const M of [window.JarvisRotina, window.JarvisSocial]) if (M && M.aoMudar) M.aoMudar(atualizarContagens);
   if (L && L.aoMudar) L.aoMudar(atualizarContagens); if (F && F.aoMudar) F.aoMudar(atualizarContagens);
   for (const id of ["tarefasProgresso", "contatosTitulo"]) { const e = $(id); if (e) new MutationObserver(atualizarContagens).observe(e, { childList: true, characterData: true, subtree: true }); }
   const bm = $("btnMudo"); if (bm) new MutationObserver(atualizarSom).observe(bm, { attributes: true, attributeFilter: ["aria-pressed"] });

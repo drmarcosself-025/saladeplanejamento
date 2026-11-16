@@ -68,3 +68,19 @@ test("voz: tarefas e compromissos", () => {
   assert.notEqual(it("marca o João como interessado").tipo, "rot_compromisso");     // isso é lead
   assert.equal(it("lança despesa 412,90 energia").tipo, "fin_lancar"); assert.equal(it("quem preciso retornar hoje").tipo.startsWith("lead"), true);
 });
+test("mês, ano e metas: grade, contagens e voz de planejamento", () => {
+  const g = j(R.diasDoMes("2026-11")); assert.equal(g.length, 6 + 30); assert.deepEqual(g.slice(0, 7), [null, null, null, null, null, null, "2026-11-01"]); assert.equal(R.nomeMes("2026-11"), "novembro de 2026"); assert.equal(R.somarMes("2026-12", 1), "2027-01");
+  let d = R.ler(); d.compromissos.push(R.novoCompromisso({ titulo: "A", data: "2026-11-20", hora: "09:00" }), R.novoCompromisso({ titulo: "B", data: "2026-11-20" })); d = R.comMeta(d, { texto: "Vender mais clareamentos", escopo: "mes", ref: "2026-11" }); d = R.comMeta(d, { texto: "Abrir segunda sala", escopo: "ano", ref: "2026" });
+  assert.equal(R.comMeta(d, { texto: " ", escopo: "mes", ref: "2026-11" }).erro, "texto"); d = R.validar(d); assert.equal(R.metasDe(d, "mes", "2026-11").length, 1);
+  const tarefas = [{ id: "1", texto: "x", dia: "2026-11-20", feita: true }, { id: "2", texto: "y", dia: "2026-11-21", feita: false }];
+  const m = R.resumoMes({ d, tarefas, mes: "2026-11", hoje: "2026-11-16" }); assert.match(m.fala, /novembro de 2026: 2 compromissos, 1 de 2 prioridades concluídas e 0 de 1 meta cumpridas/);
+  assert.ok(m.itens.some((x) => /dias úteis livres/.test(x.texto)));
+  const a = R.resumoAno({ d, tarefas, ano: 2026, hoje: "2026-11-16" }); assert.equal(a.meses.length, 12); assert.deepEqual([a.meses[10].c, a.meses[10].t, a.meses[10].feitas, a.meses[10].metas], [2, 2, 1, 1]); assert.match(a.fala, /2 compromissos marcados e 0 de 1 meta anual cumprida/);
+});
+test("voz: dia específico, mês, ano e metas", () => {
+  let r = it("o que tenho segunda"); assert.deepEqual([r.tipo, r.data], ["rot_dia", "2026-11-16"]); r = it("o que tenho dia 20"); assert.equal(r.data, "2026-11-20"); assert.equal(it("agenda de quinta").data, "2026-11-19");
+  assert.equal(it("agenda dentista dia 20 às 9h30").tipo, "rot_compromisso"); assert.equal(it("como está meu mês").tipo, "rot_mes"); assert.equal(it("como está meu mês").seguinte, false); assert.equal(it("planejamento do mês que vem").seguinte, true);
+  assert.equal(it("como foi meu mês de gastos").tipo !== "rot_mes", true); assert.equal(it("resumo do mês").tipo, "fin_resumo"); assert.equal(it("como está meu ano").tipo, "rot_ano"); assert.equal(it("me mostra o ano que vem").seguinte, true);
+  r = it("meta do mês: vender mais clareamentos"); assert.deepEqual([r.tipo, r.escopo, r.meta], ["rot_meta", "mes", "Vender mais clareamentos"]); r = it("adiciona meta do ano abrir segunda sala"); assert.deepEqual([r.escopo, r.meta], ["ano", "Abrir segunda sala"]);
+  r = it("adiciona tarefa revisar contrato terça"); assert.deepEqual([r.tipo, r.tarefa, r.dia], ["rot_tarefa", "Revisar contrato", "2026-11-17"]);
+});

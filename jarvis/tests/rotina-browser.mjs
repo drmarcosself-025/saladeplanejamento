@@ -42,6 +42,18 @@ try {
     assert.match(await page.textContent('#rotFeedback'), /[12] compromissos? na semana/); assert.match(await page.textContent('#rotFeedback'), /Água: média/);
     // 5) amanhã mostra a reunião; o modo Dia a Dia abre a tela
     await pedir('o que tenho amanhã'); assert.match(await page.textContent('#respostaItens'), /14h · Reunião com a contadora/, `${nome}: amanhã`);
+    // 4b) planejamento: dia específico, mês, ano e metas
+    await pedir('o que tenho segunda'); assert.match(await page.textContent('#rotTitulo'), /segunda/i, `${nome}: abre a segunda`);
+    await pedir('meta do mês: vender mais clareamentos'); await pedir('como está meu mês');
+    assert.ok(await page.locator('#rotMes .rot-cel').count() >= 28, `${nome}: grade do mês`); assert.match(await page.textContent('#rotMes'), /Vender mais clareamentos/, `${nome}: meta do mês`);
+    await page.locator('#rotMes .rot-cel').nth(5).click(); assert.equal(await page.evaluate(() => document.getElementById('rotDia').hidden), false, `${nome}: clicar no dia abre o dia`);
+    await pedir('como está meu ano'); assert.equal(await page.locator('#rotAno .rot-mes-card').count(), 12, `${nome}: 12 meses`);
+    await page.locator('#rotAno .rot-mes-card').nth(0).click(); assert.equal(await page.evaluate(() => document.getElementById('rotMes').hidden), false, `${nome}: clicar no mês abre o mês`);
+    await page.evaluate(() => document.getElementById('rotSeg').click()); assert.ok(await page.locator('#rotMes .rot-cel').count() >= 28, `${nome}: navega para o próximo mês`);
+    // início: faixa da semana e 10 atalhos
+    await page.evaluate(() => document.getElementById('rotFechar').click()); assert.equal(await page.locator('#semanaMini .sem-dia').count(), 7, `${nome}: semana no início`);
+    assert.equal(await page.locator('.orb-sat').count(), 10, `${nome}: 10 atalhos`);
+    await page.evaluate(() => document.querySelectorAll('#semanaMini .sem-dia')[2].click()); assert.equal((await dados()).area, 'rotina', `${nome}: dia da semana abre o Dia a Dia`);
     await page.evaluate(() => document.getElementById('rotFechar').click()); await pedir('ativa o agente dia a dia');
     assert.equal((await dados()).area, 'rotina', `${nome}: modo Dia a Dia abre a rotina`);
     assert.doesNotMatch(await page.textContent('body'), /Paciente [A-F]\b/, `${nome}: sem pacientes de demonstração`);
